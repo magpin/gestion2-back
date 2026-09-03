@@ -21,12 +21,12 @@
 -- a crédito explícitamente.
 --
 -- PROCEDENCIA DE LOS DATOS: extraídos de una base Access en producción de una
--- empresa (docs/bddCaja). Esa base tenía el catálogo mezclado con las cuentas
+-- empresa (../docs/bddCaja). Esa base tenía el catálogo mezclado con las cuentas
 -- propias de la empresa, así que el nivel 6 se filtró:
 --   2084 subcuentas del decreto -> entran acá
 --   18 códigos que había elegido la empresa -> van a empresa_cuenta
 --   36 filas "(rango N a M)" del sistema anterior -> se descartan, no son cuentas
--- El detalle de lo excluido está en docs/puc_exclusiones.md.
+-- El detalle de lo excluido está en ../docs/puc_exclusiones.md.
 --
 -- RANGO LIBRE: el decreto no numera todo. En 111 nodos dice explícitamente
 -- "7101 a 7199" o "220501 a 220598" y deja que cada empresa numere sus hijas.

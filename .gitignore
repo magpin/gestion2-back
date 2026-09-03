@@ -1,0 +1,32 @@
+# dependencias
+node_modules
+
+# build
+dist
+build
+
+# entorno
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# cobertura de tests
+coverage
+
+# editores / SO
+.idea
+.DS_Store
+*.swp
+
+# temporales
+.cache
+tmp
+
+# estado de herramientas locales
+.sdlc

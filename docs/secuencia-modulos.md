@@ -21,12 +21,13 @@ Eso descarta empezar por cualquier módulo que produzca documentos. Una factura
 que no se puede asentar es un papel, no contabilidad.
 
 ```
-Terceros ──┐
-           ├──> Contabilidad ──> Facturación ──> DIAN
-Productos ─┘        (libro)         (venta)       (XML)
+Terceros ──┐                        ┌──> Ventas ──┐
+           ├──> Contabilidad ───────┤             ├──> DIAN
+Productos ─┘        (libro)         └──> Compras ─┘     (XML)
 ```
 
-Ninguna flecha se puede saltar.
+Ninguna flecha se puede saltar. Ventas y compras son hermanas: las dos mueven
+inventario y las dos producen asientos, y por eso comparten casi todo.
 
 ---
 
@@ -90,14 +91,15 @@ los sistemas pequeños: recalcular el costo con cada entrada y no al cierre.
 
 ---
 
-### 4º — Facturación de venta
+### 4º — Ventas
 
-**Qué es.** La factura: tercero, líneas de producto o servicio, impuestos,
-consecutivo de la resolución, y el asiento que genera.
+**Qué es.** Cotización, factura de venta y nota crédito: tercero, líneas de
+producto o servicio, impuestos, consecutivo de la resolución, y el asiento que
+genera cada documento.
 
-**Por qué es el cuarto y no el primero.** Necesita las cuatro cosas anteriores:
-un tercero a quién emitirle, un producto que vender, una resolución que numere y
-un libro donde asentar. Es el módulo con más dependencias del sistema.
+**Por qué es el cuarto y no el primero.** Necesita cuatro cosas que no existen
+antes: un tercero a quién emitirle, un producto que vender, una resolución que
+numere y un libro donde asentar. Es el módulo con más dependencias del sistema.
 
 **La regla que arrastra.** Si la empresa no es responsable de IVA, el campo de
 IVA no aparece —ni en la línea, ni en el producto, ni en el total— y el backend
@@ -106,13 +108,36 @@ existe para eso y todavía no lo llama nadie.
 
 ---
 
-### 5º — DIAN
+### 5º — Compras
+
+**Qué es.** Factura del proveedor, su entrada al inventario y el asiento que
+produce. Retenciones practicadas al pagar.
+
+**Por qué acá y no al final.** Compras es lo que alimenta el kardex. Sin ella el
+inventario solo se puede cargar con un saldo inicial y ajustes a mano, y una
+ferretería compra todas las semanas.
+
+**Por qué después de ventas y no antes.** El inventario arranca con un saldo
+inicial —que hace falta igual para migrar desde el sistema anterior— y con eso
+alcanza para vender. Apenas se venda lo que había, hace falta comprar. Además
+compras reusa casi todo lo que ventas deja estabilizado: el documento, sus
+líneas, los impuestos y el asiento.
+
+**Riesgo.** Medio, y menor que ventas por ser simétrico.
+
+---
+
+### 6º — DIAN
 
 **Qué es.** El XML del anexo técnico, la firma con el certificado, el cálculo del
 CUFE y la transmisión.
 
-**Por qué al final.** No produce información contable: transmite la que ya
-existe. Sin factura no hay nada que transmitir.
+**Por qué acá.** No produce información contable: transmite la que ya existe.
+Sin factura no hay nada que transmitir.
+
+Va después de ventas y de compras, no entre las dos. Una factura de venta sin
+transmitir no es legal en Colombia, pero una factura sin registrar no sirve para
+nada: primero que el sistema sepa facturar bien, después que lo transmita.
 
 Va en módulo propio, no dentro de facturación. La resolución se queda en `nucleo`
 porque numera; la transmisión es otra cosa y falla por otras razones —el
@@ -121,15 +146,17 @@ emisión.
 
 ---
 
-### 6º — Compras y nómina
+### 7º — Nómina
 
-Van después porque son simétricos a ventas: reusan terceros, el libro, los
-impuestos y buena parte de la lógica de documentos. Construirlos antes de que
-ventas estabilice esas piezas es escribir dos veces lo mismo.
+**Qué es.** Empleados, contratos, liquidación mensual, prestaciones, seguridad
+social y parafiscales.
 
-Nómina tiene además su propia complejidad —prestaciones, seguridad social,
-parafiscales— pero las cuentas ya están sembradas: son las quince que aparecen al
-responder "sí tengo empleados".
+**Por qué sola y al final.** No toca inventario ni depende de ventas ni de
+compras: es un circuito propio que solo desemboca en el libro. Puede construirse
+cuando el resto ya opere, y una empresa puede facturar durante meses sin ella.
+
+Las cuentas ya están sembradas: son las quince que aparecen al responder "sí
+tengo empleados" en el plan de cuentas.
 
 ---
 
@@ -179,12 +206,13 @@ cuáles—.
 
 | # | Módulo | Por qué ahí | Riesgo |
 |---|---|---|---|
-| 1 | Terceros | Backend listo; lo necesitan los tres siguientes | Bajo |
+| 1 | Terceros | Backend listo; lo necesitan los cuatro siguientes | Bajo |
 | 2 | Contabilidad | Todo lo demás produce asientos; sin motor, cada módulo inventa el suyo | Alto |
 | 3 | Productos e inventario | Sus movimientos son asientos; antes del libro habría que rehacerlo | Medio |
-| 4 | Facturación | Depende de los cuatro anteriores | Medio |
-| 5 | DIAN | Transmite lo que ya existe | Medio |
-| 6 | Compras y nómina | Simétricos a ventas; reusan lo estabilizado | Medio |
+| 4 | Ventas | Depende de los tres anteriores; es el que más piezas junta | Medio |
+| 5 | Compras | Alimenta el kardex; reusa lo que ventas estabiliza | Medio |
+| 6 | DIAN | Transmite lo que ya existe | Medio |
+| 7 | Nómina | Circuito propio; no bloquea nada más | Medio |
 
 Dos condiciones antes del segundo: **un contador valida el mapeo de cuentas**, y
 **existen tests de integración sobre `nucleo`**.

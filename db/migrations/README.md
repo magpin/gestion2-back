@@ -43,7 +43,7 @@ escribirlas.
 | CIIU | DANE Rev. 4 A.C. / Resolución DIAN 000114 de 2020 | **No** la versión de 2012: esa no tiene 7111/7112 ni 8891/8899 |
 | RUT (casillas 24, 25, 53, 63) | DIAN, Instructivo IN-CAC-0237 v3 | Los códigos suprimidos se conservan con `vigente = false` |
 | Responsabilidades de FE | Anexo técnico DIAN | Solo seis del RUT llegan al XML, más `R-99-PN` que en el RUT no existe |
-| PUC (`cuenta_puc`) | Decreto 2650 de 1993, extraído de `../docs/bddCaja` | Cotejado contra el texto del decreto: el nivel 6 venía mezclado con cuentas de la empresa origen. Filtro y rangos libres en `../docs/puc_exclusiones.md` |
+| PUC (`cuenta_puc`) | Decreto 2650 de 1993, extraído de `../docs/fuentes/bddCaja` | Cotejado contra el texto del decreto: el nivel 6 venía mezclado con cuentas de la empresa origen. Filtro y rangos libres en `../docs/referencia/puc-exclusiones.md` |
 
 Dos cosas que conviene verificar antes de transmitir a producción, marcadas
 `VERIFICAR` dentro del SQL: los `codigo_dian_fe` de `tipo_documento_identidad` y

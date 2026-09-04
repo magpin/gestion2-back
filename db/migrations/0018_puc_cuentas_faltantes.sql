@@ -17,7 +17,7 @@
 --                 que tampoco está en el catálogo: agregarlas exige agregar
 --                 primero el grupo, y el nombre del grupo tiene el mismo
 --                 problema de maquetado.
--- Están anotadas en ../docs/puc_exclusiones.md. Completarlas exige el decreto en
+-- Están anotadas en ../docs/referencia/puc-exclusiones.md. Completarlas exige el decreto en
 -- limpio, no una deducción.
 
 INSERT INTO cuenta_puc (codigo, nivel, codigo_padre, nombre, naturaleza, es_imputable, rango_libre) VALUES

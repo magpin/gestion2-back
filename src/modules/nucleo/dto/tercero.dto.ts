@@ -207,4 +207,10 @@ export class ListarTercerosDto extends PaginacionDto {
   @Transform(aBooleano)
   @IsBoolean()
   incluirInactivos?: boolean;
+
+  /** Solo los desactivados. Manda sobre `incluirInactivos`. */
+  @IsOptional()
+  @Transform(aBooleano)
+  @IsBoolean()
+  soloInactivos?: boolean;
 }

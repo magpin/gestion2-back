@@ -90,13 +90,19 @@ export class TerceroService {
       esCliente?: boolean;
       esProveedor?: boolean;
       incluirInactivos?: boolean;
+      soloInactivos?: boolean;
     },
   ): Promise<Pagina<TerceroResumen>> {
     return this.tx.enContexto(ctx, async (t) => {
       const condiciones: string[] = [];
       const params: unknown[] = [];
 
-      if (filtro.incluirInactivos !== true) {
+      // Tres estados y no dos: "solo los activos" (lo normal), "todos" y "solo
+      // los desactivados". El ultimo hace falta para que la pantalla pueda
+      // paginar sobre ellos; acotar en el cliente descuadraba el conteo.
+      if (filtro.soloInactivos === true) {
+        condiciones.push('NOT activo');
+      } else if (filtro.incluirInactivos !== true) {
         condiciones.push('activo');
       }
       if (filtro.esCliente === true) {
@@ -235,6 +241,19 @@ export class TerceroService {
   async desactivar(ctx: CtxEmpresa, id: string): Promise<void> {
     await this.tx.enContexto(ctx, (t) =>
       t.query('UPDATE tercero SET activo = false WHERE id = $1', [id]),
+    );
+  }
+
+  /**
+   * Lo vuelve a poner en las listas de digitacion.
+   *
+   * Desactivar no destruye nada, asi que activar tampoco reconstruye nada: es la
+   * misma fila con la bandera al derecho. Sin esto un tercero desactivado por
+   * error solo se recuperaba con un UPDATE a mano contra la base.
+   */
+  async activar(ctx: CtxEmpresa, id: string): Promise<void> {
+    await this.tx.enContexto(ctx, (t) =>
+      t.query('UPDATE tercero SET activo = true WHERE id = $1', [id]),
     );
   }
 

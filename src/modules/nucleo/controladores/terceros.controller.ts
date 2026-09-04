@@ -36,6 +36,7 @@ export class TercerosController {
       esCliente: q.esCliente,
       esProveedor: q.esProveedor,
       incluirInactivos: q.incluirInactivos,
+      soloInactivos: q.soloInactivos,
     });
   }
 
@@ -75,5 +76,16 @@ export class TercerosController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
     await this.terceros.desactivar(ctx, id);
+  }
+
+  /** Deshace el desactivar. Mismos roles: quien puede sacarlo puede devolverlo. */
+  @Roles('DIRECTOR', 'CONTADOR')
+  @Post(':id/activar')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async activar(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.terceros.activar(ctx, id);
   }
 }

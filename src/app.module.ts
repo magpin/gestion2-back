@@ -7,15 +7,16 @@ import { RolesGuard } from './common/auth/roles.guard';
 import { DbModule } from './common/db/db.module';
 import { ErrorPostgresFilter } from './common/db/error-postgres.filter';
 import { SaludController } from './health/salud.controller';
+import { ContabilidadModule } from './modules/contabilidad/contabilidad.module';
 import { NucleoModule } from './modules/nucleo/nucleo.module';
 import { PlataformaModule } from './modules/plataforma/plataforma.module';
 
 /**
  * Raíz de la aplicación.
  *
- * Hoy solo cuelga `nucleo`. Los módulos de negocio —contabilidad, impuestos,
- * inventario, compras, ventas, facturación, dian, tesorería, cierre, reportes—
- * se construyen encima, cada uno apoyado solo en los anteriores.
+ * Cuelgan `nucleo` —la empresa y todo lo que la define antes de mover un peso—
+ * y `contabilidad`, el libro. Los que siguen —inventario, ventas, compras, dian,
+ * nómina— se construyen encima, cada uno apoyado solo en los anteriores.
  *
  * El orden de los guards importa: `JwtGuard` arma el `Ctx` que `RolesGuard`
  * después lee. Van acá y no en `AuthModule` para que apliquen a todo endpoint
@@ -23,7 +24,13 @@ import { PlataformaModule } from './modules/plataforma/plataforma.module';
  * `@Publico()` a mano.
  */
 @Module({
-  imports: [DbModule, AuthModule, NucleoModule, PlataformaModule],
+  imports: [
+    DbModule,
+    AuthModule,
+    NucleoModule,
+    ContabilidadModule,
+    PlataformaModule,
+  ],
   controllers: [SaludController],
   providers: [
     { provide: APP_GUARD, useClass: JwtGuard },

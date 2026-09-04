@@ -30,6 +30,10 @@ dos copias se separan.
 | `PucCuentasFaltantes1787000018000` | `0018_puc_cuentas_faltantes.sql` | Cuentas del decreto que el extracto de la Access no traía |
 | `SectorEconomico1787000019000` | `0019_sector_economico.sql` | `empresa_sector` — el sector deja de ser uno y pasa a ser varios |
 | `HechoOperativo1787000020000` | `0020_hecho_operativo.sql` | `empresa_hecho_operativo` — empleados, activos fijos, crédito, caja menor |
+| `PeriodoComprobante1787000021000` | `0021_periodo_comprobante.sql` | `periodo_contable`, `empresa_comprobante_tipo` — el marco: en qué mes cae cada asiento y de dónde sale su número |
+| `Asiento1787000022000` | `0022_asiento.sql` | `asiento`, `asiento_linea`, `saldo_cuenta_periodo` + las tres reglas: cuadre diferido, candado de período, exigencias de la cuenta |
+| `SaldoPeriodoRecalculable1787000023000` | `0023_saldo_periodo_recalculable.sql` | Reabrir un período borra sus saldos: son un cálculo, no un hecho |
+| `AnulacionAsiento1787000024000` | `0024_anulacion_asiento.sql` | `motivo_anulacion`, `anulado_en`, `anulado_por` — la anulación deja de vivir en la glosa |
 
 ## Los catálogos normativos y de dónde salieron
 

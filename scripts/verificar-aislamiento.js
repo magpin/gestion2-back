@@ -43,8 +43,8 @@ const ok = (b) => (b ? 'OK  ' : 'FALLA');
 
     for (const [t, nit, dv] of [[tenantA, '900123456', '8'], [tenantB, '901884220', '5']]) {
       await provision.query(
-        `INSERT INTO empresa (tenant_id, tipo_persona, razon_social, nit, dv, sector_economico)
-         VALUES ($1, 'JURIDICA', 'Empresa de prueba', $2, $3, 'COMERCIO')`,
+        `INSERT INTO empresa (tenant_id, tipo_persona, razon_social, nit, dv)
+         VALUES ($1, 'JURIDICA', 'Empresa de prueba', $2, $3)`,
         [t, nit, dv],
       );
     }
@@ -70,8 +70,8 @@ const ok = (b) => (b ? 'OK  ' : 'FALLA');
     let bloqueado = false;
     try {
       await app.query(
-        `INSERT INTO empresa (tenant_id, tipo_persona, razon_social, nit, dv, sector_economico)
-         VALUES ($1, 'JURIDICA', 'Intruso', '830045912', '7', 'COMERCIO')`,
+        `INSERT INTO empresa (tenant_id, tipo_persona, razon_social, nit, dv)
+         VALUES ($1, 'JURIDICA', 'Intruso', '830045912', '7')`,
         [tenantB],
       );
     } catch (e) {

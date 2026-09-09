@@ -178,6 +178,32 @@ export class ComprobanteService {
   }
 
   /**
+   * Un tipo por su código (`'CD'`, `'CI'`...), para módulos que asientan
+   * automático y necesitan uno ya sembrado. `null` si no existe — no lanza,
+   * porque quien llama (`ContabilidadApi.tipoComprobantePorCodigo`) es quien
+   * decide si la ausencia es un error o una condición a informar.
+   */
+  async porCodigo(
+    ctx: CtxEmpresa,
+    codigo: string,
+    tx?: Tx,
+  ): Promise<{ id: string } | null> {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const encontrado = fila<{ id: string }>(
+          await t.query(
+            'SELECT id FROM empresa_comprobante_tipo WHERE codigo = $1 AND activo',
+            [codigo],
+          ),
+        );
+        return encontrado ?? null;
+      },
+      tx,
+    );
+  }
+
+  /**
    * Toma el siguiente número y lo consume. **Exige transacción.**
    *
    * `UPDATE ... RETURNING` toma el bloqueo de la fila, así que dos asientos

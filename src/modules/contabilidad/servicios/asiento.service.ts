@@ -289,51 +289,66 @@ export class AsientoService {
    * El asiento sigue en el período donde estaba. Si ese período está cerrado, la
    * anulación se rechaza: los estados financieros ya salieron, y la corrección
    * correcta es un contra-asiento en el período abierto.
+   *
+   * `tx` es opcional: el endpoint HTTP anula solo, sin nadie más de por
+   * medio, y abre la suya. Quien anula un documento propio —una factura de
+   * `ventas`, por ejemplo— pasa la transacción que ya tiene abierta: la
+   * anulación del asiento y la del documento tienen que confirmarse juntas
+   * o ninguna de las dos.
    */
-  async anular(ctx: CtxEmpresa, id: string, motivo: string): Promise<void> {
-    await this.tx.enContexto(ctx, async (t) => {
-      const asiento = fila<{
-        estado: string;
-        glosa: string;
-        numero: string;
-        periodo_estado: string;
-        anio: number;
-        mes: number;
-      }>(
-        await t.query(
-          `SELECT a.estado, a.glosa, a.numero,
+  async anular(
+    ctx: CtxEmpresa,
+    id: string,
+    motivo: string,
+    tx?: Tx,
+  ): Promise<void> {
+    await this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const asiento = fila<{
+          estado: string;
+          glosa: string;
+          numero: string;
+          periodo_estado: string;
+          anio: number;
+          mes: number;
+        }>(
+          await t.query(
+            `SELECT a.estado, a.glosa, a.numero,
                   p.estado AS periodo_estado, p.anio, p.mes
              FROM asiento a
              JOIN periodo_contable p ON p.id = a.periodo_id
             WHERE a.id = $1`,
-          [id],
-        ),
-      );
-
-      if (asiento === undefined) {
-        throw new NotFoundException('Asiento no encontrado');
-      }
-      if (asiento.estado === 'ANULADO') {
-        throw new BadRequestException(
-          `El asiento ${asiento.numero} ya esta anulado.`,
+            [id],
+          ),
         );
-      }
-      if (asiento.periodo_estado === 'CERRADO') {
-        throw new BadRequestException(
-          `El asiento ${asiento.numero} esta en ${asiento.anio}-${String(asiento.mes).padStart(2, '0')}, que ya se cerro. Corregilo con un contra-asiento en un periodo abierto.`,
-        );
-      }
 
-      await t.query(
-        `UPDATE asiento
-            SET estado = 'ANULADO',
-                motivo_anulacion = $2,
-                anulado_en = now(),
-                anulado_por = $3
-          WHERE id = $1`,
-        [id, motivo, ctx.usuarioId],
-      );
-    });
+        if (asiento === undefined) {
+          throw new NotFoundException('Asiento no encontrado');
+        }
+        if (asiento.estado === 'ANULADO') {
+          throw new BadRequestException(
+            `El asiento ${asiento.numero} ya esta anulado.`,
+          );
+        }
+        if (asiento.periodo_estado === 'CERRADO') {
+          throw new BadRequestException(
+            `El asiento ${asiento.numero} esta en ${asiento.anio}-${String(asiento.mes).padStart(2, '0')}, que ya se cerro. Corregilo con un contra-asiento en un periodo abierto.`,
+          );
+        }
+
+        await t.query(
+          `UPDATE asiento
+              SET estado = 'ANULADO',
+                  motivo_anulacion = $2,
+                  anulado_en = now(),
+                  anulado_por = $3
+            WHERE id = $1`,
+          [id, motivo, ctx.usuarioId],
+        );
+      },
+      tx,
+    );
   }
 
   /** El asiento que generó un documento. Para mostrarlo al lado de la factura. */

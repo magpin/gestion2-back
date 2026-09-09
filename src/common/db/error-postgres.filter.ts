@@ -138,6 +138,7 @@ export class ErrorPostgresFilter implements ExceptionFilter {
       ux_resolucion_activa:
         'Ya hay una resolucion activa para ese tipo de documento y ambiente.',
       uq_resolucion_numero: 'Esa resolucion ya esta registrada.',
+      uq_producto_codigo: 'Ya existe un producto con ese codigo.',
     };
     return conocidos[restriccion] ?? 'Ese registro ya existe.';
   }
@@ -161,6 +162,8 @@ export class ErrorPostgresFilter implements ExceptionFilter {
       ck_representante_vigencia:
         'La fecha de fin no puede ser anterior a la de inicio.',
       ck_matricula_vigencia:
+        'La fecha de fin no puede ser anterior a la de inicio.',
+      ck_precio_vigencia:
         'La fecha de fin no puede ser anterior a la de inicio.',
     };
     return (

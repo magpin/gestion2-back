@@ -82,7 +82,10 @@ export class CatalogosController {
 
   @Get('responsabilidades-rut')
   responsabilidadesRut(@Query() q: BuscarResponsabilidadRutDto) {
-    return this.catalogo.responsabilidadesRut(q.q, q.incluirNoVigentes === 'true');
+    return this.catalogo.responsabilidadesRut(
+      q.q,
+      q.incluirNoVigentes === 'true',
+    );
   }
 
   @Get('responsabilidades-fe')

@@ -7,16 +7,21 @@ import { RolesGuard } from './common/auth/roles.guard';
 import { DbModule } from './common/db/db.module';
 import { ErrorPostgresFilter } from './common/db/error-postgres.filter';
 import { SaludController } from './health/salud.controller';
+import { ComprasModule } from './modules/compras/compras.module';
 import { ContabilidadModule } from './modules/contabilidad/contabilidad.module';
+import { InventarioModule } from './modules/inventario/inventario.module';
 import { NucleoModule } from './modules/nucleo/nucleo.module';
 import { PlataformaModule } from './modules/plataforma/plataforma.module';
+import { VentasModule } from './modules/ventas/ventas.module';
 
 /**
  * Raíz de la aplicación.
  *
- * Cuelgan `nucleo` —la empresa y todo lo que la define antes de mover un peso—
- * y `contabilidad`, el libro. Los que siguen —inventario, ventas, compras, dian,
- * nómina— se construyen encima, cada uno apoyado solo en los anteriores.
+ * Cuelgan `nucleo` —la empresa y todo lo que la define antes de mover un peso—,
+ * `contabilidad`, el libro, `inventario`, que se apoya en los dos, `ventas` y
+ * `compras`, que se apoyan en los tres — los módulos hermanos, con más
+ * dependencias del sistema. Los que siguen —dian, nómina— se construyen
+ * encima, cada uno apoyado solo en los anteriores.
  *
  * El orden de los guards importa: `JwtGuard` arma el `Ctx` que `RolesGuard`
  * después lee. Van acá y no en `AuthModule` para que apliquen a todo endpoint
@@ -29,6 +34,9 @@ import { PlataformaModule } from './modules/plataforma/plataforma.module';
     AuthModule,
     NucleoModule,
     ContabilidadModule,
+    InventarioModule,
+    VentasModule,
+    ComprasModule,
     PlataformaModule,
   ],
   controllers: [SaludController],

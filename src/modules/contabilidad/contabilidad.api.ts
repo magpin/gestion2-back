@@ -69,6 +69,37 @@ export class ContabilidadApi {
   }
 
   /**
+   * Anula un asiento. No borra nada.
+   *
+   * `tx` es opcional para que el endpoint HTTP de `contabilidad`
+   * (`POST /asientos/:id/anular`) lo siga llamando sin uno, pero quien
+   * anula un documento propio —una factura de `ventas`— tiene que pasar la
+   * transacción que ya tiene abierta: la anulación del asiento y la del
+   * documento se confirman juntas o ninguna de las dos.
+   */
+  async anular(
+    ctx: CtxEmpresa,
+    asientoId: string,
+    motivo: string,
+    tx?: Tx,
+  ): Promise<void> {
+    await this.asientos.anular(ctx, asientoId, motivo, tx);
+  }
+
+  /**
+   * Un tipo de comprobante por código (ej. `'CD'`), para módulos que asientan
+   * automático y necesitan uno ya existente. `null` si la empresa no lo
+   * sembró o está desactivado.
+   */
+  async tipoComprobantePorCodigo(
+    ctx: CtxEmpresa,
+    codigo: string,
+    tx?: Tx,
+  ): Promise<{ id: string } | null> {
+    return this.comprobantes.porCodigo(ctx, codigo, tx);
+  }
+
+  /**
    * Siembra los cinco tipos de comprobante de una empresa nueva.
    *
    * Lo llama `nucleo` al crear la empresa, dentro de su misma transaccion: una

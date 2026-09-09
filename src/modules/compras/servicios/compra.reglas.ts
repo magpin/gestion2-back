@@ -1,0 +1,154 @@
+/**
+ * Subtotal, IVA y total de una compra, línea por línea y el documento
+ * entero. Sin base de datos.
+ *
+ * Los `CHECK` de `0031_compras.sql` (`ck_compra_linea_subtotal`,
+ * `ck_compra_linea_iva`, `ck_compra_linea_total`) ya sostienen esta
+ * aritmética, pero disparan al COMMIT y con un error genérico. Acá se
+ * anticipa, para señalar el renglón antes de ir al servidor — mismo
+ * criterio que `venta.reglas.ts`.
+ *
+ * No reemplaza al `CHECK`: lo anticipa. Si esto y la base discrepan, la
+ * base tiene razón.
+ *
+ * `ivaTarifa` e `ivaDescontable` llegan ya decididas: es el servicio quien
+ * resuelve las dos preguntas de `docs/planes/compras-backend.md` (decisión
+ * 4) antes de llamar acá —¿el proveedor cobra IVA en esta línea?,
+ * ¿ese IVA lo podemos descontar?—; esto solo hace la cuenta con lo que
+ * llega, no vuelve a preguntar nada.
+ */
+
+/** Lo que pide una línea para calcularse. El servicio pasa más campos y no estorban. */
+export interface LineaCompraEntrada {
+  cantidad: number;
+  /** El costo que dice la factura del proveedor — no un precio de catálogo. */
+  costoUnitario: number;
+  /** 0, 5 o 19 — ya forzada a 0 si el proveedor no es responsable de IVA. */
+  ivaTarifa: number;
+  /** `true` si somos responsables de IVA (el IVA de esta línea es descontable). */
+  ivaDescontable: boolean;
+}
+
+export interface LineaCompraCalculada extends LineaCompraEntrada {
+  subtotal: number;
+  ivaValor: number;
+  total: number;
+  /**
+   * El costo por unidad que entra al kardex. Igual a `costoUnitario` cuando
+   * el IVA es descontable (se separa aparte, no se suma al costo). Cuando
+   * NO es descontable, el IVA que el proveedor cobró igual hay que
+   * pagarlo, y contablemente se vuelve parte del costo: acá se prorratea
+   * de vuelta por unidad (`total / cantidad`) para que
+   * `InventarioApi.incrementarPorCompra` reciba el costo real, IVA
+   * incluido.
+   */
+  costoUnitarioKardex: number;
+  /**
+   * `round(cantidad * costoUnitarioKardex, 2)`, calculado una sola vez
+   * acá — es lo que se debita a inventario en el asiento Y lo que
+   * `calcularEntrada` va a recalcular como `valor_total` del movimiento.
+   * El servicio no lo vuelve a calcular por su cuenta a propósito: los dos
+   * lados tienen que leer exactamente el mismo número.
+   */
+  valorKardex: number;
+}
+
+export interface TotalesCompra {
+  subtotal: number;
+  totalIva: number;
+  total: number;
+}
+
+/** El dinero se compara en centavos enteros, igual que `venta.reglas.ts`/`asiento.reglas.ts`. */
+const CENTAVOS = 100;
+
+/** `producto_movimiento.costo_unitario` es `numeric(18,6)` — la misma precisión que usa el kardex. */
+const DECIMALES_COSTO_KARDEX = 6;
+
+function aCentavos(valor: number): number {
+  return Math.round(valor * CENTAVOS);
+}
+
+function aPesos(centavos: number): number {
+  return centavos / CENTAVOS;
+}
+
+/**
+ * Una línea. El IVA se calcula sobre el subtotal YA redondeado, igual que
+ * en una venta: así lo verifica `ck_compra_linea_iva` en la base.
+ */
+export function calcularLineaCompra(
+  entrada: LineaCompraEntrada,
+): LineaCompraCalculada {
+  const subtotalCentavos = aCentavos(entrada.cantidad * entrada.costoUnitario);
+  const ivaCentavos = Math.round((subtotalCentavos * entrada.ivaTarifa) / 100);
+  const totalCentavos = subtotalCentavos + ivaCentavos;
+
+  // Redondeado a la misma precisión de `producto_movimiento.costo_unitario`
+  // ANTES de que lo use nadie más: si se dejara con más decimales, Postgres
+  // lo truncaría solo al guardarlo, y `ck_movimiento_valor_total`
+  // (`valor_total = round(cantidad * costo_unitario, 2)`) evaluaría contra
+  // un número distinto del que este cálculo usó para armar el débito del
+  // asiento — un descuadre de un centavo entre el libro y el kardex.
+  // Redondeando acá una sola vez, los dos leen el mismo número.
+  const costoUnitarioKardexCrudo = entrada.ivaDescontable
+    ? entrada.costoUnitario
+    : aPesos(totalCentavos) / entrada.cantidad;
+  const factorCosto = 10 ** DECIMALES_COSTO_KARDEX;
+  const costoUnitarioKardex =
+    Math.round(costoUnitarioKardexCrudo * factorCosto) / factorCosto;
+
+  const valorKardexCentavos = Math.round(
+    entrada.cantidad * costoUnitarioKardex * CENTAVOS,
+  );
+
+  return {
+    ...entrada,
+    subtotal: aPesos(subtotalCentavos),
+    ivaValor: aPesos(ivaCentavos),
+    total: aPesos(totalCentavos),
+    costoUnitarioKardex,
+    valorKardex: aPesos(valorKardexCentavos),
+  };
+}
+
+/**
+ * Todas las líneas de un documento, y sus totales.
+ *
+ * El servicio no acepta los totales del cliente: los deriva de las líneas,
+ * mismo criterio que `venta.reglas.ts`.
+ */
+export function calcularLineasCompra(entradas: readonly LineaCompraEntrada[]): {
+  lineas: LineaCompraCalculada[];
+  totales: TotalesCompra;
+} {
+  const lineas = entradas.map(calcularLineaCompra);
+
+  const subtotalCentavos = lineas.reduce(
+    (t, l) => t + aCentavos(l.subtotal),
+    0,
+  );
+  const ivaCentavos = lineas.reduce((t, l) => t + aCentavos(l.ivaValor), 0);
+
+  return {
+    lineas,
+    totales: {
+      subtotal: aPesos(subtotalCentavos),
+      totalIva: aPesos(ivaCentavos),
+      total: aPesos(subtotalCentavos + ivaCentavos),
+    },
+  };
+}
+
+/** La suma de lo retenido, en centavos exactos — no arrastra el flotante crudo. */
+export function totalRetenciones(
+  retenciones: readonly { valor: number }[],
+): number {
+  const centavos = retenciones.reduce((t, r) => t + aCentavos(r.valor), 0);
+  return aPesos(centavos);
+}
+
+/** Lo que efectivamente se le paga al proveedor: el total, menos lo retenido. */
+export function netoAPagar(total: number, retenido: number): number {
+  return aPesos(aCentavos(total) - aCentavos(retenido));
+}

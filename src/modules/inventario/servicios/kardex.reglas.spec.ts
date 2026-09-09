@@ -5,6 +5,7 @@ import {
   type SaldoKardex,
 } from './kardex.reglas';
 
+//esta función es para tal cosa.  
 const CERO: SaldoKardex = { cantidad: 0, costoPromedio: 0 };
 const DEC = 2; // decimales_cantidad y decimales_valor, para no repetirlo en cada caso
 

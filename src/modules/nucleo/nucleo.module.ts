@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { ContabilidadModule } from '../contabilidad/contabilidad.module';
 import { AuthController } from './controladores/auth.controller';
 import { CatalogosController } from './controladores/catalogos.controller';
 import { EmpresaLegalController } from './controladores/empresa-legal.controller';
@@ -36,6 +37,7 @@ import { UsuarioService } from './servicios/usuario.service';
  * `exports` tiene una sola clase: `NucleoApi`. Los servicios internos no salen.
  */
 @Module({
+  imports: [ContabilidadModule],
   controllers: [
     AuthController,
     TenantsController,

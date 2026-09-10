@@ -8,6 +8,7 @@ import {
 import type { Ctx, CtxEmpresa } from '../../../common/ctx';
 import { fila } from '../../../common/db/filas';
 import { TxService, type Tx } from '../../../common/db/tx.service';
+import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import type {
   CrearEmpresaDto,
   CrearSedeDto,
@@ -30,7 +31,10 @@ export interface Empresa {
 
 @Injectable()
 export class EmpresaService {
-  constructor(private readonly tx: TxService) {}
+  constructor(
+    private readonly tx: TxService,
+    private readonly contabilidad: ContabilidadApi,
+  ) {}
 
   /**
    * Crea la empresa y su configuración contable en la misma transacción.
@@ -102,6 +106,10 @@ export class EmpresaService {
          VALUES ($1, $2, 'DIRECTOR', $3, $1)`,
         [ctx.usuarioId, fila.id, ctx.tenantId],
       );
+
+      // Sin esto la empresa no tiene donde asentar: ventas, compras y kardex
+      // buscan sus tipos de comprobante por código y no aceptan crearlos solos.
+      await this.contabilidad.sembrarComprobantes(fila.id as string, t);
 
       // El RETURNING de arriba no ve los sectores: se insertaron despues.
       return this.mapear({ ...fila, sectores: dto.sectores ?? [] });

@@ -139,6 +139,10 @@ export class ErrorPostgresFilter implements ExceptionFilter {
         'Ya hay una resolucion activa para ese tipo de documento y ambiente.',
       uq_resolucion_numero: 'Esa resolucion ya esta registrada.',
       uq_producto_codigo: 'Ya existe un producto con ese codigo.',
+      ux_caja_principal_por_sede:
+        'Ya hay una caja principal activa en esa sede.',
+      ux_arqueo_abierto:
+        'Ya hay un arqueo abierto para esta caja. Cerralo antes de abrir uno nuevo.',
     };
     return conocidos[restriccion] ?? 'Ese registro ya existe.';
   }
@@ -165,6 +169,8 @@ export class ErrorPostgresFilter implements ExceptionFilter {
         'La fecha de fin no puede ser anterior a la de inicio.',
       ck_precio_vigencia:
         'La fecha de fin no puede ser anterior a la de inicio.',
+      ck_caja_sede:
+        'Una caja principal necesita una sede; el fondo de caja menor no.',
     };
     return (
       conocidos[restriccion] ?? 'Los datos violan una regla de validacion.'

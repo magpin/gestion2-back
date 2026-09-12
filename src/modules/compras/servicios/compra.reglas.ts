@@ -152,3 +152,32 @@ export function totalRetenciones(
 export function netoAPagar(total: number, retenido: number): number {
   return aPesos(aCentavos(total) - aCentavos(retenido));
 }
+
+/**
+ * Cuánto queda pagado tras un pago. Rechaza si el valor supera lo que
+ * falta por pagar — anticipa `ck_compra_monto_pagado` de la base, mismo
+ * motivo que `calcularCobro` de `venta.reglas.ts`.
+ */
+export type ResultadoPago =
+  { ok: true; montoPagado: number } | { ok: false; motivo: string };
+
+export function calcularPago(
+  netoAPagarDocumento: number,
+  montoPagadoActual: number,
+  valor: number,
+): ResultadoPago {
+  const nuevoMontoPagadoCentavos =
+    aCentavos(montoPagadoActual) + aCentavos(valor);
+
+  if (nuevoMontoPagadoCentavos > aCentavos(netoAPagarDocumento)) {
+    const saldoPendiente = aPesos(
+      aCentavos(netoAPagarDocumento) - aCentavos(montoPagadoActual),
+    );
+    return {
+      ok: false,
+      motivo: `Solo faltan ${saldoPendiente} por pagar de esta compra; no se puede pagar ${valor}.`,
+    };
+  }
+
+  return { ok: true, montoPagado: aPesos(nuevoMontoPagadoCentavos) };
+}

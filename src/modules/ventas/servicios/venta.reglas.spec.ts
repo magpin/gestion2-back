@@ -1,4 +1,4 @@
-import { calcularLinea, calcularLineas } from './venta.reglas';
+import { calcularCobro, calcularLinea, calcularLineas } from './venta.reglas';
 
 describe('calcularLinea', () => {
   it('con IVA: liquida sobre el subtotal', () => {
@@ -95,5 +95,41 @@ describe('calcularLineas', () => {
     expect(totales.subtotal).toBe(0.99);
     expect(totales.totalIva).toBe(0.18);
     expect(totales.total).toBe(1.17);
+  });
+});
+
+describe('calcularCobro', () => {
+  it('un cobro parcial deja el monto pagado corrido, sin tocar el resto', () => {
+    const resultado = calcularCobro(119000, 0, 50000);
+
+    expect(resultado).toEqual({ ok: true, montoPagado: 50000 });
+  });
+
+  it('el segundo cobro se suma al primero', () => {
+    const resultado = calcularCobro(119000, 50000, 69000);
+
+    expect(resultado).toEqual({ ok: true, montoPagado: 119000 });
+  });
+
+  it('cobrar exactamente el saldo pendiente deja la factura saldada', () => {
+    const resultado = calcularCobro(119000, 119000 - 30000, 30000);
+
+    expect(resultado).toEqual({ ok: true, montoPagado: 119000 });
+  });
+
+  it('rechaza un cobro que deje el monto pagado por encima del total', () => {
+    const resultado = calcularCobro(119000, 100000, 20000);
+
+    expect(resultado).toEqual({
+      ok: false,
+      motivo:
+        'Solo faltan 19000 por cobrar de esta factura; no se puede cobrar 20000.',
+    });
+  });
+
+  it('rechaza cobrar una factura ya saldada', () => {
+    const resultado = calcularCobro(119000, 119000, 1);
+
+    expect(resultado.ok).toBe(false);
   });
 });

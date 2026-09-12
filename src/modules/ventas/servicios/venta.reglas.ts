@@ -101,3 +101,33 @@ export function calcularLineas(entradas: readonly LineaVentaEntrada[]): {
     },
   };
 }
+
+/**
+ * Cuánto queda pagado tras un cobro. Rechaza si el valor supera lo que
+ * falta por cobrar — anticipa `ck_venta_monto_pagado` de la base, mismo
+ * motivo que el resto de este archivo: un mensaje legible en vez de la
+ * violación de `CHECK` genérica.
+ */
+export type ResultadoCobro =
+  { ok: true; montoPagado: number } | { ok: false; motivo: string };
+
+export function calcularCobro(
+  total: number,
+  montoPagadoActual: number,
+  valor: number,
+): ResultadoCobro {
+  const nuevoMontoPagadoCentavos =
+    aCentavos(montoPagadoActual) + aCentavos(valor);
+
+  if (nuevoMontoPagadoCentavos > aCentavos(total)) {
+    const saldoPendiente = aPesos(
+      aCentavos(total) - aCentavos(montoPagadoActual),
+    );
+    return {
+      ok: false,
+      motivo: `Solo faltan ${saldoPendiente} por cobrar de esta factura; no se puede cobrar ${valor}.`,
+    };
+  }
+
+  return { ok: true, montoPagado: aPesos(nuevoMontoPagadoCentavos) };
+}

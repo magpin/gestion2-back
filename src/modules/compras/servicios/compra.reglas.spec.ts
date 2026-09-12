@@ -1,6 +1,7 @@
 import {
   calcularLineaCompra,
   calcularLineasCompra,
+  calcularPago,
   netoAPagar,
   totalRetenciones,
 } from './compra.reglas';
@@ -163,5 +164,41 @@ describe('netoAPagar', () => {
 
   it('sin retenciones, el neto es el total completo', () => {
     expect(netoAPagar(119000, 0)).toBe(119000);
+  });
+});
+
+describe('calcularPago', () => {
+  it('un pago parcial deja el monto pagado corrido, sin tocar el resto', () => {
+    const resultado = calcularPago(94000, 0, 40000);
+
+    expect(resultado).toEqual({ ok: true, montoPagado: 40000 });
+  });
+
+  it('el segundo pago se suma al primero', () => {
+    const resultado = calcularPago(94000, 40000, 54000);
+
+    expect(resultado).toEqual({ ok: true, montoPagado: 94000 });
+  });
+
+  it('pagar exactamente el saldo pendiente deja la compra saldada', () => {
+    const resultado = calcularPago(94000, 94000 - 10000, 10000);
+
+    expect(resultado).toEqual({ ok: true, montoPagado: 94000 });
+  });
+
+  it('rechaza un pago que deje el monto pagado por encima del neto a pagar', () => {
+    const resultado = calcularPago(94000, 80000, 20000);
+
+    expect(resultado).toEqual({
+      ok: false,
+      motivo:
+        'Solo faltan 14000 por pagar de esta compra; no se puede pagar 20000.',
+    });
+  });
+
+  it('rechaza pagar una compra ya saldada', () => {
+    const resultado = calcularPago(94000, 94000, 1);
+
+    expect(resultado.ok).toBe(false);
   });
 });

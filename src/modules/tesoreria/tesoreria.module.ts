@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 
 import { ContabilidadModule } from '../contabilidad/contabilidad.module';
+import { BancoMovimientosController } from './controladores/banco-movimientos.controller';
 import { CajaArqueosController } from './controladores/caja-arqueos.controller';
 import { CajaConfiguracionController } from './controladores/caja-configuracion.controller';
 import { CajaMovimientosController } from './controladores/caja-movimientos.controller';
 import { CajasController } from './controladores/cajas.controller';
 import { CuentasBancariasController } from './controladores/cuentas-bancarias.controller';
+import { BancoMovimientoService } from './servicios/banco-movimiento.service';
 import { CajaArqueoService } from './servicios/caja-arqueo.service';
 import { CajaConfiguracionService } from './servicios/caja-configuracion.service';
 import { CajaMovimientoService } from './servicios/caja-movimiento.service';
@@ -37,6 +39,7 @@ import { TesoreriaApi } from './tesoreria.api';
     CajaArqueosController,
     CajaConfiguracionController,
     CuentasBancariasController,
+    BancoMovimientosController,
   ],
   providers: [
     CajaService,
@@ -44,6 +47,7 @@ import { TesoreriaApi } from './tesoreria.api';
     CajaArqueoService,
     CajaConfiguracionService,
     CuentaBancariaService,
+    BancoMovimientoService,
     TesoreriaApi,
   ],
   exports: [TesoreriaApi],

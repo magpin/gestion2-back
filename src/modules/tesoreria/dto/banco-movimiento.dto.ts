@@ -1,0 +1,76 @@
+import {
+  IsIn,
+  IsISO8601,
+  IsNumber,
+  IsString,
+  IsUUID,
+  Length,
+  Min,
+} from 'class-validator';
+
+import { PaginacionDto } from '../../../common/dto/paginacion.dto';
+
+/**
+ * El saldo con el que arranca una cuenta bancaria recién creada. No
+ * genera asiento — mismo motivo que `CargaInicialCajaDto`: la
+ * contrapartida es una decisión de migración que un contador valida caso
+ * por caso.
+ */
+export class CargaInicialBancoDto {
+  /** La fecha del hecho, no la de digitación. */
+  @IsISO8601({ strict: true })
+  fecha!: string;
+
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  valor!: number;
+
+  @IsString()
+  @Length(3, 300)
+  concepto!: string;
+}
+
+/** `cuentaBancariaId` va por la ruta: el libro siempre es de UNA cuenta. */
+export class ListarMovimientosBancoDto extends PaginacionDto {}
+
+/**
+ * Los siete tipos que se registran a mano — todos menos `SALDO_INICIAL`
+ * (`registrarSaldoInicial`, sin asiento). `CONSIGNACION`/`NOTA_CREDITO`
+ * suman al saldo; `RETIRO`/`NOTA_DEBITO`/`CHEQUE` restan.
+ * `TRANSFERENCIA_ENTRANTE`/`TRANSFERENCIA_SALIENTE` también se pueden
+ * digitar a mano acá, además de ser los que usa `TesoreriaApi` para un
+ * cobro/pago por transferencia (`registrarMovimientoDocumento`).
+ */
+export const TIPOS_MOVIMIENTO_BANCO_MANUAL = [
+  'CONSIGNACION',
+  'RETIRO',
+  'TRANSFERENCIA_ENTRANTE',
+  'TRANSFERENCIA_SALIENTE',
+  'NOTA_DEBITO',
+  'NOTA_CREDITO',
+  'CHEQUE',
+] as const;
+
+/**
+ * Un movimiento manual, sin factura de por medio. `contraCuentaId` es la
+ * otra pata del asiento — quien registra el movimiento la elige, mismo
+ * criterio que `IngresoCajaDto`/`EgresoCajaDto`.
+ */
+export class RegistrarMovimientoBancoDto {
+  @IsIn(TIPOS_MOVIMIENTO_BANCO_MANUAL)
+  tipo!: (typeof TIPOS_MOVIMIENTO_BANCO_MANUAL)[number];
+
+  @IsISO8601({ strict: true })
+  fecha!: string;
+
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  valor!: number;
+
+  @IsString()
+  @Length(3, 300)
+  concepto!: string;
+
+  @IsUUID()
+  contraCuentaId!: string;
+}

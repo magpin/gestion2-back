@@ -142,6 +142,11 @@ export class CajaMovimientoService {
    * de `registrarIngreso`/`registrarEgreso`, acá sí se conoce el documento
    * y el tercero, así que `caja_movimiento.origen_tipo`/`origen_id`/
    * `tercero_id` los llevan en vez de quedar `NULL`.
+   *
+   * `t` es opcional: quien vende o compra abre su propia transacción (para
+   * actualizar `monto_pagado` del documento en el mismo commit que este
+   * movimiento) y la pasa acá — sin ella, se abre una nueva, mismo
+   * criterio que `ContabilidadApi.periodoAbiertoEn`.
    */
   async registrarMovimientoDocumento(
     ctx: CtxEmpresa,
@@ -156,17 +161,23 @@ export class CajaMovimientoService {
       documentoId: string;
       terceroId: string;
     },
+    t?: Tx,
   ): Promise<MovimientoCajaResumen> {
-    return this.moverCaja(ctx, cajaId, {
-      tipo: datos.tipo,
-      fecha: datos.fecha,
-      valor: datos.valor,
-      concepto: datos.concepto,
-      contraCuentaId: datos.contraCuentaId,
-      origenTipo: datos.documentoTipo,
-      origenId: datos.documentoId,
-      terceroId: datos.terceroId,
-    });
+    return this.moverCaja(
+      ctx,
+      cajaId,
+      {
+        tipo: datos.tipo,
+        fecha: datos.fecha,
+        valor: datos.valor,
+        concepto: datos.concepto,
+        contraCuentaId: datos.contraCuentaId,
+        origenTipo: datos.documentoTipo,
+        origenId: datos.documentoId,
+        terceroId: datos.terceroId,
+      },
+      t,
+    );
   }
 
   /**
@@ -282,48 +293,53 @@ export class CajaMovimientoService {
       origenId: string | null;
       terceroId: string | null;
     },
+    tExterna?: Tx,
   ): Promise<MovimientoCajaResumen> {
-    return this.tx.enContexto(ctx, async (t) => {
-      const caja = await this.exigirCajaBloqueada(cajaId, t);
-      const actual = (await this.ultimoMovimiento(cajaId, t))?.saldo ?? 0;
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const caja = await this.exigirCajaBloqueada(cajaId, t);
+        const actual = (await this.ultimoMovimiento(cajaId, t))?.saldo ?? 0;
 
-      let nuevoSaldo: number;
-      if (datos.tipo === 'INGRESO') {
-        nuevoSaldo = calcularIngreso(actual, datos.valor);
-      } else {
-        const resultado = calcularEgreso(actual, datos.valor);
-        if (!resultado.ok) {
-          throw new BadRequestException(resultado.motivo);
+        let nuevoSaldo: number;
+        if (datos.tipo === 'INGRESO') {
+          nuevoSaldo = calcularIngreso(actual, datos.valor);
+        } else {
+          const resultado = calcularEgreso(actual, datos.valor);
+          if (!resultado.ok) {
+            throw new BadRequestException(resultado.motivo);
+          }
+          nuevoSaldo = resultado.saldo;
         }
-        nuevoSaldo = resultado.saldo;
-      }
 
-      const movimientoId = randomUUID();
-      const asientoId = await this.asentarMovimiento(
-        ctx,
-        caja,
-        datos,
-        datos.tipo,
-        movimientoId,
-        t,
-      );
+        const movimientoId = randomUUID();
+        const asientoId = await this.asentarMovimiento(
+          ctx,
+          caja,
+          datos,
+          datos.tipo,
+          movimientoId,
+          t,
+        );
 
-      return this.insertarMovimiento(
-        t,
-        ctx,
-        movimientoId,
-        cajaId,
-        datos.tipo,
-        datos.fecha,
-        datos.valor,
-        datos.concepto,
-        datos.origenTipo,
-        datos.origenId,
-        datos.terceroId,
-        nuevoSaldo,
-        asientoId,
-      );
-    });
+        return this.insertarMovimiento(
+          t,
+          ctx,
+          movimientoId,
+          cajaId,
+          datos.tipo,
+          datos.fecha,
+          datos.valor,
+          datos.concepto,
+          datos.origenTipo,
+          datos.origenId,
+          datos.terceroId,
+          nuevoSaldo,
+          asientoId,
+        );
+      },
+      tExterna,
+    );
   }
 
   /**

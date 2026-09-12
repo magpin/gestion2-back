@@ -58,16 +58,36 @@ describe('TesoreriaApi.registrarCobro', () => {
       movimientoId: 'mov-1',
       asientoId: 'asiento-1',
     });
-    expect(registrarMovimientoDocumento).toHaveBeenCalledWith(ctx, 'c-1', {
-      tipo: 'INGRESO',
-      fecha: COBRO.fecha,
-      valor: COBRO.valor,
-      concepto: COBRO.concepto,
-      contraCuentaId: 'cta-clientes',
-      documentoTipo: 'FACTURA_VENTA',
-      documentoId: 'factura-1',
-      terceroId: 'ter-1',
-    });
+    expect(registrarMovimientoDocumento).toHaveBeenCalledWith(
+      ctx,
+      'c-1',
+      {
+        tipo: 'INGRESO',
+        fecha: COBRO.fecha,
+        valor: COBRO.valor,
+        concepto: COBRO.concepto,
+        contraCuentaId: 'cta-clientes',
+        documentoTipo: 'FACTURA_VENTA',
+        documentoId: 'factura-1',
+        terceroId: 'ter-1',
+      },
+      undefined,
+    );
+  });
+
+  it('reenvía la transacción externa cuando se la pasan', async () => {
+    const { fake, registrarMovimientoDocumento } = cajaMovimientosFalso();
+    const api = new TesoreriaApi(fake);
+    const txExterna = {} as never;
+
+    await api.registrarCobro(ctx, COBRO, txExterna);
+
+    expect(registrarMovimientoDocumento).toHaveBeenCalledWith(
+      ctx,
+      'c-1',
+      expect.objectContaining({ tipo: 'INGRESO' }),
+      txExterna,
+    );
   });
 });
 
@@ -85,16 +105,21 @@ describe('TesoreriaApi.registrarPago', () => {
       movimientoId: 'mov-2',
       asientoId: 'asiento-2',
     });
-    expect(registrarMovimientoDocumento).toHaveBeenCalledWith(ctx, 'c-1', {
-      tipo: 'EGRESO',
-      fecha: PAGO.fecha,
-      valor: PAGO.valor,
-      concepto: PAGO.concepto,
-      contraCuentaId: 'cta-proveedores',
-      documentoTipo: 'COMPRA',
-      documentoId: 'compra-1',
-      terceroId: 'ter-2',
-    });
+    expect(registrarMovimientoDocumento).toHaveBeenCalledWith(
+      ctx,
+      'c-1',
+      {
+        tipo: 'EGRESO',
+        fecha: PAGO.fecha,
+        valor: PAGO.valor,
+        concepto: PAGO.concepto,
+        contraCuentaId: 'cta-proveedores',
+        documentoTipo: 'COMPRA',
+        documentoId: 'compra-1',
+        terceroId: 'ter-2',
+      },
+      undefined,
+    );
   });
 
   it('lanza si CajaMovimientoService devolviera un movimiento sin asiento (invariante)', async () => {

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../common/ctx';
+import type { Tx } from '../../common/db/tx.service';
 import { CajaMovimientoService } from './servicios/caja-movimiento.service';
 
 export interface ResultadoTesoreria {
@@ -51,9 +52,8 @@ export interface DatosPago {
  *
  * `medio: 'CAJA'` es el único que existe por ahora: Bancos agrega `'BANCO'`
  * en la Fase 2, y esta fachada es la que va a distinguir uno de otro
- * cuando llegue. Hoy nadie la llama todavía —el primer consumidor real
- * llega en el paso 12, el botón "Cobrar/Pagar en efectivo" de Ventas y
- * Compras—.
+ * cuando llegue. El primer consumidor real es `FacturaService.cobrarEfectivo`/
+ * `CompraService.pagarEfectivo` (paso 12).
  */
 @Injectable()
 export class TesoreriaApi {
@@ -64,10 +64,16 @@ export class TesoreriaApi {
    * `cuentaClientesId`. Rechaza si la caja no existe o la empresa no tiene
    * el comprobante `CI` sembrado — nunca deja la factura "cobrada a
    * medias".
+   *
+   * `t` es opcional pero quien cobra una factura real SIEMPRE debería
+   * pasar la transacción que ya tiene abierta: el cobro y la actualización
+   * de `monto_pagado` del documento tienen que confirmarse juntos o
+   * ninguno, mismo principio que `ContabilidadApi.asentar`.
    */
   async registrarCobro(
     ctx: CtxEmpresa,
     datos: DatosCobro,
+    t?: Tx,
   ): Promise<ResultadoTesoreria> {
     const movimiento = await this.cajaMovimientos.registrarMovimientoDocumento(
       ctx,
@@ -82,6 +88,7 @@ export class TesoreriaApi {
         documentoId: datos.facturaVentaId,
         terceroId: datos.terceroId,
       },
+      t,
     );
     return this.exigirAsiento(movimiento);
   }
@@ -89,11 +96,13 @@ export class TesoreriaApi {
   /**
    * Paga una compra en efectivo: débito a `cuentaProveedoresId`, crédito a
    * la caja. Rechaza en negativo (no hay con qué pagar) y si la empresa no
-   * tiene el comprobante `CE` sembrado.
+   * tiene el comprobante `CE` sembrado. Mismo motivo que `registrarCobro`
+   * para el `t` opcional.
    */
   async registrarPago(
     ctx: CtxEmpresa,
     datos: DatosPago,
+    t?: Tx,
   ): Promise<ResultadoTesoreria> {
     const movimiento = await this.cajaMovimientos.registrarMovimientoDocumento(
       ctx,
@@ -108,6 +117,7 @@ export class TesoreriaApi {
         documentoId: datos.compraId,
         terceroId: datos.terceroId,
       },
+      t,
     );
     return this.exigirAsiento(movimiento);
   }

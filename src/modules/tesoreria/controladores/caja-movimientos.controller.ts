@@ -16,6 +16,8 @@ import {
 import type { CtxEmpresa } from '../../../common/ctx';
 import {
   CargaInicialCajaDto,
+  EgresoCajaDto,
+  IngresoCajaDto,
   ListarMovimientosCajaDto,
 } from '../dto/caja-movimiento.dto';
 import { CajaMovimientoService } from '../servicios/caja-movimiento.service';
@@ -49,5 +51,27 @@ export class CajaMovimientosController {
     @Body() dto: CargaInicialCajaDto,
   ) {
     return this.movimientos.registrarSaldoInicial(ctx, cajaId, dto);
+  }
+
+  /** Entra plata a la caja sin factura de por medio. Asienta contra `CI`. */
+  @Roles('CAJA', 'DIRECTOR')
+  @Post('ingreso')
+  ingreso(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) cajaId: string,
+    @Body() dto: IngresoCajaDto,
+  ) {
+    return this.movimientos.registrarIngreso(ctx, cajaId, dto);
+  }
+
+  /** Sale plata de la caja sin factura de por medio. Asienta contra `CE`. */
+  @Roles('CAJA', 'DIRECTOR')
+  @Post('egreso')
+  egreso(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) cajaId: string,
+    @Body() dto: EgresoCajaDto,
+  ) {
+    return this.movimientos.registrarEgreso(ctx, cajaId, dto);
   }
 }

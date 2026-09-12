@@ -51,7 +51,13 @@ export interface LineaAsiento {
 
 /** El origen de un asiento automático. `null` en los que digita una persona. */
 export interface Origen {
-  origenTipo: 'VENTA' | 'COMPRA' | 'NOMINA' | 'AJUSTE_INVENTARIO';
+  origenTipo:
+    | 'VENTA'
+    | 'COMPRA'
+    | 'NOMINA'
+    | 'AJUSTE_INVENTARIO'
+    | 'MOVIMIENTO_CAJA'
+    | 'MOVIMIENTO_BANCO';
   origenId: string;
 }
 

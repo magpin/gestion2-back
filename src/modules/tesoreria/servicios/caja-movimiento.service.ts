@@ -181,6 +181,46 @@ export class CajaMovimientoService {
     });
   }
 
+  /**
+   * El `caja_movimiento` correctivo de un arqueo cerrado con diferencia.
+   * Solo la llama `CajaArqueoService`, dentro de la MISMA transacción del
+   * cierre (`t` no es opcional, a propósito: quien la llama ya abrió la
+   * suya y ya bloqueó la caja). El asiento de ajuste se arma antes, en
+   * `CajaArqueoService`, con `datos.id` como `origenId` — acá se inserta
+   * con ese MISMO id, para que `asiento.origen_id` y este movimiento
+   * queden enlazados.
+   */
+  async registrarAjusteArqueo(
+    ctx: CtxEmpresa,
+    cajaId: string,
+    datos: {
+      id: string;
+      tipo: 'INGRESO' | 'EGRESO';
+      fecha: string;
+      valor: number;
+      concepto: string;
+      saldoValor: number;
+      asientoId: string;
+    },
+    t: Tx,
+  ): Promise<MovimientoCajaResumen> {
+    return this.insertarMovimiento(
+      t,
+      ctx,
+      datos.id,
+      cajaId,
+      datos.tipo,
+      datos.fecha,
+      datos.valor,
+      datos.concepto,
+      null,
+      null,
+      null,
+      datos.saldoValor,
+      datos.asientoId,
+    );
+  }
+
   /** El libro de una caja. Orden de digitación, el más reciente primero. */
   async listar(
     ctx: CtxEmpresa,

@@ -18,9 +18,11 @@
 --                             inicio de mañana": una sola caja no puede
 --                             tener dos arqueos abiertos a la vez.
 --
--- Bancos (extracto, conciliación) NO vive acá: es una migración aparte
--- (0034), con su propia cadencia de cuadre. Ver la sección "Corrección al
--- planteamiento anterior" del plan para el porqué de la separación.
+-- Bancos (extracto, conciliación) NO vive acá: es una migración aparte,
+-- con su propia cadencia de cuadre (0034 quedó tomado por la cartera
+-- básica del paso 12 — `docs/planes/caja-cartera.md` — así que Bancos
+-- numera después). Ver la sección "Corrección al planteamiento anterior"
+-- del plan para el porqué de la separación de Bancos.
 
 -- -----------------------------------------------------------------------------
 -- Caja — el maestro

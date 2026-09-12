@@ -5,8 +5,9 @@ import { leerSql } from '../leer-sql';
 /**
  * Parte A de Caja y Bancos (módulo 7): el maestro (`caja`), su cuenta de
  * diferencia (`caja_configuracion`), el libro (`caja_movimiento`) y el
- * cuadre diario (`caja_arqueo`). Bancos vive en una migración aparte
- * (0034): son dos cuadres distintos, con reglas de cierre distintas.
+ * cuadre diario (`caja_arqueo`). Bancos vive en una migración aparte, más
+ * adelante (0034 lo tomó la cartera básica del paso 12): son dos cuadres
+ * distintos, con reglas de cierre distintas.
  *
  * El DDL vive en `db/migrations/0033_caja.sql`.
  */

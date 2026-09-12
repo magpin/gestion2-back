@@ -143,6 +143,14 @@ export class ErrorPostgresFilter implements ExceptionFilter {
         'Ya hay una caja principal activa en esa sede.',
       ux_arqueo_abierto:
         'Ya hay un arqueo abierto para esta caja. Cerralo antes de abrir uno nuevo.',
+      uq_cuenta_bancaria_numero:
+        'Ya existe una cuenta bancaria con ese banco y número.',
+      uq_cuenta_bancaria_cuenta:
+        'Esa cuenta contable ya está asignada a otra cuenta bancaria.',
+      uq_extracto_rango:
+        'Ya existe un extracto para esta cuenta bancaria en ese rango de fechas.',
+      uq_extracto_linea_movimiento:
+        'Ese movimiento de banco ya está conciliado con otra línea del extracto.',
     };
     return conocidos[restriccion] ?? 'Ese registro ya existe.';
   }

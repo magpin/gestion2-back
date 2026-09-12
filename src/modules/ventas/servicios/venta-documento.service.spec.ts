@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import type { Tx, TxService } from '../../../common/db/tx.service';
+import type { CobrarEfectivoDto } from '../dto/venta.dto';
 import { VentaDocumentoService } from './venta-documento.service';
 
 const ctx: CtxEmpresa = {
@@ -149,6 +150,7 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso(),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
+      {} as never, // TesoreriaApi: no la usan estos métodos.
     );
 
     const documento = await servicio.crearCotizacion(ctx, {
@@ -173,6 +175,7 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso({ responsableIva: false }),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
+      {} as never, // TesoreriaApi: no la usan estos métodos.
     );
 
     const documento = await servicio.crearCotizacion(ctx, {
@@ -192,6 +195,7 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso({ tercero: null }),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
+      {} as never, // TesoreriaApi: no la usan estos métodos.
     );
 
     await expect(
@@ -212,6 +216,7 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       }),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
+      {} as never, // TesoreriaApi: no la usan estos métodos.
     );
 
     await expect(
@@ -230,6 +235,7 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso(),
       inventarioFalso({ producto: null }),
       {} as never,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await expect(
@@ -248,6 +254,7 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso(),
       inventarioFalso({ precio: null }),
       {} as never,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await expect(
@@ -303,6 +310,7 @@ describe('VentaDocumentoService.porId', () => {
       nucleoFalso(),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
+      {} as never, // TesoreriaApi: no la usan estos métodos.
     );
 
     const detalle = await servicio.porId(ctx, 'COTIZACION', 'doc-1');
@@ -317,6 +325,7 @@ describe('VentaDocumentoService.porId', () => {
       nucleoFalso(),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
+      {} as never, // TesoreriaApi: no la usan estos métodos.
     );
 
     await expect(
@@ -366,6 +375,7 @@ describe('VentaDocumentoService.anular', () => {
       nucleoFalso(),
       inventarioFalso(),
       contabilidad,
+      {} as never, // TesoreriaApi: no la usa anular.
     );
 
     await servicio.anular(ctx, 'fv-1', 'Error de digitación');
@@ -390,6 +400,7 @@ describe('VentaDocumentoService.anular', () => {
       nucleoFalso(),
       inventarioFalso(),
       contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa anular.
     );
 
     await expect(servicio.anular(ctx, 'cot-1', 'motivo')).rejects.toThrow(
@@ -408,6 +419,7 @@ describe('VentaDocumentoService.anular', () => {
       nucleoFalso(),
       inventarioFalso(),
       contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa anular.
     );
 
     await expect(servicio.anular(ctx, 'fv-1', 'motivo')).rejects.toThrow(
@@ -422,10 +434,208 @@ describe('VentaDocumentoService.anular', () => {
       nucleoFalso(),
       inventarioFalso(),
       contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa anular.
     );
 
     await expect(servicio.anular(ctx, 'inexistente', 'motivo')).rejects.toThrow(
       NotFoundException,
     );
+  });
+});
+
+describe('VentaDocumentoService.cobrarEfectivo', () => {
+  const DTO: CobrarEfectivoDto = {
+    cajaId: 'c-1',
+    fecha: '2026-09-12',
+    valor: 50000,
+  };
+
+  function nucleoCarteraFalso(
+    cuenta: { id: string } | null = { id: 'cta-cartera' },
+  ) {
+    return {
+      cuenta: jest.fn(() => Promise.resolve(cuenta)),
+    } as unknown as ConstructorParameters<typeof VentaDocumentoService>[1];
+  }
+
+  function tesoreriaFalso() {
+    const registrarCobro = jest.fn(() =>
+      Promise.resolve({ movimientoId: 'mov-1', asientoId: 'asiento-1' }),
+    );
+    const fake = {
+      registrarCobro,
+    } as unknown as ConstructorParameters<typeof VentaDocumentoService>[4];
+    return { fake, registrarCobro };
+  }
+
+  function txCobrarFalso(
+    documento:
+      | {
+          tipo: string;
+          tercero_id: string;
+          estado: string;
+          prefijo: string | null;
+          consecutivo: number;
+          total: string;
+          monto_pagado: string;
+        }
+      | undefined,
+  ) {
+    const actualizaciones: unknown[][] = [];
+    const tx = {
+      query: jest.fn((sql: string, params?: unknown[]) => {
+        if (sql.includes('FOR UPDATE')) {
+          return documento === undefined ? [] : [documento];
+        }
+        if (sql.includes('UPDATE venta_documento')) {
+          actualizaciones.push(params ?? []);
+          const [, montoPagado] = params as unknown[];
+          return [
+            {
+              id: 'fv-1',
+              tipo: 'FACTURA',
+              tercero_id: documento?.tercero_id,
+              fecha: '2026-09-01',
+              estado: 'EMITIDA',
+              prefijo: documento?.prefijo,
+              consecutivo: documento?.consecutivo,
+              resolucion_id: null,
+              documento_origen_id: null,
+              subtotal: '0',
+              total_iva: '0',
+              total: documento?.total,
+              monto_pagado: String(montoPagado),
+              asiento_id: null,
+            },
+          ];
+        }
+        throw new Error(`Query inesperada en el test: ${sql}`);
+      }),
+    } as unknown as Tx;
+    return { tx, actualizaciones };
+  }
+
+  const FACTURA_BASE = {
+    tipo: 'FACTURA',
+    tercero_id: 'ter-1',
+    estado: 'EMITIDA',
+    prefijo: 'SETP',
+    consecutivo: 5,
+    total: '119000',
+    monto_pagado: '0',
+  };
+
+  it('cobra parcialmente y deja monto_pagado corrido, con el concepto y la cuenta correctos', async () => {
+    const { tx, actualizaciones } = txCobrarFalso(FACTURA_BASE);
+    const { fake: tesoreria, registrarCobro } = tesoreriaFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoCarteraFalso(),
+      inventarioFalso(),
+      {} as never,
+      tesoreria,
+    );
+
+    const actualizado = await servicio.cobrarEfectivo(ctx, 'fv-1', DTO);
+
+    expect(actualizado.monto_pagado).toBe('50000');
+    expect(actualizaciones).toHaveLength(1);
+    expect(registrarCobro).toHaveBeenCalledWith(
+      ctx,
+      {
+        medio: 'CAJA',
+        cajaId: 'c-1',
+        fecha: DTO.fecha,
+        valor: 50000,
+        concepto: 'Cobro de la factura SETP-000005',
+        cuentaClientesId: 'cta-cartera',
+        terceroId: 'ter-1',
+        facturaVentaId: 'fv-1',
+      },
+      tx,
+    );
+  });
+
+  it('rechaza cobrar algo que no es una factura', async () => {
+    const { tx } = txCobrarFalso({ ...FACTURA_BASE, tipo: 'COTIZACION' });
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoCarteraFalso(),
+      inventarioFalso(),
+      {} as never,
+      tesoreriaFalso().fake,
+    );
+
+    await expect(servicio.cobrarEfectivo(ctx, 'cot-1', DTO)).rejects.toThrow(
+      /Solo se puede cobrar una factura/,
+    );
+  });
+
+  it('rechaza cobrar una factura anulada', async () => {
+    const { tx } = txCobrarFalso({ ...FACTURA_BASE, estado: 'ANULADA' });
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoCarteraFalso(),
+      inventarioFalso(),
+      {} as never,
+      tesoreriaFalso().fake,
+    );
+
+    await expect(servicio.cobrarEfectivo(ctx, 'fv-1', DTO)).rejects.toThrow(
+      /no está vigente/,
+    );
+  });
+
+  it('rechaza cobrar más de lo que falta, sin llamar a TesoreriaApi ni actualizar nada', async () => {
+    const { tx, actualizaciones } = txCobrarFalso({
+      ...FACTURA_BASE,
+      monto_pagado: '100000',
+    });
+    const { fake: tesoreria, registrarCobro } = tesoreriaFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoCarteraFalso(),
+      inventarioFalso(),
+      {} as never,
+      tesoreria,
+    );
+
+    await expect(
+      servicio.cobrarEfectivo(ctx, 'fv-1', { ...DTO, valor: 30000 }),
+    ).rejects.toThrow(BadRequestException);
+    expect(registrarCobro).not.toHaveBeenCalled();
+    expect(actualizaciones).toHaveLength(0);
+  });
+
+  it('rechaza sin llamar a TesoreriaApi si no existe la cuenta de cartera', async () => {
+    const { tx } = txCobrarFalso(FACTURA_BASE);
+    const { fake: tesoreria, registrarCobro } = tesoreriaFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoCarteraFalso(null),
+      inventarioFalso(),
+      {} as never,
+      tesoreria,
+    );
+
+    await expect(servicio.cobrarEfectivo(ctx, 'fv-1', DTO)).rejects.toThrow(
+      /cuenta de cartera/,
+    );
+    expect(registrarCobro).not.toHaveBeenCalled();
+  });
+
+  it('lanza NotFoundException si la factura no existe', async () => {
+    const { tx } = txCobrarFalso(undefined);
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoCarteraFalso(),
+      inventarioFalso(),
+      {} as never,
+      tesoreriaFalso().fake,
+    );
+
+    await expect(
+      servicio.cobrarEfectivo(ctx, 'inexistente', DTO),
+    ).rejects.toThrow(NotFoundException);
   });
 });

@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ContabilidadModule } from '../contabilidad/contabilidad.module';
 import { InventarioModule } from '../inventario/inventario.module';
 import { NucleoModule } from '../nucleo/nucleo.module';
+import { TesoreriaModule } from '../tesoreria/tesoreria.module';
 import { CotizacionesController } from './controladores/cotizaciones.controller';
 import { FacturasController } from './controladores/facturas.controller';
 import { NotasCreditoController } from './controladores/notas-credito.controller';
@@ -19,11 +20,18 @@ import { VentasApi } from './ventas.api';
  * módulo con más dependencias del sistema, tal como ya lo anticipaba
  * `secuencia-modulos.md` — necesita un tercero a quién facturar, un
  * producto que vender, una resolución que numere y un libro donde asentar.
+ * `TesoreriaModule` se sumó en el paso 12 de `caja-bancos-backend.md`:
+ * `VentaDocumentoService.cobrarEfectivo` necesita `TesoreriaApi`.
  *
  * Solo exporta `VentasApi` — hoy vacía, ver el porqué en `ventas.api.ts`.
  */
 @Module({
-  imports: [NucleoModule, ContabilidadModule, InventarioModule],
+  imports: [
+    NucleoModule,
+    ContabilidadModule,
+    InventarioModule,
+    TesoreriaModule,
+  ],
   controllers: [
     CotizacionesController,
     FacturasController,

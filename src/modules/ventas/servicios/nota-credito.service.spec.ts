@@ -33,6 +33,7 @@ const facturaVigente: VentaDocumentoDetalle = {
   subtotal: '579800',
   total_iva: '110162',
   total: '689962',
+  monto_pagado: '0',
   asiento_id: 'asiento-original',
   lineas: [
     {

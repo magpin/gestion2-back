@@ -18,7 +18,11 @@ import {
 import type { CtxEmpresa } from '../../../common/ctx';
 import { ConvertirCotizacionDto } from '../dto/cotizacion.dto';
 import { CrearFacturaDto } from '../dto/factura.dto';
-import { AnularVentaDto, ListarVentasDto } from '../dto/venta.dto';
+import {
+  AnularVentaDto,
+  CobrarEfectivoDto,
+  ListarVentasDto,
+} from '../dto/venta.dto';
 import { FacturaService } from '../servicios/factura.service';
 import { VentaDocumentoService } from '../servicios/venta-documento.service';
 
@@ -81,5 +85,16 @@ export class FacturasController {
     @Body() dto: AnularVentaDto,
   ): Promise<void> {
     await this.ventas.anular(ctx, id, dto.motivo);
+  }
+
+  /** Cobrar es un acto de caja, no de venta — mismos roles que un ingreso manual. */
+  @Roles('CAJA', 'DIRECTOR')
+  @Post(':id/cobrar-efectivo')
+  cobrarEfectivo(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CobrarEfectivoDto,
+  ) {
+    return this.ventas.cobrarEfectivo(ctx, id, dto);
   }
 }

@@ -11,9 +11,17 @@ import { TxService, type Tx } from '../../../common/db/tx.service';
 import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import { InventarioApi } from '../../inventario/inventario.api';
 import { NucleoApi } from '../../nucleo/nucleo.api';
+import { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import type { CrearCotizacionDto } from '../dto/cotizacion.dto';
-import type { ListarVentasDto } from '../dto/venta.dto';
-import { calcularLineas, type LineaVentaEntrada } from './venta.reglas';
+import type { CobrarEfectivoDto, ListarVentasDto } from '../dto/venta.dto';
+import {
+  calcularCobro,
+  calcularLineas,
+  type LineaVentaEntrada,
+} from './venta.reglas';
+
+/** [BASE] en toda empresa (`preactivacion-cuentas-comercio.md`): cartera, exige tercero. */
+const CODIGO_CUENTA_CARTERA = '130505';
 
 export interface VentaDocumentoResumen {
   id: string;
@@ -28,6 +36,8 @@ export interface VentaDocumentoResumen {
   subtotal: string;
   total_iva: string;
   total: string;
+  /** Cuánto se ha cobrado. Siempre `0` en COTIZACION/NOTA_CREDITO — nadie cobra esas. */
+  monto_pagado: string;
   asiento_id: string | null;
 }
 
@@ -50,7 +60,8 @@ export interface VentaDocumentoDetalle extends VentaDocumentoResumen {
 }
 
 const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, estado, prefijo, consecutivo,
-                           resolucion_id, documento_origen_id, subtotal, total_iva, total, asiento_id`;
+                           resolucion_id, documento_origen_id, subtotal, total_iva, total,
+                           monto_pagado, asiento_id`;
 
 const CAMPOS_LINEA = `id, venta_documento_id, orden, producto_id, cantidad, precio_unitario,
                        iva_tarifa, subtotal, iva_valor, total, costo_unitario`;
@@ -67,6 +78,10 @@ const PREFIJO_COTIZACION = 'COT';
  * siempre el vigente del catálogo (nunca lo que mande el cliente — ver
  * "Descuentos por línea o por documento" en `ventas-backend.md`), pero de
  * ahí no sale ningún movimiento de inventario ni ningún asiento.
+ *
+ * `anular` y `cobrarEfectivo` viven acá y no en `FacturaService` porque son
+ * operaciones sobre el documento ya existente, no sobre su creación —
+ * mismo criterio que separa `KardexService` de `ProductoService`.
  */
 @Injectable()
 export class VentaDocumentoService {
@@ -75,6 +90,7 @@ export class VentaDocumentoService {
     private readonly nucleo: NucleoApi,
     private readonly inventario: InventarioApi,
     private readonly contabilidad: ContabilidadApi,
+    private readonly tesoreria: TesoreriaApi,
   ) {}
 
   async crearCotizacion(
@@ -326,6 +342,101 @@ export class VentaDocumentoService {
           WHERE id = $1`,
         [id, motivo, ctx.usuarioId],
       );
+    });
+  }
+
+  /**
+   * Cobra una factura en efectivo, total o parcialmente. El cobro
+   * (`TesoreriaApi.registrarCobro`) y la actualización de `monto_pagado`
+   * se confirman en la MISMA transacción — no puede quedar la plata en la
+   * caja sin que la factura se entere, ni al revés.
+   *
+   * El `FOR UPDATE` sobre la factura es el candado: dos cobros
+   * simultáneos de la misma factura no pueden leer el mismo
+   * `monto_pagado` y pisarse, mismo motivo que
+   * `CajaMovimientoService.exigirCajaBloqueada`.
+   */
+  async cobrarEfectivo(
+    ctx: CtxEmpresa,
+    id: string,
+    dto: CobrarEfectivoDto,
+  ): Promise<VentaDocumentoResumen> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const documento = fila<{
+        tipo: string;
+        tercero_id: string;
+        estado: string;
+        prefijo: string | null;
+        consecutivo: number;
+        total: string;
+        monto_pagado: string;
+      }>(
+        await t.query(
+          `SELECT tipo, tercero_id, estado, prefijo, consecutivo, total, monto_pagado
+             FROM venta_documento
+            WHERE id = $1
+            FOR UPDATE`,
+          [id],
+        ),
+      );
+      if (documento === undefined) {
+        throw new NotFoundException('Documento no encontrado');
+      }
+      if (documento.tipo !== 'FACTURA') {
+        throw new BadRequestException('Solo se puede cobrar una factura.');
+      }
+      if (documento.estado !== 'EMITIDA') {
+        throw new BadRequestException('Esta factura no está vigente.');
+      }
+
+      const resultado = calcularCobro(
+        Number(documento.total),
+        Number(documento.monto_pagado),
+        dto.valor,
+      );
+      if (!resultado.ok) {
+        throw new BadRequestException(resultado.motivo);
+      }
+
+      const cuentaCartera = await this.nucleo.cuenta(
+        ctx,
+        CODIGO_CUENTA_CARTERA,
+        t,
+      );
+      if (cuentaCartera === null) {
+        throw new BadRequestException(
+          `No existe o está inactiva la cuenta de cartera (${CODIGO_CUENTA_CARTERA}). Actívala en el plan de cuentas.`,
+        );
+      }
+
+      const numero = `${documento.prefijo}-${String(documento.consecutivo).padStart(6, '0')}`;
+      await this.tesoreria.registrarCobro(
+        ctx,
+        {
+          medio: 'CAJA',
+          cajaId: dto.cajaId,
+          fecha: dto.fecha,
+          valor: dto.valor,
+          concepto: `Cobro de la factura ${numero}`,
+          cuentaClientesId: cuentaCartera.id,
+          terceroId: documento.tercero_id,
+          facturaVentaId: id,
+        },
+        t,
+      );
+
+      const actualizado = fila<VentaDocumentoResumen>(
+        await t.query(
+          `UPDATE venta_documento SET monto_pagado = $2
+            WHERE id = $1
+          RETURNING ${CAMPOS_DOCUMENTO}`,
+          [id, resultado.montoPagado],
+        ),
+      );
+      if (actualizado === undefined) {
+        throw new BadRequestException('No se pudo registrar el cobro.');
+      }
+      return actualizado;
     });
   }
 

@@ -125,6 +125,7 @@ const cotizacionEmitida: VentaDocumentoDetalle = {
   subtotal: '289900',
   total_iva: '55081',
   total: '344981',
+  monto_pagado: '0',
   asiento_id: null,
   lineas: [
     {

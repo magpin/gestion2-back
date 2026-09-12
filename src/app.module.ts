@@ -12,6 +12,7 @@ import { ContabilidadModule } from './modules/contabilidad/contabilidad.module';
 import { InventarioModule } from './modules/inventario/inventario.module';
 import { NucleoModule } from './modules/nucleo/nucleo.module';
 import { PlataformaModule } from './modules/plataforma/plataforma.module';
+import { TesoreriaModule } from './modules/tesoreria/tesoreria.module';
 import { VentasModule } from './modules/ventas/ventas.module';
 
 /**
@@ -19,9 +20,11 @@ import { VentasModule } from './modules/ventas/ventas.module';
  *
  * Cuelgan `nucleo` —la empresa y todo lo que la define antes de mover un peso—,
  * `contabilidad`, el libro, `inventario`, que se apoya en los dos, `ventas` y
- * `compras`, que se apoyan en los tres — los módulos hermanos, con más
- * dependencias del sistema. Los que siguen —dian, nómina— se construyen
- * encima, cada uno apoyado solo en los anteriores.
+ * `compras`, que se apoyan en los tres, y `tesoreria` (Caja y Bancos —hoy solo
+ * Caja—), que se apoya en `contabilidad` para asentar sus movimientos, igual
+ * que `inventario` — los módulos hermanos, con más dependencias del sistema.
+ * Los que siguen —dian, nómina— se construyen encima, cada uno apoyado solo
+ * en los anteriores.
  *
  * El orden de los guards importa: `JwtGuard` arma el `Ctx` que `RolesGuard`
  * después lee. Van acá y no en `AuthModule` para que apliquen a todo endpoint
@@ -38,6 +41,7 @@ import { VentasModule } from './modules/ventas/ventas.module';
     VentasModule,
     ComprasModule,
     PlataformaModule,
+    TesoreriaModule,
   ],
   controllers: [SaludController],
   providers: [

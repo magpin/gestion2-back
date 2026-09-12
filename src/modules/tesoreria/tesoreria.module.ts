@@ -7,12 +7,15 @@ import { CajaConfiguracionController } from './controladores/caja-configuracion.
 import { CajaMovimientosController } from './controladores/caja-movimientos.controller';
 import { CajasController } from './controladores/cajas.controller';
 import { CuentasBancariasController } from './controladores/cuentas-bancarias.controller';
+import { ExtractoController } from './controladores/extracto.controller';
+import { ExtractosController } from './controladores/extractos.controller';
 import { BancoMovimientoService } from './servicios/banco-movimiento.service';
 import { CajaArqueoService } from './servicios/caja-arqueo.service';
 import { CajaConfiguracionService } from './servicios/caja-configuracion.service';
 import { CajaMovimientoService } from './servicios/caja-movimiento.service';
 import { CajaService } from './servicios/caja.service';
 import { CuentaBancariaService } from './servicios/cuenta-bancaria.service';
+import { ExtractoService } from './servicios/extracto.service';
 import { TesoreriaApi } from './tesoreria.api';
 
 /**
@@ -40,6 +43,8 @@ import { TesoreriaApi } from './tesoreria.api';
     CajaConfiguracionController,
     CuentasBancariasController,
     BancoMovimientosController,
+    ExtractosController,
+    ExtractoController,
   ],
   providers: [
     CajaService,
@@ -48,6 +53,7 @@ import { TesoreriaApi } from './tesoreria.api';
     CajaConfiguracionService,
     CuentaBancariaService,
     BancoMovimientoService,
+    ExtractoService,
     TesoreriaApi,
   ],
   exports: [TesoreriaApi],

@@ -37,14 +37,22 @@ export interface MovimientoBancoResumen {
 const CAMPOS = `id, cuenta_bancaria_id, fecha, tipo, valor, concepto, origen_tipo,
                 origen_id, tercero_id, saldo_valor, asiento_id, conciliado`;
 
-type TipoMovimientoManual = (typeof TIPOS_MOVIMIENTO_BANCO_MANUAL)[number];
+export type TipoMovimientoManual =
+  (typeof TIPOS_MOVIMIENTO_BANCO_MANUAL)[number];
 
 /**
  * Hacia dónde mueve el saldo cada tipo. `CONSIGNACION`/`NOTA_CREDITO`/
  * `TRANSFERENCIA_ENTRANTE` suman; el resto resta — de acá sale también
  * qué comprobante usar (`CI` para lo que entra, `CE` para lo que sale).
+ * Exportada: `ExtractoService.cerrar` la reusa para clasificar qué
+ * movimientos sin conciliar son "pendientes de entrada" o "de salida" al
+ * armar `calcularSaldoBancoEsperado` — la clasificación es una sola, no
+ * se vuelve a decidir en dos lugares.
  */
-const DIRECCION: Record<TipoMovimientoManual, 'ENTRADA' | 'SALIDA'> = {
+export const DIRECCION_MOVIMIENTO_BANCO: Record<
+  TipoMovimientoManual,
+  'ENTRADA' | 'SALIDA'
+> = {
   CONSIGNACION: 'ENTRADA',
   RETIRO: 'SALIDA',
   TRANSFERENCIA_ENTRANTE: 'ENTRADA',
@@ -259,7 +267,7 @@ export class BancoMovimientoService {
         const cuenta = await this.exigirCuentaBloqueada(cuentaBancariaId, t);
         const actual =
           (await this.ultimoMovimiento(cuentaBancariaId, t))?.saldo ?? 0;
-        const direccion = DIRECCION[datos.tipo];
+        const direccion = DIRECCION_MOVIMIENTO_BANCO[datos.tipo];
         const nuevoSaldo =
           direccion === 'ENTRADA'
             ? calcularIngresoBanco(actual, datos.valor)

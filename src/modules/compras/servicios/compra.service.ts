@@ -18,7 +18,7 @@ import { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import type {
   CrearCompraDto,
   ListarComprasDto,
-  PagarEfectivoDto,
+  PagarDto,
   RetencionCompraDto,
 } from '../dto/compra.dto';
 import {
@@ -526,15 +526,15 @@ export class CompraService {
    * Paga una compra en efectivo, total o parcialmente. El pago
    * (`TesoreriaApi.registrarPago`) y la actualización de `monto_pagado`
    * se confirman en la MISMA transacción — mismo motivo que
-   * `VentaDocumentoService.cobrarEfectivo`.
+   * `VentaDocumentoService.cobrar`.
    *
    * El `FOR UPDATE` sobre la compra es el candado: dos pagos simultáneos
    * de la misma compra no pueden leer el mismo `monto_pagado` y pisarse.
    */
-  async pagarEfectivo(
+  async pagar(
     ctx: CtxEmpresa,
     id: string,
-    dto: PagarEfectivoDto,
+    dto: PagarDto,
   ): Promise<CompraDocumentoResumen> {
     return this.tx.enContexto(ctx, async (t) => {
       const documento = fila<{
@@ -579,11 +579,17 @@ export class CompraService {
         );
       }
 
+      const medio =
+        dto.medio === 'CAJA'
+          ? ({ medio: 'CAJA', cajaId: dto.cajaId! } as const)
+          : ({
+              medio: 'BANCO',
+              cuentaBancariaId: dto.cuentaBancariaId!,
+            } as const);
       await this.tesoreria.registrarPago(
         ctx,
         {
-          medio: 'CAJA',
-          cajaId: dto.cajaId,
+          ...medio,
           fecha: dto.fecha,
           valor: dto.valor,
           concepto: `Pago de la compra ${documento.numero_factura_proveedor}`,

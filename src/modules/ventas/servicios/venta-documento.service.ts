@@ -13,7 +13,7 @@ import { InventarioApi } from '../../inventario/inventario.api';
 import { NucleoApi } from '../../nucleo/nucleo.api';
 import { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import type { CrearCotizacionDto } from '../dto/cotizacion.dto';
-import type { CobrarEfectivoDto, ListarVentasDto } from '../dto/venta.dto';
+import type { CobrarDto, ListarVentasDto } from '../dto/venta.dto';
 import {
   calcularCobro,
   calcularLineas,
@@ -79,7 +79,7 @@ const PREFIJO_COTIZACION = 'COT';
  * "Descuentos por línea o por documento" en `ventas-backend.md`), pero de
  * ahí no sale ningún movimiento de inventario ni ningún asiento.
  *
- * `anular` y `cobrarEfectivo` viven acá y no en `FacturaService` porque son
+ * `anular` y `cobrar` viven acá y no en `FacturaService` porque son
  * operaciones sobre el documento ya existente, no sobre su creación —
  * mismo criterio que separa `KardexService` de `ProductoService`.
  */
@@ -356,10 +356,10 @@ export class VentaDocumentoService {
    * `monto_pagado` y pisarse, mismo motivo que
    * `CajaMovimientoService.exigirCajaBloqueada`.
    */
-  async cobrarEfectivo(
+  async cobrar(
     ctx: CtxEmpresa,
     id: string,
-    dto: CobrarEfectivoDto,
+    dto: CobrarDto,
   ): Promise<VentaDocumentoResumen> {
     return this.tx.enContexto(ctx, async (t) => {
       const documento = fila<{
@@ -410,11 +410,17 @@ export class VentaDocumentoService {
       }
 
       const numero = `${documento.prefijo}-${String(documento.consecutivo).padStart(6, '0')}`;
+      const medio =
+        dto.medio === 'CAJA'
+          ? ({ medio: 'CAJA', cajaId: dto.cajaId! } as const)
+          : ({
+              medio: 'BANCO',
+              cuentaBancariaId: dto.cuentaBancariaId!,
+            } as const);
       await this.tesoreria.registrarCobro(
         ctx,
         {
-          medio: 'CAJA',
-          cajaId: dto.cajaId,
+          ...medio,
           fecha: dto.fecha,
           valor: dto.valor,
           concepto: `Cobro de la factura ${numero}`,

@@ -9,6 +9,7 @@ import {
   IsUUID,
   Length,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -98,13 +99,31 @@ export class AnularCompraDto {
 }
 
 /**
- * Paga una compra en efectivo, total o parcialmente. `cajaId` es la caja
- * que entrega la plata — el concepto del movimiento lo arma el servicio
- * con el número de factura del proveedor, no se pide acá.
+ * Duplicado del `MEDIOS_PAGO`/`MedioPago` de `ventas/dto/venta.dto.ts`:
+ * mismo motivo que `CAMPOS_DOCUMENTO` se repite entre servicios de
+ * ventas — un DTO de un módulo no importa del DTO de otro.
  */
-export class PagarEfectivoDto {
+export const MEDIOS_PAGO = ['CAJA', 'BANCO'] as const;
+export type MedioPago = (typeof MEDIOS_PAGO)[number];
+
+/**
+ * Paga una compra, total o parcialmente, por caja o por banco —
+ * `cajaId`/`cuentaBancariaId` son mutuamente excluyentes, discriminados
+ * por `medio` (mismo criterio que `Medio` en `tesoreria.api.ts`). El
+ * concepto del movimiento lo arma el servicio con el número de factura
+ * del proveedor, no se pide acá.
+ */
+export class PagarDto {
+  @IsIn(MEDIOS_PAGO)
+  medio!: MedioPago;
+
+  @ValidateIf((o: PagarDto) => o.medio === 'CAJA')
   @IsUUID()
-  cajaId!: string;
+  cajaId?: string;
+
+  @ValidateIf((o: PagarDto) => o.medio === 'BANCO')
+  @IsUUID()
+  cuentaBancariaId?: string;
 
   @IsISO8601({ strict: true })
   fecha!: string;

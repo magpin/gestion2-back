@@ -15,7 +15,7 @@ import { ComprasApi } from './compras.api';
  * Importa `NucleoModule`, `ContabilidadModule` e `InventarioModule`, igual
  * que `VentasModule`: necesita un proveedor a quién comprarle, un producto
  * cuyo kardex aumentar y un libro donde asentar. `TesoreriaModule` se sumó
- * en el paso 12 de `caja-bancos-backend.md`: `CompraService.pagarEfectivo`
+ * en el paso 12 de `caja-bancos-backend.md`: `CompraService.pagar`
  * necesita `TesoreriaApi`.
  *
  * Solo exporta `ComprasApi` — hoy vacía, ver el porqué en `compras.api.ts`.

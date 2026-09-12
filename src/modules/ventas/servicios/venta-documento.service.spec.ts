@@ -2,7 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import type { Tx, TxService } from '../../../common/db/tx.service';
-import type { CobrarEfectivoDto } from '../dto/venta.dto';
+import type { CobrarDto } from '../dto/venta.dto';
 import { VentaDocumentoService } from './venta-documento.service';
 
 const ctx: CtxEmpresa = {
@@ -443,8 +443,9 @@ describe('VentaDocumentoService.anular', () => {
   });
 });
 
-describe('VentaDocumentoService.cobrarEfectivo', () => {
-  const DTO: CobrarEfectivoDto = {
+describe('VentaDocumentoService.cobrar', () => {
+  const DTO: CobrarDto = {
+    medio: 'CAJA',
     cajaId: 'c-1',
     fecha: '2026-09-12',
     valor: 50000,
@@ -536,7 +537,7 @@ describe('VentaDocumentoService.cobrarEfectivo', () => {
       tesoreria,
     );
 
-    const actualizado = await servicio.cobrarEfectivo(ctx, 'fv-1', DTO);
+    const actualizado = await servicio.cobrar(ctx, 'fv-1', DTO);
 
     expect(actualizado.monto_pagado).toBe('50000');
     expect(actualizaciones).toHaveLength(1);
@@ -546,6 +547,41 @@ describe('VentaDocumentoService.cobrarEfectivo', () => {
         medio: 'CAJA',
         cajaId: 'c-1',
         fecha: DTO.fecha,
+        valor: 50000,
+        concepto: 'Cobro de la factura SETP-000005',
+        cuentaClientesId: 'cta-cartera',
+        terceroId: 'ter-1',
+        facturaVentaId: 'fv-1',
+      },
+      tx,
+    );
+  });
+
+  it('cobra por banco cuando medio es BANCO, con cuentaBancariaId en vez de cajaId', async () => {
+    const { tx, actualizaciones } = txCobrarFalso(FACTURA_BASE);
+    const { fake: tesoreria, registrarCobro } = tesoreriaFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoCarteraFalso(),
+      inventarioFalso(),
+      {} as never,
+      tesoreria,
+    );
+
+    await servicio.cobrar(ctx, 'fv-1', {
+      medio: 'BANCO',
+      cuentaBancariaId: 'cb-1',
+      fecha: '2026-09-12',
+      valor: 50000,
+    });
+
+    expect(actualizaciones).toHaveLength(1);
+    expect(registrarCobro).toHaveBeenCalledWith(
+      ctx,
+      {
+        medio: 'BANCO',
+        cuentaBancariaId: 'cb-1',
+        fecha: '2026-09-12',
         valor: 50000,
         concepto: 'Cobro de la factura SETP-000005',
         cuentaClientesId: 'cta-cartera',
@@ -566,7 +602,7 @@ describe('VentaDocumentoService.cobrarEfectivo', () => {
       tesoreriaFalso().fake,
     );
 
-    await expect(servicio.cobrarEfectivo(ctx, 'cot-1', DTO)).rejects.toThrow(
+    await expect(servicio.cobrar(ctx, 'cot-1', DTO)).rejects.toThrow(
       /Solo se puede cobrar una factura/,
     );
   });
@@ -581,7 +617,7 @@ describe('VentaDocumentoService.cobrarEfectivo', () => {
       tesoreriaFalso().fake,
     );
 
-    await expect(servicio.cobrarEfectivo(ctx, 'fv-1', DTO)).rejects.toThrow(
+    await expect(servicio.cobrar(ctx, 'fv-1', DTO)).rejects.toThrow(
       /no está vigente/,
     );
   });
@@ -601,7 +637,7 @@ describe('VentaDocumentoService.cobrarEfectivo', () => {
     );
 
     await expect(
-      servicio.cobrarEfectivo(ctx, 'fv-1', { ...DTO, valor: 30000 }),
+      servicio.cobrar(ctx, 'fv-1', { ...DTO, valor: 30000 }),
     ).rejects.toThrow(BadRequestException);
     expect(registrarCobro).not.toHaveBeenCalled();
     expect(actualizaciones).toHaveLength(0);
@@ -618,7 +654,7 @@ describe('VentaDocumentoService.cobrarEfectivo', () => {
       tesoreria,
     );
 
-    await expect(servicio.cobrarEfectivo(ctx, 'fv-1', DTO)).rejects.toThrow(
+    await expect(servicio.cobrar(ctx, 'fv-1', DTO)).rejects.toThrow(
       /cuenta de cartera/,
     );
     expect(registrarCobro).not.toHaveBeenCalled();
@@ -634,8 +670,8 @@ describe('VentaDocumentoService.cobrarEfectivo', () => {
       tesoreriaFalso().fake,
     );
 
-    await expect(
-      servicio.cobrarEfectivo(ctx, 'inexistente', DTO),
-    ).rejects.toThrow(NotFoundException);
+    await expect(servicio.cobrar(ctx, 'inexistente', DTO)).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });

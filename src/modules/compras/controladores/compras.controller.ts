@@ -20,7 +20,7 @@ import {
   AnularCompraDto,
   CrearCompraDto,
   ListarComprasDto,
-  PagarEfectivoDto,
+  PagarDto,
 } from '../dto/compra.dto';
 import { CompraService } from '../servicios/compra.service';
 
@@ -67,14 +67,14 @@ export class ComprasController {
     await this.compras.anular(ctx, id, dto.motivo);
   }
 
-  /** Pagar es un acto de caja, no de compra — mismos roles que un egreso manual. */
+  /** Pagar es un acto de caja/banco, no de compra — mismos roles que un egreso manual. */
   @Roles('CAJA', 'DIRECTOR')
-  @Post(':id/pagar-efectivo')
-  pagarEfectivo(
+  @Post(':id/pagar')
+  pagar(
     @ActorEmpresa() ctx: CtxEmpresa,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: PagarEfectivoDto,
+    @Body() dto: PagarDto,
   ) {
-    return this.compras.pagarEfectivo(ctx, id, dto);
+    return this.compras.pagar(ctx, id, dto);
   }
 }

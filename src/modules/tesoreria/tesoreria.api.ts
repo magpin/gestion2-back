@@ -63,10 +63,10 @@ export type DatosPago = Medio & {
  * cambiar cómo se guarda el movimiento sin que se entere nadie más,
  * mismo patrón que `ContabilidadApi`/`InventarioApi`.
  *
- * `medio: 'CAJA' | 'BANCO'` — el primer consumidor real es
- * `VentaDocumentoService.cobrarEfectivo`/`CompraService.pagarEfectivo`
- * (paso 12), hoy solo con `'CAJA'`; conectar `'BANCO'` desde ahí es el
- * paso 20.
+ * `medio: 'CAJA' | 'BANCO'` — el consumidor real es
+ * `VentaDocumentoService.cobrar`/`CompraService.pagar` (pasos 12 y 20),
+ * que reciben el medio elegido en su propio DTO (`CobrarDto`/`PagarDto`)
+ * y arman este `Medio` a partir de él.
  */
 @Injectable()
 export class TesoreriaApi {

@@ -21,7 +21,7 @@ import { VentasApi } from './ventas.api';
  * `secuencia-modulos.md` — necesita un tercero a quién facturar, un
  * producto que vender, una resolución que numere y un libro donde asentar.
  * `TesoreriaModule` se sumó en el paso 12 de `caja-bancos-backend.md`:
- * `VentaDocumentoService.cobrarEfectivo` necesita `TesoreriaApi`.
+ * `VentaDocumentoService.cobrar` necesita `TesoreriaApi`.
  *
  * Solo exporta `VentasApi` — hoy vacía, ver el porqué en `ventas.api.ts`.
  */

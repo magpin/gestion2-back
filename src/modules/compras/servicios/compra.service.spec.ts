@@ -2,7 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import type { Tx, TxService } from '../../../common/db/tx.service';
-import type { PagarEfectivoDto } from '../dto/compra.dto';
+import type { PagarDto } from '../dto/compra.dto';
 import { CompraService } from './compra.service';
 
 const ctx: CtxEmpresa = {
@@ -818,8 +818,9 @@ describe('CompraService.anular', () => {
   });
 });
 
-describe('CompraService.pagarEfectivo', () => {
-  const DTO: PagarEfectivoDto = {
+describe('CompraService.pagar', () => {
+  const DTO: PagarDto = {
+    medio: 'CAJA',
     cajaId: 'c-1',
     fecha: '2026-09-12',
     valor: 40000,
@@ -897,7 +898,7 @@ describe('CompraService.pagarEfectivo', () => {
       tesoreria,
     );
 
-    const actualizado = await servicio.pagarEfectivo(ctx, 'compra-1', DTO);
+    const actualizado = await servicio.pagar(ctx, 'compra-1', DTO);
 
     expect(actualizado.monto_pagado).toBe('40000');
     expect(actualizaciones).toHaveLength(1);
@@ -907,6 +908,41 @@ describe('CompraService.pagarEfectivo', () => {
         medio: 'CAJA',
         cajaId: 'c-1',
         fecha: DTO.fecha,
+        valor: 40000,
+        concepto: 'Pago de la compra FP-001',
+        cuentaProveedoresId: 'cta-proveedores',
+        terceroId: 'ter-1',
+        compraId: 'compra-1',
+      },
+      tx,
+    );
+  });
+
+  it('paga por banco cuando medio es BANCO, con cuentaBancariaId en vez de cajaId', async () => {
+    const { tx, actualizaciones } = txPagarFalso(COMPRA_BASE);
+    const { fake: tesoreria, registrarPago } = tesoreriaFalso();
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      nucleoFalso({ cuentas: { '220505': { id: 'cta-proveedores' } } }).fake,
+      inventarioFalso().fake,
+      {} as never,
+      tesoreria,
+    );
+
+    await servicio.pagar(ctx, 'compra-1', {
+      medio: 'BANCO',
+      cuentaBancariaId: 'cb-1',
+      fecha: '2026-09-12',
+      valor: 40000,
+    });
+
+    expect(actualizaciones).toHaveLength(1);
+    expect(registrarPago).toHaveBeenCalledWith(
+      ctx,
+      {
+        medio: 'BANCO',
+        cuentaBancariaId: 'cb-1',
+        fecha: '2026-09-12',
         valor: 40000,
         concepto: 'Pago de la compra FP-001',
         cuentaProveedoresId: 'cta-proveedores',
@@ -927,7 +963,7 @@ describe('CompraService.pagarEfectivo', () => {
       tesoreriaFalso().fake,
     );
 
-    await expect(servicio.pagarEfectivo(ctx, 'compra-1', DTO)).rejects.toThrow(
+    await expect(servicio.pagar(ctx, 'compra-1', DTO)).rejects.toThrow(
       /no está vigente/,
     );
   });
@@ -947,7 +983,7 @@ describe('CompraService.pagarEfectivo', () => {
     );
 
     await expect(
-      servicio.pagarEfectivo(ctx, 'compra-1', { ...DTO, valor: 20000 }),
+      servicio.pagar(ctx, 'compra-1', { ...DTO, valor: 20000 }),
     ).rejects.toThrow(BadRequestException);
     expect(registrarPago).not.toHaveBeenCalled();
     expect(actualizaciones).toHaveLength(0);
@@ -964,7 +1000,7 @@ describe('CompraService.pagarEfectivo', () => {
       tesoreria,
     );
 
-    await expect(servicio.pagarEfectivo(ctx, 'compra-1', DTO)).rejects.toThrow(
+    await expect(servicio.pagar(ctx, 'compra-1', DTO)).rejects.toThrow(
       /cuenta de proveedores/,
     );
     expect(registrarPago).not.toHaveBeenCalled();
@@ -980,8 +1016,8 @@ describe('CompraService.pagarEfectivo', () => {
       tesoreriaFalso().fake,
     );
 
-    await expect(
-      servicio.pagarEfectivo(ctx, 'inexistente', DTO),
-    ).rejects.toThrow(NotFoundException);
+    await expect(servicio.pagar(ctx, 'inexistente', DTO)).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });

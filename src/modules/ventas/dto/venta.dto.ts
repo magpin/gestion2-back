@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsISO8601,
   IsNumber,
   IsOptional,
@@ -6,6 +7,7 @@ import {
   IsUUID,
   Length,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 import { PaginacionDto } from '../../../common/dto/paginacion.dto';
@@ -28,14 +30,27 @@ export class AnularVentaDto {
   motivo!: string;
 }
 
+export const MEDIOS_PAGO = ['CAJA', 'BANCO'] as const;
+export type MedioPago = (typeof MEDIOS_PAGO)[number];
+
 /**
- * Cobra una factura en efectivo, total o parcialmente. `cajaId` es la
- * caja que recibe la plata — el concepto del movimiento lo arma el
- * servicio con el número de la factura, no se pide acá.
+ * Cobra una factura, total o parcialmente, por caja o por banco —
+ * `cajaId`/`cuentaBancariaId` son mutuamente excluyentes, discriminados
+ * por `medio` (mismo criterio que `Medio` en `tesoreria.api.ts`). El
+ * concepto del movimiento lo arma el servicio con el número de la
+ * factura, no se pide acá.
  */
-export class CobrarEfectivoDto {
+export class CobrarDto {
+  @IsIn(MEDIOS_PAGO)
+  medio!: MedioPago;
+
+  @ValidateIf((o: CobrarDto) => o.medio === 'CAJA')
   @IsUUID()
-  cajaId!: string;
+  cajaId?: string;
+
+  @ValidateIf((o: CobrarDto) => o.medio === 'BANCO')
+  @IsUUID()
+  cuentaBancariaId?: string;
 
   @IsISO8601({ strict: true })
   fecha!: string;

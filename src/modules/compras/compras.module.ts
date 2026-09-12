@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ContabilidadModule } from '../contabilidad/contabilidad.module';
 import { InventarioModule } from '../inventario/inventario.module';
 import { NucleoModule } from '../nucleo/nucleo.module';
+import { TesoreriaModule } from '../tesoreria/tesoreria.module';
 import { ComprasController } from './controladores/compras.controller';
 import { CompraService } from './servicios/compra.service';
 import { ComprasApi } from './compras.api';
@@ -13,12 +14,19 @@ import { ComprasApi } from './compras.api';
  *
  * Importa `NucleoModule`, `ContabilidadModule` e `InventarioModule`, igual
  * que `VentasModule`: necesita un proveedor a quién comprarle, un producto
- * cuyo kardex aumentar y un libro donde asentar.
+ * cuyo kardex aumentar y un libro donde asentar. `TesoreriaModule` se sumó
+ * en el paso 12 de `caja-bancos-backend.md`: `CompraService.pagarEfectivo`
+ * necesita `TesoreriaApi`.
  *
  * Solo exporta `ComprasApi` — hoy vacía, ver el porqué en `compras.api.ts`.
  */
 @Module({
-  imports: [NucleoModule, ContabilidadModule, InventarioModule],
+  imports: [
+    NucleoModule,
+    ContabilidadModule,
+    InventarioModule,
+    TesoreriaModule,
+  ],
   controllers: [ComprasController],
   providers: [CompraService, ComprasApi],
   exports: [ComprasApi],

@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import type { Tx, TxService } from '../../../common/db/tx.service';
+import type { PagarEfectivoDto } from '../dto/compra.dto';
 import { CompraService } from './compra.service';
 
 const ctx: CtxEmpresa = {
@@ -193,6 +194,7 @@ describe('CompraService.crear', () => {
       nucleoFalso().fake,
       inventarioFalso().fake,
       contabilidad,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     const compra = await servicio.crear(ctx, {
@@ -252,6 +254,7 @@ describe('CompraService.crear', () => {
       nucleoFalso({ regimen: [] }).fake,
       inventarioFalso().fake,
       contabilidad,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     const compra = await servicio.crear(ctx, {
@@ -289,6 +292,7 @@ describe('CompraService.crear', () => {
       nucleo,
       inventarioFalso().fake,
       contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     const compra = await servicio.crear(ctx, {
@@ -311,6 +315,7 @@ describe('CompraService.crear', () => {
         .fake,
       inventarioFalso().fake,
       contabilidad,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     const compra = await servicio.crear(ctx, {
@@ -370,6 +375,7 @@ describe('CompraService.crear', () => {
       nucleoFalso({ regimen: ['RESPONSABLE_IVA'] }).fake,
       inventarioFalso().fake,
       contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await expect(
@@ -390,6 +396,7 @@ describe('CompraService.crear', () => {
       nucleoFalso({ regimen: ['AGENTE_RETENEDOR_RENTA'] }).fake,
       inventarioFalso().fake,
       contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await expect(
@@ -416,6 +423,7 @@ describe('CompraService.crear', () => {
       }).fake,
       inventarioFalso().fake,
       contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await expect(
@@ -436,6 +444,7 @@ describe('CompraService.crear', () => {
       nucleoFalso({ regimen: ['AGENTE_RETENEDOR_RENTA'] }).fake,
       inventarioFalso().fake,
       contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await expect(
@@ -459,6 +468,7 @@ describe('CompraService.crear', () => {
       nucleoFalso().fake,
       inventarioFalso().fake,
       contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await expect(
@@ -478,6 +488,7 @@ describe('CompraService.crear', () => {
       nucleoFalso().fake,
       inventarioFalso().fake,
       contabilidadFalso({ periodoAbierto: false }).fake,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await expect(
@@ -497,6 +508,7 @@ describe('CompraService.crear', () => {
       nucleoFalso({ proveedor: null }).fake,
       inventarioFalso().fake,
       contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await expect(
@@ -517,6 +529,7 @@ describe('CompraService.crear', () => {
         .fake,
       inventarioFalso().fake,
       contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await expect(
@@ -536,6 +549,7 @@ describe('CompraService.crear', () => {
       nucleoFalso().fake,
       inventarioFalso({ producto: null }).fake,
       contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await expect(
@@ -555,6 +569,7 @@ describe('CompraService.crear', () => {
       nucleoFalso({ cuentas: {} }).fake,
       inventarioFalso().fake,
       contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await expect(
@@ -575,6 +590,7 @@ describe('CompraService.crear', () => {
       nucleoFalso({ regimen: [] }).fake, // no responsable: IVA se suma al costo
       inventario,
       contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await servicio.crear(ctx, {
@@ -624,6 +640,7 @@ describe('CompraService.listar', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     const pagina = await servicio.listar(ctx, {
@@ -688,6 +705,7 @@ describe('CompraService.porId', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     const detalle = await servicio.porId(ctx, 'c-1');
@@ -703,6 +721,7 @@ describe('CompraService.porId', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await expect(servicio.porId(ctx, 'inexistente')).rejects.toThrow(
@@ -751,6 +770,7 @@ describe('CompraService.anular', () => {
       {} as never,
       {} as never,
       contabilidad,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await servicio.anular(ctx, 'c-1', 'Factura duplicada por error');
@@ -774,6 +794,7 @@ describe('CompraService.anular', () => {
       {} as never,
       {} as never,
       contabilidadAnularFalso().fake,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await expect(
@@ -788,10 +809,179 @@ describe('CompraService.anular', () => {
       {} as never,
       {} as never,
       contabilidadAnularFalso().fake,
+      {} as never, // TesoreriaApi: no la usa este método.
     );
 
     await expect(
       servicio.anular(ctx, 'inexistente', 'Motivo cualquiera'),
+    ).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('CompraService.pagarEfectivo', () => {
+  const DTO: PagarEfectivoDto = {
+    cajaId: 'c-1',
+    fecha: '2026-09-12',
+    valor: 40000,
+  };
+
+  function tesoreriaFalso() {
+    const registrarPago = jest.fn(() =>
+      Promise.resolve({ movimientoId: 'mov-1', asientoId: 'asiento-1' }),
+    );
+    const fake = {
+      registrarPago,
+    } as unknown as ConstructorParameters<typeof CompraService>[4];
+    return { fake, registrarPago };
+  }
+
+  function txPagarFalso(
+    documento:
+      | {
+          tercero_id: string;
+          estado: string;
+          numero_factura_proveedor: string;
+          neto_a_pagar: string;
+          monto_pagado: string;
+        }
+      | undefined,
+  ) {
+    const actualizaciones: unknown[][] = [];
+    const tx = {
+      query: jest.fn((sql: string, params?: unknown[]) => {
+        if (sql.includes('FOR UPDATE')) {
+          return documento === undefined ? [] : [documento];
+        }
+        if (sql.includes('UPDATE compra_documento')) {
+          actualizaciones.push(params ?? []);
+          const [, montoPagado] = params as unknown[];
+          return [
+            {
+              id: 'compra-1',
+              tercero_id: documento?.tercero_id,
+              fecha: '2026-09-01',
+              numero_factura_proveedor: documento?.numero_factura_proveedor,
+              estado: 'EMITIDA',
+              subtotal: '0',
+              total_iva: '0',
+              total: documento?.neto_a_pagar,
+              total_retenciones: '0',
+              neto_a_pagar: documento?.neto_a_pagar,
+              monto_pagado: String(montoPagado),
+              asiento_id: 'asiento-original',
+            },
+          ];
+        }
+        throw new Error(`Query inesperada en el test: ${sql}`);
+      }),
+    } as unknown as Tx;
+    return { tx, actualizaciones };
+  }
+
+  const COMPRA_BASE = {
+    tercero_id: 'ter-1',
+    estado: 'EMITIDA',
+    numero_factura_proveedor: 'FP-001',
+    neto_a_pagar: '94000',
+    monto_pagado: '0',
+  };
+
+  it('paga parcialmente y deja monto_pagado corrido, con el concepto y la cuenta correctos', async () => {
+    const { tx, actualizaciones } = txPagarFalso(COMPRA_BASE);
+    const { fake: tesoreria, registrarPago } = tesoreriaFalso();
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      nucleoFalso({ cuentas: { '220505': { id: 'cta-proveedores' } } }).fake,
+      inventarioFalso().fake,
+      {} as never,
+      tesoreria,
+    );
+
+    const actualizado = await servicio.pagarEfectivo(ctx, 'compra-1', DTO);
+
+    expect(actualizado.monto_pagado).toBe('40000');
+    expect(actualizaciones).toHaveLength(1);
+    expect(registrarPago).toHaveBeenCalledWith(
+      ctx,
+      {
+        medio: 'CAJA',
+        cajaId: 'c-1',
+        fecha: DTO.fecha,
+        valor: 40000,
+        concepto: 'Pago de la compra FP-001',
+        cuentaProveedoresId: 'cta-proveedores',
+        terceroId: 'ter-1',
+        compraId: 'compra-1',
+      },
+      tx,
+    );
+  });
+
+  it('rechaza pagar una compra anulada', async () => {
+    const { tx } = txPagarFalso({ ...COMPRA_BASE, estado: 'ANULADA' });
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      nucleoFalso({ cuentas: { '220505': { id: 'cta-proveedores' } } }).fake,
+      inventarioFalso().fake,
+      {} as never,
+      tesoreriaFalso().fake,
+    );
+
+    await expect(servicio.pagarEfectivo(ctx, 'compra-1', DTO)).rejects.toThrow(
+      /no está vigente/,
+    );
+  });
+
+  it('rechaza pagar más de lo que falta, sin llamar a TesoreriaApi ni actualizar nada', async () => {
+    const { tx, actualizaciones } = txPagarFalso({
+      ...COMPRA_BASE,
+      monto_pagado: '80000',
+    });
+    const { fake: tesoreria, registrarPago } = tesoreriaFalso();
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      nucleoFalso({ cuentas: { '220505': { id: 'cta-proveedores' } } }).fake,
+      inventarioFalso().fake,
+      {} as never,
+      tesoreria,
+    );
+
+    await expect(
+      servicio.pagarEfectivo(ctx, 'compra-1', { ...DTO, valor: 20000 }),
+    ).rejects.toThrow(BadRequestException);
+    expect(registrarPago).not.toHaveBeenCalled();
+    expect(actualizaciones).toHaveLength(0);
+  });
+
+  it('rechaza sin llamar a TesoreriaApi si no existe la cuenta de proveedores', async () => {
+    const { tx } = txPagarFalso(COMPRA_BASE);
+    const { fake: tesoreria, registrarPago } = tesoreriaFalso();
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      nucleoFalso({ cuentas: {} }).fake,
+      inventarioFalso().fake,
+      {} as never,
+      tesoreria,
+    );
+
+    await expect(servicio.pagarEfectivo(ctx, 'compra-1', DTO)).rejects.toThrow(
+      /cuenta de proveedores/,
+    );
+    expect(registrarPago).not.toHaveBeenCalled();
+  });
+
+  it('lanza NotFoundException si la compra no existe', async () => {
+    const { tx } = txPagarFalso(undefined);
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      nucleoFalso({ cuentas: { '220505': { id: 'cta-proveedores' } } }).fake,
+      inventarioFalso().fake,
+      {} as never,
+      tesoreriaFalso().fake,
+    );
+
+    await expect(
+      servicio.pagarEfectivo(ctx, 'inexistente', DTO),
     ).rejects.toThrow(NotFoundException);
   });
 });

@@ -14,13 +14,16 @@ import type { LineaAsientoDto } from '../../contabilidad/dto/asiento.dto';
 import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import { InventarioApi } from '../../inventario/inventario.api';
 import { NucleoApi } from '../../nucleo/nucleo.api';
+import { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import type {
   CrearCompraDto,
   ListarComprasDto,
+  PagarEfectivoDto,
   RetencionCompraDto,
 } from '../dto/compra.dto';
 import {
   calcularLineasCompra,
+  calcularPago,
   netoAPagar,
   totalRetenciones,
 } from './compra.reglas';
@@ -37,6 +40,8 @@ export interface CompraDocumentoResumen {
   total: string;
   total_retenciones: string;
   neto_a_pagar: string;
+  /** Cuánto se le ha pagado al proveedor. */
+  monto_pagado: string;
   asiento_id: string;
 }
 
@@ -69,7 +74,8 @@ export interface CompraDocumentoDetalle extends CompraDocumentoResumen {
 }
 
 const CAMPOS_DOCUMENTO = `id, tercero_id, fecha, numero_factura_proveedor, estado,
-                           subtotal, total_iva, total, total_retenciones, neto_a_pagar, asiento_id`;
+                           subtotal, total_iva, total, total_retenciones, neto_a_pagar,
+                           monto_pagado, asiento_id`;
 
 const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cantidad,
                        costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable`;
@@ -117,6 +123,7 @@ export class CompraService {
     private readonly nucleo: NucleoApi,
     private readonly inventario: InventarioApi,
     private readonly contabilidad: ContabilidadApi,
+    private readonly tesoreria: TesoreriaApi,
   ) {}
 
   async crear(
@@ -512,6 +519,93 @@ export class CompraService {
           WHERE id = $1`,
         [id, motivo, ctx.usuarioId],
       );
+    });
+  }
+
+  /**
+   * Paga una compra en efectivo, total o parcialmente. El pago
+   * (`TesoreriaApi.registrarPago`) y la actualización de `monto_pagado`
+   * se confirman en la MISMA transacción — mismo motivo que
+   * `VentaDocumentoService.cobrarEfectivo`.
+   *
+   * El `FOR UPDATE` sobre la compra es el candado: dos pagos simultáneos
+   * de la misma compra no pueden leer el mismo `monto_pagado` y pisarse.
+   */
+  async pagarEfectivo(
+    ctx: CtxEmpresa,
+    id: string,
+    dto: PagarEfectivoDto,
+  ): Promise<CompraDocumentoResumen> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const documento = fila<{
+        tercero_id: string;
+        estado: string;
+        numero_factura_proveedor: string;
+        neto_a_pagar: string;
+        monto_pagado: string;
+      }>(
+        await t.query(
+          `SELECT tercero_id, estado, numero_factura_proveedor, neto_a_pagar, monto_pagado
+             FROM compra_documento
+            WHERE id = $1
+            FOR UPDATE`,
+          [id],
+        ),
+      );
+      if (documento === undefined) {
+        throw new NotFoundException('Compra no encontrada');
+      }
+      if (documento.estado !== 'EMITIDA') {
+        throw new BadRequestException('Esta compra no está vigente.');
+      }
+
+      const resultado = calcularPago(
+        Number(documento.neto_a_pagar),
+        Number(documento.monto_pagado),
+        dto.valor,
+      );
+      if (!resultado.ok) {
+        throw new BadRequestException(resultado.motivo);
+      }
+
+      const cuentaProveedores = await this.nucleo.cuenta(
+        ctx,
+        CODIGO_CUENTA_PROVEEDORES,
+        t,
+      );
+      if (cuentaProveedores === null) {
+        throw new BadRequestException(
+          `No existe o está inactiva la cuenta de proveedores (${CODIGO_CUENTA_PROVEEDORES}). Actívala en el plan de cuentas.`,
+        );
+      }
+
+      await this.tesoreria.registrarPago(
+        ctx,
+        {
+          medio: 'CAJA',
+          cajaId: dto.cajaId,
+          fecha: dto.fecha,
+          valor: dto.valor,
+          concepto: `Pago de la compra ${documento.numero_factura_proveedor}`,
+          cuentaProveedoresId: cuentaProveedores.id,
+          terceroId: documento.tercero_id,
+          compraId: id,
+        },
+        t,
+      );
+
+      const actualizado = fila<CompraDocumentoResumen>(
+        await t.query(
+          `UPDATE compra_documento SET monto_pagado = $2
+            WHERE id = $1
+          RETURNING ${CAMPOS_DOCUMENTO}`,
+          [id, resultado.montoPagado],
+        ),
+      );
+      if (actualizado === undefined) {
+        throw new BadRequestException('No se pudo registrar el pago.');
+      }
+      return actualizado;
     });
   }
 

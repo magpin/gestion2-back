@@ -96,3 +96,20 @@ export class AnularCompraDto {
   @Length(3, 300)
   motivo!: string;
 }
+
+/**
+ * Paga una compra en efectivo, total o parcialmente. `cajaId` es la caja
+ * que entrega la plata — el concepto del movimiento lo arma el servicio
+ * con el número de factura del proveedor, no se pide acá.
+ */
+export class PagarEfectivoDto {
+  @IsUUID()
+  cajaId!: string;
+
+  @IsISO8601({ strict: true })
+  fecha!: string;
+
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  valor!: number;
+}

@@ -272,3 +272,58 @@ describe('CajaMovimientoService.registrarEgreso', () => {
     expect(insertadas).toHaveLength(0);
   });
 });
+
+describe('CajaMovimientoService.registrarMovimientoDocumento', () => {
+  const COBRO = {
+    tipo: 'INGRESO' as const,
+    fecha: '2026-09-12',
+    valor: 50_000,
+    concepto: 'Cobro de factura FV-001',
+    contraCuentaId: 'cta-clientes',
+    documentoTipo: 'FACTURA_VENTA' as const,
+    documentoId: 'factura-1',
+    terceroId: 'ter-1',
+  };
+
+  it('un cobro deja origen_tipo/origen_id/tercero_id con el documento, no NULL', async () => {
+    const { tx, insertadas } = txFalso({ saldo_valor: '50000' });
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+
+    const movimiento = await servicioCon(
+      tx,
+      contabilidad,
+    ).registrarMovimientoDocumento(ctx, 'c-1', COBRO);
+
+    expect(movimiento.tipo).toBe('INGRESO');
+    expect(movimiento.origen_tipo).toBe('FACTURA_VENTA');
+    expect(movimiento.origen_id).toBe('factura-1');
+    expect(movimiento.tercero_id).toBe('ter-1');
+    expect(insertadas).toHaveLength(1);
+
+    const [, , origen] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      unknown,
+      { origenTipo: string; origenId: string },
+    ];
+    // El asiento sigue enlazado por MOVIMIENTO_CAJA + el id del movimiento,
+    // no por el documento — esa es otra columna (origen_tipo del movimiento).
+    expect(origen.origenTipo).toBe('MOVIMIENTO_CAJA');
+  });
+
+  it('un pago (EGRESO) rechaza en negativo, igual que un egreso manual', async () => {
+    const { tx, insertadas } = txFalso({ saldo_valor: '10000' });
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+
+    await expect(
+      servicioCon(tx, contabilidad).registrarMovimientoDocumento(ctx, 'c-1', {
+        ...COBRO,
+        tipo: 'EGRESO',
+        documentoTipo: 'COMPRA',
+        contraCuentaId: 'cta-proveedores',
+        valor: 50_000,
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(asentar).not.toHaveBeenCalled();
+    expect(insertadas).toHaveLength(0);
+  });
+});

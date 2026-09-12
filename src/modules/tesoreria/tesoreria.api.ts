@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../common/ctx';
 import type { Tx } from '../../common/db/tx.service';
+import { BancoMovimientoService } from './servicios/banco-movimiento.service';
 import { CajaMovimientoService } from './servicios/caja-movimiento.service';
 
 export interface ResultadoTesoreria {
@@ -10,60 +11,75 @@ export interface ResultadoTesoreria {
 }
 
 /**
- * Cobra una factura de venta. `cajaId` es la caja que recibe la plata;
- * `cuentaClientesId` es la cuenta de Clientes que se acredita (la conoce
- * quien vende, es la misma que usó al asentar la factura).
+ * Por dónde entra o sale la plata — `cajaId`/`cuentaBancariaId` son
+ * mutuamente excluyentes, discriminados por `medio`. Compartido entre
+ * `DatosCobro`/`DatosPago`: lo único que cada uno agrega es la cuenta
+ * contraria y el documento.
  */
-export interface DatosCobro {
-  medio: 'CAJA';
-  cajaId: string;
-  fecha: string;
-  valor: number;
-  concepto: string;
+type Medio =
+  | {
+      medio: 'CAJA';
+      cajaId: string;
+      fecha: string;
+      valor: number;
+      concepto: string;
+      terceroId: string;
+    }
+  | {
+      medio: 'BANCO';
+      cuentaBancariaId: string;
+      fecha: string;
+      valor: number;
+      concepto: string;
+      terceroId: string;
+    };
+
+/**
+ * Cobra una factura de venta. `cuentaClientesId` es la cuenta de
+ * Clientes que se acredita (la conoce quien vende, es la misma que usó
+ * al asentar la factura).
+ */
+export type DatosCobro = Medio & {
   cuentaClientesId: string;
-  terceroId: string;
   facturaVentaId: string;
-}
+};
 
 /**
  * Paga una compra. `cuentaProveedoresId` es la cuenta de Proveedores que
  * se debita (la conoce quien compra, es la misma que usó al asentar la
  * compra).
  */
-export interface DatosPago {
-  medio: 'CAJA';
-  cajaId: string;
-  fecha: string;
-  valor: number;
-  concepto: string;
+export type DatosPago = Medio & {
   cuentaProveedoresId: string;
-  terceroId: string;
   compraId: string;
-}
+};
 
 /**
  * La única clase que `tesoreria` expone a otros módulos.
  *
  * Todo lo demás —servicios, controladores, DTOs— es interno. Ventas y Compras
- * llaman acá para cobrar/pagar en efectivo, no a `CajaMovimientoService`
- * directamente — esa regla es lo que permite cambiar cómo se guarda el
- * movimiento sin que se entere nadie más, mismo patrón que
- * `ContabilidadApi`/`InventarioApi`.
+ * llaman acá para cobrar/pagar, no a `CajaMovimientoService`/
+ * `BancoMovimientoService` directamente — esa regla es lo que permite
+ * cambiar cómo se guarda el movimiento sin que se entere nadie más,
+ * mismo patrón que `ContabilidadApi`/`InventarioApi`.
  *
- * `medio: 'CAJA'` es el único que existe por ahora: Bancos agrega `'BANCO'`
- * en la Fase 2, y esta fachada es la que va a distinguir uno de otro
- * cuando llegue. El primer consumidor real es `FacturaService.cobrarEfectivo`/
- * `CompraService.pagarEfectivo` (paso 12).
+ * `medio: 'CAJA' | 'BANCO'` — el primer consumidor real es
+ * `VentaDocumentoService.cobrarEfectivo`/`CompraService.pagarEfectivo`
+ * (paso 12), hoy solo con `'CAJA'`; conectar `'BANCO'` desde ahí es el
+ * paso 20.
  */
 @Injectable()
 export class TesoreriaApi {
-  constructor(private readonly cajaMovimientos: CajaMovimientoService) {}
+  constructor(
+    private readonly cajaMovimientos: CajaMovimientoService,
+    private readonly bancoMovimientos: BancoMovimientoService,
+  ) {}
 
   /**
-   * Cobra una factura de venta en efectivo: débito a la caja, crédito a
-   * `cuentaClientesId`. Rechaza si la caja no existe o la empresa no tiene
-   * el comprobante `CI` sembrado — nunca deja la factura "cobrada a
-   * medias".
+   * Cobra una factura de venta: débito al medio elegido, crédito a
+   * `cuentaClientesId`. Rechaza si la caja/cuenta no existe o la empresa
+   * no tiene el comprobante `CI` sembrado — nunca deja la factura
+   * "cobrada a medias".
    *
    * `t` es opcional pero quien cobra una factura real SIEMPRE debería
    * pasar la transacción que ya tiene abierta: el cobro y la actualización
@@ -75,58 +91,98 @@ export class TesoreriaApi {
     datos: DatosCobro,
     t?: Tx,
   ): Promise<ResultadoTesoreria> {
-    const movimiento = await this.cajaMovimientos.registrarMovimientoDocumento(
+    const movimiento = await this.moverMedio(
       ctx,
-      datos.cajaId,
-      {
-        tipo: 'INGRESO',
-        fecha: datos.fecha,
-        valor: datos.valor,
-        concepto: datos.concepto,
-        contraCuentaId: datos.cuentaClientesId,
-        documentoTipo: 'FACTURA_VENTA',
-        documentoId: datos.facturaVentaId,
-        terceroId: datos.terceroId,
-      },
+      datos,
+      'ENTRADA',
+      { documentoTipo: 'FACTURA_VENTA', documentoId: datos.facturaVentaId },
+      datos.cuentaClientesId,
       t,
     );
     return this.exigirAsiento(movimiento);
   }
 
   /**
-   * Paga una compra en efectivo: débito a `cuentaProveedoresId`, crédito a
-   * la caja. Rechaza en negativo (no hay con qué pagar) y si la empresa no
-   * tiene el comprobante `CE` sembrado. Mismo motivo que `registrarCobro`
-   * para el `t` opcional.
+   * Paga una compra: débito a `cuentaProveedoresId`, crédito al medio
+   * elegido. Por caja rechaza en negativo (no hay con qué pagar); por
+   * banco puede dejar sobregiro, mismo criterio que
+   * `BancoMovimientoService`. Rechaza si la empresa no tiene el
+   * comprobante `CE` sembrado. Mismo motivo que `registrarCobro` para el
+   * `t` opcional.
    */
   async registrarPago(
     ctx: CtxEmpresa,
     datos: DatosPago,
     t?: Tx,
   ): Promise<ResultadoTesoreria> {
-    const movimiento = await this.cajaMovimientos.registrarMovimientoDocumento(
+    const movimiento = await this.moverMedio(
       ctx,
-      datos.cajaId,
-      {
-        tipo: 'EGRESO',
-        fecha: datos.fecha,
-        valor: datos.valor,
-        concepto: datos.concepto,
-        contraCuentaId: datos.cuentaProveedoresId,
-        documentoTipo: 'COMPRA',
-        documentoId: datos.compraId,
-        terceroId: datos.terceroId,
-      },
+      datos,
+      'SALIDA',
+      { documentoTipo: 'COMPRA', documentoId: datos.compraId },
+      datos.cuentaProveedoresId,
       t,
     );
     return this.exigirAsiento(movimiento);
   }
 
   /**
-   * `asiento_id` es `null` en el tipo porque `MovimientoCajaResumen` lo
-   * comparte con `SALDO_INICIAL` — un cobro o un pago nunca es
-   * `SALDO_INICIAL`, así que siempre trae uno. Si esto disparara, sería un
-   * bug de `CajaMovimientoService`, no una entrada inválida de quien llama.
+   * Despacha a `CajaMovimientoService` o `BancoMovimientoService` según
+   * `medio` — el resto (documento, tercero, contracuenta) es idéntico
+   * para los dos, solo cambia el `tipo` que cada servicio entiende
+   * (`INGRESO`/`EGRESO` en caja, `TRANSFERENCIA_ENTRANTE`/
+   * `TRANSFERENCIA_SALIENTE` en banco).
+   */
+  private async moverMedio(
+    ctx: CtxEmpresa,
+    medio: Medio,
+    direccion: 'ENTRADA' | 'SALIDA',
+    documento: {
+      documentoTipo: 'FACTURA_VENTA' | 'COMPRA';
+      documentoId: string;
+    },
+    contraCuentaId: string,
+    t: Tx | undefined,
+  ): Promise<{ id: string; asiento_id: string | null }> {
+    const base = {
+      fecha: medio.fecha,
+      valor: medio.valor,
+      concepto: medio.concepto,
+      contraCuentaId,
+      documentoTipo: documento.documentoTipo,
+      documentoId: documento.documentoId,
+      terceroId: medio.terceroId,
+    };
+
+    if (medio.medio === 'CAJA') {
+      return this.cajaMovimientos.registrarMovimientoDocumento(
+        ctx,
+        medio.cajaId,
+        { ...base, tipo: direccion === 'ENTRADA' ? 'INGRESO' : 'EGRESO' },
+        t,
+      );
+    }
+
+    return this.bancoMovimientos.registrarMovimientoDocumento(
+      ctx,
+      medio.cuentaBancariaId,
+      {
+        ...base,
+        tipo:
+          direccion === 'ENTRADA'
+            ? 'TRANSFERENCIA_ENTRANTE'
+            : 'TRANSFERENCIA_SALIENTE',
+      },
+      t,
+    );
+  }
+
+  /**
+   * `asiento_id` es `null` en el tipo porque `MovimientoCajaResumen`/
+   * `MovimientoBancoResumen` lo comparten con `SALDO_INICIAL` — un cobro
+   * o un pago nunca es `SALDO_INICIAL`, así que siempre trae uno. Si esto
+   * disparara, sería un bug de `CajaMovimientoService`/
+   * `BancoMovimientoService`, no una entrada inválida de quien llama.
    */
   private exigirAsiento(movimiento: {
     id: string;

@@ -120,66 +120,80 @@ export class VentaDocumentoService {
     private readonly tesoreria: TesoreriaApi,
   ) {}
 
+  /**
+   * El cliente y las líneas de una cotización: lo que `crearCotizacion` y
+   * `editarCotizacion` hacen igual. Devuelve las líneas ya calculadas —con su
+   * precio e IVA resueltos— y los totales del documento.
+   */
+  private async armarCotizacion(
+    ctx: CtxEmpresa,
+    dto: CrearCotizacionDto,
+    t: Tx,
+  ): Promise<ReturnType<typeof calcularLineas>> {
+    const tercero = await this.nucleo.buscarTercero(ctx, dto.terceroId, t);
+    if (tercero === null || !tercero.activo) {
+      throw new NotFoundException('Tercero no encontrado o inactivo.');
+    }
+    if (!tercero.esCliente) {
+      throw new BadRequestException(
+        'Este tercero no está marcado como cliente.',
+      );
+    }
+
+    // Se decide UNA vez, para todas las líneas: si la empresa no es
+    // responsable de IVA, ninguna línea liquida IVA, sin importar la
+    // tarifa que tenga cada producto en su ficha.
+    const responsableIva = await this.nucleo.esResponsableDeIva(
+      ctx,
+      dto.fecha,
+      t,
+    );
+
+    const entradas: LineaVentaEntrada[] = [];
+    for (const l of dto.lineas) {
+      const producto = await this.inventario.producto(ctx, l.productoId, t);
+      if (producto === null || !producto.activo) {
+        throw new BadRequestException(
+          `El producto ${l.productoId} no existe o está inactivo.`,
+        );
+      }
+
+      // El precio de lista manda cuando existe; el digitado en la línea es
+      // la salida para un producto que todavía no tiene precio —los 1.638
+      // importados llegaron así—. Una cotización no es un dato fiscal: que
+      // quede trabada por un dato que falta en la ficha no le sirve a nadie.
+      const precioVigente = await this.inventario.precioVigente(
+        ctx,
+        l.productoId,
+        t,
+      );
+      const precio =
+        precioVigente !== null && precioVigente > 0
+          ? precioVigente
+          : l.precioUnitario;
+      if (precio === undefined) {
+        throw new BadRequestException(
+          `El producto ${producto.codigo} no tiene precio de venta configurado: fijale uno en su ficha, o digitá el precio en la línea.`,
+        );
+      }
+
+      entradas.push({
+        cantidad: l.cantidad,
+        precioUnitario: precio,
+        ivaTarifa: responsableIva ? Number(producto.iva_tarifa) : 0,
+      });
+    }
+
+    return calcularLineas(entradas);
+  }
+
   async crearCotizacion(
     ctx: CtxEmpresa,
     dto: CrearCotizacionDto,
   ): Promise<VentaDocumentoDetalle> {
     return this.tx.enContexto(ctx, async (t) => {
-      const tercero = await this.nucleo.buscarTercero(ctx, dto.terceroId, t);
-      if (tercero === null || !tercero.activo) {
-        throw new NotFoundException('Tercero no encontrado o inactivo.');
-      }
-      if (!tercero.esCliente) {
-        throw new BadRequestException(
-          'Este tercero no está marcado como cliente.',
-        );
-      }
+      const { lineas, totales } = await this.armarCotizacion(ctx, dto, t);
 
-      // Se decide UNA vez, para todas las líneas: si la empresa no es
-      // responsable de IVA, ninguna línea liquida IVA, sin importar la
-      // tarifa que tenga cada producto en su ficha.
-      const responsableIva = await this.nucleo.esResponsableDeIva(
-        ctx,
-        dto.fecha,
-        t,
-      );
-
-      const entradas: LineaVentaEntrada[] = [];
-      for (const l of dto.lineas) {
-        const producto = await this.inventario.producto(ctx, l.productoId, t);
-        if (producto === null || !producto.activo) {
-          throw new BadRequestException(
-            `El producto ${l.productoId} no existe o está inactivo.`,
-          );
-        }
-
-        // El precio de lista manda cuando existe; el digitado en la línea es
-        // la salida para un producto que todavía no tiene precio —los 1.638
-        // importados llegaron así—. Una cotización no es un dato fiscal: que
-        // quede trabada por un dato que falta en la ficha no le sirve a nadie.
-        const precioVigente = await this.inventario.precioVigente(
-          ctx,
-          l.productoId,
-          t,
-        );
-        const precio =
-          precioVigente !== null && precioVigente > 0
-            ? precioVigente
-            : l.precioUnitario;
-        if (precio === undefined) {
-          throw new BadRequestException(
-            `El producto ${producto.codigo} no tiene precio de venta configurado: fijale uno en su ficha, o digitá el precio en la línea.`,
-          );
-        }
-
-        entradas.push({
-          cantidad: l.cantidad,
-          precioUnitario: precio,
-          ivaTarifa: responsableIva ? Number(producto.iva_tarifa) : 0,
-        });
-      }
-
-      const { lineas, totales } = calcularLineas(entradas);
       const consecutivo = await this.siguienteConsecutivoCotizacion(
         ctx.empresaId,
         t,
@@ -244,6 +258,156 @@ export class VentaDocumentoService {
 
       return { ...documento, lineas: lineasInsertadas };
     });
+  }
+
+  /**
+   * Corrige una cotización vigente: cliente, fecha y líneas.
+   *
+   * Una cotización es una oferta y una oferta se negocia — el cliente pide
+   * cambiar una cantidad y hasta ahora había que hacer otra, con otro número,
+   * dejando la primera viva para siempre. No es un documento fiscal: no numeró
+   * contra la resolución DIAN, no asentó y no movió kardex, así que corregirla
+   * no deja nada inconsistente detrás.
+   *
+   * El consecutivo NO se reasigna: sigue siendo la misma cotización, con el
+   * número que el cliente ya tiene en la mano.
+   *
+   * Las líneas se reemplazan, no se editan: el `UPDATE` sobre
+   * `venta_documento_linea` está prohibido por trigger (`0038`), y el `DELETE`
+   * solo se permite en una COTIZACION EMITIDA. El `FOR UPDATE` de la cabecera
+   * es el candado: si una conversión a factura llega a la vez, una de las dos
+   * espera, y la que pierde ve el estado ya cambiado y se rechaza.
+   */
+  async editarCotizacion(
+    ctx: CtxEmpresa,
+    id: string,
+    dto: CrearCotizacionDto,
+  ): Promise<VentaDocumentoDetalle> {
+    return this.tx.enContexto(ctx, async (t) => {
+      await this.exigirCotizacionVigente(id, t, 'corregir');
+
+      const { lineas, totales } = await this.armarCotizacion(ctx, dto, t);
+
+      const documento = fila<VentaDocumentoResumen>(
+        await t.query(
+          `UPDATE venta_documento
+              SET tercero_id = $2, fecha = $3, subtotal = $4, total_iva = $5, total = $6
+            WHERE id = $1
+            RETURNING ${CAMPOS_DOCUMENTO}`,
+          [
+            id,
+            dto.terceroId,
+            dto.fecha,
+            totales.subtotal,
+            totales.totalIva,
+            totales.total,
+          ],
+        ),
+      );
+      if (documento === undefined) {
+        throw new BadRequestException('No se pudo corregir la cotización.');
+      }
+
+      await t.query(
+        `DELETE FROM venta_documento_linea WHERE venta_documento_id = $1`,
+        [id],
+      );
+
+      const lineasInsertadas: VentaDocumentoLineaResumen[] = [];
+      for (let i = 0; i < lineas.length; i++) {
+        const l = lineas[i];
+        const insertada = fila<VentaDocumentoLineaResumen>(
+          await t.query(
+            `INSERT INTO venta_documento_linea
+               (empresa_id, venta_documento_id, orden, producto_id, cantidad,
+                precio_unitario, iva_tarifa, subtotal, iva_valor, total)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+             RETURNING ${CAMPOS_LINEA}`,
+            [
+              ctx.empresaId,
+              id,
+              i + 1,
+              dto.lineas[i].productoId,
+              l.cantidad,
+              l.precioUnitario,
+              l.ivaTarifa,
+              l.subtotal,
+              l.ivaValor,
+              l.total,
+            ],
+          ),
+        );
+        if (insertada === undefined) {
+          throw new BadRequestException(
+            'No se pudo registrar una línea de la cotización.',
+          );
+        }
+        lineasInsertadas.push(insertada);
+      }
+
+      return { ...documento, lineas: lineasInsertadas };
+    });
+  }
+
+  /**
+   * Descarta una cotización: el cliente no la tomó, o se rehízo de cero.
+   *
+   * Nada se borra en este sistema, así que descartar es anular con motivo —el
+   * número gastado queda con su explicación—. Es un método aparte de `anular`
+   * a propósito: `anular` existe para documentos fiscales y lo primero que
+   * hace es anular su asiento, y una cotización no tiene ninguno.
+   */
+  async descartarCotizacion(
+    ctx: CtxEmpresa,
+    id: string,
+    motivo: string,
+  ): Promise<void> {
+    await this.tx.enContexto(ctx, async (t) => {
+      await this.exigirCotizacionVigente(id, t, 'descartar');
+      await t.query(
+        `UPDATE venta_documento
+            SET estado = 'ANULADA', motivo_anulacion = $2,
+                anulado_en = now(), anulado_por = $3
+          WHERE id = $1`,
+        [id, motivo, ctx.usuarioId],
+      );
+    });
+  }
+
+  /**
+   * Bloquea la cotización y exige que todavía se pueda tocar. `FOR UPDATE`
+   * porque el estado es justo lo que otra operación simultánea podría estar
+   * cambiando —una conversión a factura—.
+   */
+  private async exigirCotizacionVigente(
+    id: string,
+    t: Tx,
+    accion: 'corregir' | 'descartar',
+  ): Promise<void> {
+    const documento = fila<{ tipo: string; estado: string }>(
+      await t.query(
+        `SELECT tipo, estado FROM venta_documento WHERE id = $1 FOR UPDATE`,
+        [id],
+      ),
+    );
+    if (documento === undefined) {
+      throw new NotFoundException('Cotización no encontrada.');
+    }
+    if (documento.tipo !== 'COTIZACION') {
+      throw new BadRequestException(
+        `Esto no es una cotización. Una factura o una nota crédito no se ${accion}n.`,
+      );
+    }
+    if (documento.estado === 'CONVERTIDA') {
+      throw new BadRequestException(
+        `Esta cotización ya se convirtió en factura y no se puede ${accion}. Lo que corrige una factura es una nota crédito.`,
+      );
+    }
+    if (documento.estado !== 'EMITIDA') {
+      throw new BadRequestException(
+        `Esta cotización ya está descartada y no se puede ${accion}.`,
+      );
+    }
   }
 
   /**

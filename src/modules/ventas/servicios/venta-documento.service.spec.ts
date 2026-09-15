@@ -63,15 +63,50 @@ function inventarioFalso(
 }
 
 /** Transacción falsa: responde según qué tabla toca la consulta. */
-function txFalso() {
+function txFalso(
+  cotizacion: { tipo: string; estado: string } | null = {
+    tipo: 'COTIZACION',
+    estado: 'EMITIDA',
+  },
+) {
   const lineasInsertadas: unknown[][] = [];
   const tx = {
     query: jest.fn((sql: string, params?: unknown[]) => {
       if (sql.includes('INSERT INTO venta_cotizacion_consecutivo')) {
         return [];
       }
+      if (sql.includes('SELECT tipo, estado FROM venta_documento')) {
+        return cotizacion === null ? [] : [cotizacion];
+      }
+      if (sql.includes("SET estado = 'ANULADA', motivo_anulacion")) {
+        return [];
+      }
+      if (sql.includes('DELETE FROM venta_documento_linea')) {
+        return [];
+      }
       if (sql.includes('UPDATE venta_cotizacion_consecutivo')) {
         return [{ consecutivo_actual: 7 }];
+      }
+      if (sql.includes('SET tercero_id = $2')) {
+        const [, tercero_id, fecha, subtotal, totalIva, total] =
+          params as unknown[];
+        return [
+          {
+            id: 'cot-1',
+            tipo: 'COTIZACION',
+            tercero_id,
+            fecha,
+            estado: 'EMITIDA',
+            prefijo: 'COT',
+            consecutivo: 7,
+            resolucion_id: null,
+            documento_origen_id: null,
+            subtotal: String(subtotal),
+            total_iva: String(totalIva),
+            total: String(total),
+            asiento_id: null,
+          },
+        ];
       }
       if (sql.includes('INSERT INTO venta_documento\n')) {
         const [
@@ -326,6 +361,122 @@ describe('VentaDocumentoService.crearCotizacion', () => {
 
     expect(documento.lineas).toHaveLength(1);
     expect(documento.lineas[0].cantidad).toBe('9999');
+  });
+});
+
+describe('VentaDocumentoService.editarCotizacion', () => {
+  function servicioCon(tx: Tx) {
+    return new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      inventarioFalso(),
+      {} as never,
+      {} as never,
+    );
+  }
+
+  it('reemplaza las líneas y recalcula los totales, sin tocar el consecutivo', async () => {
+    const { tx, lineasInsertadas } = txFalso();
+    const servicio = servicioCon(tx);
+
+    const documento = await servicio.editarCotizacion(ctx, 'cot-1', {
+      terceroId: 'ter-1',
+      fecha: '2026-09-07',
+      lineas: [{ productoId: 'p-1', cantidad: 3 }],
+    });
+
+    // 3 * 289900 = 869700, IVA 19% = 165243.
+    expect(documento.subtotal).toBe('869700');
+    expect(documento.total_iva).toBe('165243');
+    expect(documento.consecutivo).toBe(7);
+    expect(lineasInsertadas).toHaveLength(1);
+
+    const consultas = (tx.query as jest.Mock).mock.calls.map(
+      ([sql]: [string]) => sql,
+    );
+    // Las viejas se borran antes de insertar las nuevas: una línea no se edita.
+    expect(
+      consultas.some((s) => s.includes('DELETE FROM venta_documento_linea')),
+    ).toBe(true);
+    expect(consultas.some((s) => s.includes('FOR UPDATE'))).toBe(true);
+  });
+
+  it('rechaza corregir una cotización ya convertida en factura', async () => {
+    const { tx } = txFalso({ tipo: 'COTIZACION', estado: 'CONVERTIDA' });
+    const servicio = servicioCon(tx);
+
+    await expect(
+      servicio.editarCotizacion(ctx, 'cot-1', {
+        terceroId: 'ter-1',
+        fecha: '2026-09-07',
+        lineas: [{ productoId: 'p-1', cantidad: 1 }],
+      }),
+    ).rejects.toThrow(/ya se convirtió en factura/);
+  });
+
+  it('rechaza corregir algo que no es una cotización', async () => {
+    const { tx } = txFalso({ tipo: 'FACTURA', estado: 'EMITIDA' });
+    const servicio = servicioCon(tx);
+
+    await expect(
+      servicio.editarCotizacion(ctx, 'fv-1', {
+        terceroId: 'ter-1',
+        fecha: '2026-09-07',
+        lineas: [{ productoId: 'p-1', cantidad: 1 }],
+      }),
+    ).rejects.toThrow(/no es una cotización/);
+  });
+
+  it('lanza NotFoundException si no existe', async () => {
+    const { tx } = txFalso(null);
+    const servicio = servicioCon(tx);
+
+    await expect(
+      servicio.editarCotizacion(ctx, 'no-existe', {
+        terceroId: 'ter-1',
+        fecha: '2026-09-07',
+        lineas: [{ productoId: 'p-1', cantidad: 1 }],
+      }),
+    ).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('VentaDocumentoService.descartarCotizacion', () => {
+  it('la marca ANULADA con su motivo, sin borrar nada', async () => {
+    const { tx } = txFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      inventarioFalso(),
+      {} as never,
+      {} as never,
+    );
+
+    await servicio.descartarCotizacion(ctx, 'cot-1', 'El cliente no la tomó');
+
+    const anulacion = (tx.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes("SET estado = 'ANULADA'"),
+    ) as [string, unknown[]];
+    expect(anulacion[1]).toEqual([
+      'cot-1',
+      'El cliente no la tomó',
+      ctx.usuarioId,
+    ]);
+  });
+
+  it('rechaza descartar una que ya está descartada', async () => {
+    const { tx } = txFalso({ tipo: 'COTIZACION', estado: 'ANULADA' });
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      inventarioFalso(),
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      servicio.descartarCotizacion(ctx, 'cot-1', 'Otra vez'),
+    ).rejects.toThrow(/ya está descartada/);
   });
 });
 

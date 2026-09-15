@@ -19,3 +19,16 @@ export function hoyEnColombia(): string {
 export function esFechaFutura(fecha: string): boolean {
   return fecha > hoyEnColombia();
 }
+
+/**
+ * Un documento fiscal de venta se emite el día que se emite: ni antes ni
+ * después.
+ *
+ * Atrasarlo es meter un movimiento en un día que ya se cerró con la caja
+ * cuadrada y el consecutivo corriendo; adelantarlo es facturar algo que
+ * todavía no pasó. La compra es otra cosa —la factura del proveedor llega con
+ * la fecha que él le puso, a veces días después— y conserva su propia regla.
+ */
+export function esDeHoy(fecha: string): boolean {
+  return fecha === hoyEnColombia();
+}

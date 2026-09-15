@@ -4,6 +4,17 @@ import type { CtxEmpresa } from '../../../common/ctx';
 import type { Tx, TxService } from '../../../common/db/tx.service';
 import { NotaCreditoService } from './nota-credito.service';
 import type { VentaDocumentoDetalle } from './venta-documento.service';
+import { hoyEnColombia } from '../../../common/fecha';
+
+/** Ver la nota de `factura.service.spec.ts`: la fecha de emisión es hoy. */
+const HOY = hoyEnColombia();
+
+/** `HOY` corrido en días, para las fechas que el servicio tiene que rechazar. */
+function otroDia(dias: number): string {
+  const d = new Date(`${HOY}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
 
 const ctx: CtxEmpresa = {
   tenantId: 't-1',
@@ -159,7 +170,7 @@ describe('NotaCreditoService.crear', () => {
 
     const nota = await servicio.crear(ctx, {
       documentoOrigenId: 'fv-1',
-      fecha: '2026-09-10',
+      fecha: HOY,
       motivo: 'Devolución por producto defectuoso',
     });
 
@@ -201,10 +212,31 @@ describe('NotaCreditoService.crear', () => {
     await expect(
       servicio.crear(ctx, {
         documentoOrigenId: 'fv-1',
-        fecha: '2026-09-10',
+        fecha: HOY,
         motivo: 'Cualquier motivo',
       }),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it.each([
+    ['ayer', -1],
+    ['mañana', 1],
+  ])('rechaza una nota crédito fechada %s', async (_cuando, dias) => {
+    const { tx } = txFalso();
+    const servicio = new NotaCreditoService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      contabilidadFalso().fake,
+      ventasFalso(facturaVigente),
+    );
+
+    await expect(
+      servicio.crear(ctx, {
+        documentoOrigenId: 'fv-1',
+        fecha: otroDia(dias),
+        motivo: 'Cualquier motivo',
+      }),
+    ).rejects.toThrow(/fecha de hoy/);
   });
 
   it('rechaza si el período está cerrado', async () => {
@@ -219,7 +251,7 @@ describe('NotaCreditoService.crear', () => {
     await expect(
       servicio.crear(ctx, {
         documentoOrigenId: 'fv-1',
-        fecha: '2026-01-05',
+        fecha: HOY,
         motivo: 'Cualquier motivo',
       }),
     ).rejects.toThrow(BadRequestException);
@@ -237,7 +269,7 @@ describe('NotaCreditoService.crear', () => {
 
     await servicio.crear(ctx, {
       documentoOrigenId: 'fv-1',
-      fecha: '2026-09-10',
+      fecha: HOY,
       motivo: 'Sin IVA',
     });
 

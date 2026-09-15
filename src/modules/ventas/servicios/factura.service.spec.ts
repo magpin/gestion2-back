@@ -4,6 +4,21 @@ import type { CtxEmpresa } from '../../../common/ctx';
 import type { Tx, TxService } from '../../../common/db/tx.service';
 import { FacturaService } from './factura.service';
 import type { VentaDocumentoDetalle } from './venta-documento.service';
+import { hoyEnColombia } from '../../../common/fecha';
+
+/**
+ * Un documento de venta se emite con la fecha de hoy y ninguna otra, así que
+ * las entradas de los tests la calculan en vez de escribirla: una fecha fija
+ * acá dejaría de pasar mañana.
+ */
+const HOY = hoyEnColombia();
+
+/** `HOY` corrido en días, para las fechas que el servicio tiene que rechazar. */
+function otroDia(dias: number): string {
+  const d = new Date(`${HOY}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
 
 const ctx: CtxEmpresa = {
   tenantId: 't-1',
@@ -254,7 +269,7 @@ describe('FacturaService.crear', () => {
 
     const factura = await servicio.crear(ctx, {
       terceroId: 'ter-1',
-      fecha: '2026-09-07',
+      fecha: HOY,
       lineas: [{ productoId: 'p-1', cantidad: 2 }],
     });
 
@@ -306,7 +321,7 @@ describe('FacturaService.crear', () => {
 
     const factura = await servicio.crear(ctx, {
       terceroId: 'ter-1',
-      fecha: '2026-09-07',
+      fecha: HOY,
       lineas: [{ productoId: 'p-1', cantidad: 1 }],
     });
 
@@ -330,12 +345,39 @@ describe('FacturaService.crear', () => {
     await expect(
       servicio.crear(ctx, {
         terceroId: 'ter-1',
-        fecha: '2026-01-05',
+        fecha: HOY,
         lineas: [{ productoId: 'p-1', cantidad: 1 }],
       }),
     ).rejects.toThrow(BadRequestException);
     expect(tomarConsecutivo).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['ayer', -1],
+    ['mañana', 1],
+  ])(
+    'rechaza una factura fechada %s, antes de gastar el consecutivo',
+    async (_cuando, dias) => {
+      const { tx } = txFalso();
+      const { fake: nucleo, tomarConsecutivo } = nucleoFalso();
+      const servicio = new FacturaService(
+        txServiceFalso(tx),
+        nucleo,
+        inventarioFalso(),
+        contabilidadFalso().fake,
+        {} as never,
+      );
+
+      await expect(
+        servicio.crear(ctx, {
+          terceroId: 'ter-1',
+          fecha: otroDia(dias),
+          lineas: [{ productoId: 'p-1', cantidad: 1 }],
+        }),
+      ).rejects.toThrow(/fecha de hoy/);
+      expect(tomarConsecutivo).not.toHaveBeenCalled();
+    },
+  );
 
   it('rechaza si el mismo producto aparece en dos líneas', async () => {
     const { tx } = txFalso();
@@ -350,7 +392,7 @@ describe('FacturaService.crear', () => {
     await expect(
       servicio.crear(ctx, {
         terceroId: 'ter-1',
-        fecha: '2026-09-07',
+        fecha: HOY,
         lineas: [
           { productoId: 'p-1', cantidad: 1 },
           { productoId: 'p-1', cantidad: 2 },
@@ -372,7 +414,7 @@ describe('FacturaService.crear', () => {
     await expect(
       servicio.crear(ctx, {
         terceroId: 'inexistente',
-        fecha: '2026-09-07',
+        fecha: HOY,
         lineas: [{ productoId: 'p-1', cantidad: 1 }],
       }),
     ).rejects.toThrow(NotFoundException);
@@ -393,7 +435,7 @@ describe('FacturaService.crear', () => {
     await expect(
       servicio.crear(ctx, {
         terceroId: 'ter-1',
-        fecha: '2026-09-07',
+        fecha: HOY,
         lineas: [{ productoId: 'p-1', cantidad: 1 }],
       }),
     ).rejects.toThrow(/cuenta de costo de venta/);
@@ -414,7 +456,7 @@ describe('FacturaService.crear', () => {
     await expect(
       servicio.crear(ctx, {
         terceroId: 'ter-1',
-        fecha: '2026-09-07',
+        fecha: HOY,
         lineas: [{ productoId: 'p-1', cantidad: 1 }],
       }),
     ).rejects.toThrow(/cuenta de ingreso/);
@@ -433,7 +475,7 @@ describe('FacturaService.crear', () => {
     await expect(
       servicio.crear(ctx, {
         terceroId: 'ter-1',
-        fecha: '2026-09-07',
+        fecha: HOY,
         lineas: [{ productoId: 'p-1', cantidad: 1 }],
       }),
     ).rejects.toThrow(/cuenta de cartera/);
@@ -451,11 +493,7 @@ describe('FacturaService.convertirCotizacion', () => {
       ventasFalso(),
     );
 
-    const factura = await servicio.convertirCotizacion(
-      ctx,
-      'cot-1',
-      '2026-09-07',
-    );
+    const factura = await servicio.convertirCotizacion(ctx, 'cot-1', HOY);
 
     expect(factura.documento_origen_id).toBe('cot-1');
     expect(
@@ -477,7 +515,7 @@ describe('FacturaService.convertirCotizacion', () => {
     );
 
     await expect(
-      servicio.convertirCotizacion(ctx, 'inexistente', '2026-09-07'),
+      servicio.convertirCotizacion(ctx, 'inexistente', HOY),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -492,7 +530,7 @@ describe('FacturaService.convertirCotizacion', () => {
     );
 
     await expect(
-      servicio.convertirCotizacion(ctx, 'cot-1', '2026-09-07'),
+      servicio.convertirCotizacion(ctx, 'cot-1', HOY),
     ).rejects.toThrow(/ya se convirtió/);
   });
 
@@ -507,7 +545,7 @@ describe('FacturaService.convertirCotizacion', () => {
     );
 
     await expect(
-      servicio.convertirCotizacion(ctx, 'cot-1', '2026-09-07'),
+      servicio.convertirCotizacion(ctx, 'cot-1', HOY),
     ).rejects.toThrow(/no está vigente/);
   });
 });

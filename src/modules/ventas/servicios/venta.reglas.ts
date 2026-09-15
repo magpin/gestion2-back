@@ -131,3 +131,44 @@ export function calcularCobro(
 
   return { ok: true, montoPagado: aPesos(nuevoMontoPagadoCentavos) };
 }
+
+/**
+ * Cuánto de una línea de factura se puede devolver todavía.
+ *
+ * Hasta el paso 8 la nota crédito era todo o nada: copiaba la factura entera
+ * y reversaba el 100%. Con notas parciales hay que llevar la cuenta —una
+ * factura puede recibir varias, y entre todas no pueden devolver más de lo
+ * que se vendió—. `yaDevuelto` es la suma de lo que las notas anteriores no
+ * anuladas ya sacaron de esa misma línea.
+ */
+export type ResultadoDevolucion =
+  { ok: true; pendienteLuego: number } | { ok: false; motivo: string };
+
+export function calcularDevolucionPorLinea(
+  cantidadFacturada: number,
+  yaDevuelto: number,
+  cantidadPedida: number,
+): ResultadoDevolucion {
+  const pendiente = cantidadFacturada - yaDevuelto;
+
+  if (cantidadPedida <= 0) {
+    return {
+      ok: false,
+      motivo: 'La cantidad a devolver tiene que ser mayor a cero.',
+    };
+  }
+  if (pendiente <= 0) {
+    return {
+      ok: false,
+      motivo: `De esa línea ya se devolvió todo (${cantidadFacturada}); no queda nada por devolver.`,
+    };
+  }
+  if (cantidadPedida > pendiente) {
+    return {
+      ok: false,
+      motivo: `De esa línea quedan ${pendiente} por devolver de las ${cantidadFacturada} facturadas; no se pueden devolver ${cantidadPedida}.`,
+    };
+  }
+
+  return { ok: true, pendienteLuego: pendiente - cantidadPedida };
+}

@@ -109,9 +109,15 @@ function ventasFalso(factura: VentaDocumentoDetalle) {
 }
 
 /** Transacción falsa: solo los dos `INSERT` de `venta_documento[_linea]`. */
-function txFalso() {
+function txFalso(
+  /** Lo que notas anteriores ya devolvieron de cada línea de la factura. */
+  yaDevuelto: Array<{ linea_origen_id: string; cantidad: string }> = [],
+) {
   const tx = {
     query: jest.fn((sql: string, params?: unknown[]) => {
+      if (sql.includes('sum(l.cantidad)')) {
+        return yaDevuelto;
+      }
       if (sql.includes('INSERT INTO venta_documento\n')) {
         const [id, , terceroId, fecha, prefijo, consecutivo, resolucionId] =
           params as unknown[];
@@ -198,6 +204,105 @@ describe('NotaCreditoService.crear', () => {
     const totalDebito = dtoAsiento.lineas.reduce((s, l) => s + l.debito, 0);
     const totalCredito = dtoAsiento.lineas.reduce((s, l) => s + l.credito, 0);
     expect(totalDebito).toBe(totalCredito);
+  });
+
+  it('parcial: devuelve una de las dos unidades y los totales son la mitad', async () => {
+    const { tx } = txFalso();
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+    const servicio = new NotaCreditoService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      contabilidad,
+      ventasFalso(facturaVigente),
+    );
+
+    await servicio.crear(ctx, {
+      documentoOrigenId: 'fv-1',
+      fecha: HOY,
+      motivo: 'Una de las dos volvió defectuosa',
+      lineas: [{ lineaOrigenId: 'linea-1', cantidad: 1 }],
+    });
+
+    const [, dtoAsiento] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      { lineas: Array<{ cuentaId: string; debito: number; credito: number }> },
+    ];
+    // 1 * 289900 = 289900, IVA 19% = 55081, total 344981.
+    expect(dtoAsiento.lineas).toEqual([
+      { cuentaId: 'cta-devoluciones', debito: 289900, credito: 0 },
+      { cuentaId: 'cta-iva', baseGravable: 289900, debito: 55081, credito: 0 },
+      {
+        cuentaId: 'cta-cartera',
+        terceroId: 'ter-1',
+        debito: 0,
+        credito: 344981,
+      },
+    ]);
+
+    // La línea queda enlazada a la que corrige: es lo que deja saber, la
+    // próxima vez, cuánto falta por devolver.
+    const insercion = (tx.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('INSERT INTO venta_documento_linea'),
+    ) as [string, unknown[]];
+    expect(insercion[1][10]).toBe('linea-1');
+  });
+
+  it('rechaza devolver más de lo que queda pendiente', async () => {
+    // De las 2 facturadas, una nota anterior ya devolvió 1.
+    const { tx } = txFalso([{ linea_origen_id: 'linea-1', cantidad: '1' }]);
+    const servicio = new NotaCreditoService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      contabilidadFalso().fake,
+      ventasFalso(facturaVigente),
+    );
+
+    await expect(
+      servicio.crear(ctx, {
+        documentoOrigenId: 'fv-1',
+        fecha: HOY,
+        motivo: 'Intento de devolver dos',
+        lineas: [{ lineaOrigenId: 'linea-1', cantidad: 2 }],
+      }),
+    ).rejects.toThrow(/quedan 1 por devolver de las 2 facturadas/);
+  });
+
+  it('rechaza una línea que no es de esta factura', async () => {
+    const { tx } = txFalso();
+    const servicio = new NotaCreditoService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      contabilidadFalso().fake,
+      ventasFalso(facturaVigente),
+    );
+
+    await expect(
+      servicio.crear(ctx, {
+        documentoOrigenId: 'fv-1',
+        fecha: HOY,
+        motivo: 'Línea de otra factura',
+        lineas: [{ lineaOrigenId: 'linea-de-otra', cantidad: 1 }],
+      }),
+    ).rejects.toThrow(/no es de esta factura/);
+  });
+
+  it('sin líneas, la segunda nota no duplica lo que la primera ya devolvió', async () => {
+    // La factura ya se devolvió completa: no queda nada.
+    const { tx } = txFalso([{ linea_origen_id: 'linea-1', cantidad: '2' }]);
+    const servicio = new NotaCreditoService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      contabilidadFalso().fake,
+      ventasFalso(facturaVigente),
+    );
+
+    await expect(
+      servicio.crear(ctx, {
+        documentoOrigenId: 'fv-1',
+        fecha: HOY,
+        motivo: 'Otra vez todo',
+      }),
+    ).rejects.toThrow(/ya se devolvió completa/);
   });
 
   it('rechaza si la factura origen no está vigente (ya anulada)', async () => {

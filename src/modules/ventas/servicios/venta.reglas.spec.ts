@@ -1,4 +1,9 @@
-import { calcularCobro, calcularLinea, calcularLineas } from './venta.reglas';
+import {
+  calcularCobro,
+  calcularDevolucionPorLinea,
+  calcularLinea,
+  calcularLineas,
+} from './venta.reglas';
 
 describe('calcularLinea', () => {
   it('con IVA: liquida sobre el subtotal', () => {
@@ -131,5 +136,38 @@ describe('calcularCobro', () => {
     const resultado = calcularCobro(119000, 119000, 1);
 
     expect(resultado.ok).toBe(false);
+  });
+});
+
+describe('calcularDevolucionPorLinea', () => {
+  it('deja devolver lo que queda y dice cuánto quedaría después', () => {
+    const r = calcularDevolucionPorLinea(10, 4, 3);
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.pendienteLuego).toBe(3);
+  });
+
+  it('rechaza pasarse de lo pendiente, diciendo cuánto queda', () => {
+    const r = calcularDevolucionPorLinea(10, 4, 7);
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.motivo).toBe(
+      'De esa línea quedan 6 por devolver de las 10 facturadas; no se pueden devolver 7.',
+    );
+  });
+
+  it('rechaza si ya se devolvió todo', () => {
+    const r = calcularDevolucionPorLinea(10, 10, 1);
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.motivo).toMatch(/ya se devolvió todo/);
+  });
+
+  it('rechaza cantidad cero o negativa', () => {
+    expect(calcularDevolucionPorLinea(10, 0, 0).ok).toBe(false);
+    expect(calcularDevolucionPorLinea(10, 0, -1).ok).toBe(false);
   });
 });

@@ -3,12 +3,13 @@ import { randomUUID } from 'node:crypto';
 import { BadRequestException, Injectable } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
-import { fila } from '../../../common/db/filas';
-import { TxService } from '../../../common/db/tx.service';
+import { fila, filas } from '../../../common/db/filas';
+import { TxService, type Tx } from '../../../common/db/tx.service';
 import type { LineaAsientoDto } from '../../contabilidad/dto/asiento.dto';
 import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import { NucleoApi } from '../../nucleo/nucleo.api';
 import type { CrearNotaCreditoDto } from '../dto/nota-credito.dto';
+import { calcularDevolucionPorLinea, calcularLinea } from './venta.reglas';
 import {
   VentaDocumentoService,
   type VentaDocumentoDetalle,
@@ -31,9 +32,16 @@ const CODIGO_CUENTA_DEVOLUCIONES = '417505';
 const CODIGO_COMPROBANTE_VENTA = 'CI';
 
 /**
- * Nota crédito: reversa una factura EMITIDA, completa — este corte no
- * admite notas parciales (menos cantidad, o solo algunas líneas). Corrige
- * el libro; el inventario NO se toca acá — ver decisión 3 de
+ * Nota crédito: reversa una factura EMITIDA, completa o por partes.
+ *
+ * Sin `lineas` en el DTO devuelve la factura entera —el caso más común, y el
+ * único que existía hasta el paso 8 del plan de ajustes—. Con `lineas`
+ * devuelve solo esas cantidades, y una misma factura puede recibir varias
+ * notas: entre todas no pueden devolver más de lo que se vendió, y de eso se
+ * encarga `calcularDevolucionPorLinea` contra lo que las notas anteriores no
+ * anuladas ya sacaron.
+ *
+ * Corrige el libro; el inventario NO se toca acá — ver decisión 3 de
  * `docs/planes/ventas-backend.md`. Si la mercancía vuelve físicamente a
  * bodega, quien la recibe registra una entrada de ajuste desde
  * `inventario`, un acto aparte y deliberado.
@@ -141,8 +149,11 @@ export class NotaCreditoService {
         dto.fecha,
       );
 
-      const subtotal = Number(factura.subtotal);
-      const total = Number(factura.total);
+      // Qué se devuelve: todas las líneas, o las que pide el DTO.
+      const aDevolver = await this.armarLineasADevolver(factura, dto, t);
+      const subtotal = aDevolver.reduce((s, l) => s + l.subtotal, 0);
+      const totalIvaDevuelto = aDevolver.reduce((s, l) => s + l.ivaValor, 0);
+      const total = aDevolver.reduce((s, l) => s + l.total, 0);
 
       // Débito devoluciones + débito IVA, crédito cartera: exactamente lo
       // contrario de cómo entró la factura, sin las líneas de costo/inventario.
@@ -156,7 +167,7 @@ export class NotaCreditoService {
           // generado exige base gravable (`fn_exigencias_cuenta`). Acá la
           // base es el subtotal de la factura que se está reversando.
           baseGravable: subtotal,
-          debito: totalIva,
+          debito: totalIvaDevuelto,
           credito: 0,
         });
       }
@@ -198,9 +209,9 @@ export class NotaCreditoService {
             numero.consecutivo,
             numero.resolucionId,
             dto.documentoOrigenId,
-            factura.subtotal,
-            factura.total_iva,
-            factura.total,
+            subtotal,
+            totalIvaDevuelto,
+            total,
             asiento.id,
             ctx.usuarioId,
           ],
@@ -210,29 +221,33 @@ export class NotaCreditoService {
         throw new BadRequestException('No se pudo crear la nota crédito.');
       }
 
-      // Copia las líneas de la factura tal cual — misma cantidad, mismo
-      // precio: esta nota crédito es una reversión completa, no negocia
-      // nada nuevo. `costo_unitario` se omite: no toca el kardex.
+      // El precio y la tarifa son los de la factura: corregir no renegocia.
+      // `costo_unitario` se omite: no toca el kardex. `linea_origen_id` es lo
+      // que permite que una nota siguiente sepa cuánto queda por devolver
+      // —también en la devolución completa, que es una nota más—.
       const lineasInsertadas: VentaDocumentoLineaResumen[] = [];
-      for (const l of factura.lineas) {
+      for (let i = 0; i < aDevolver.length; i++) {
+        const l = aDevolver[i];
         const insertada = fila<VentaDocumentoLineaResumen>(
           await t.query(
             `INSERT INTO venta_documento_linea
                (empresa_id, venta_documento_id, orden, producto_id, cantidad,
-                precio_unitario, iva_tarifa, subtotal, iva_valor, total)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                precio_unitario, iva_tarifa, subtotal, iva_valor, total,
+                linea_origen_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
              RETURNING ${CAMPOS_LINEA}`,
             [
               ctx.empresaId,
               documento.id,
-              l.orden,
-              l.producto_id,
+              i + 1,
+              l.productoId,
               l.cantidad,
-              l.precio_unitario,
-              l.iva_tarifa,
+              l.precioUnitario,
+              l.ivaTarifa,
               l.subtotal,
-              l.iva_valor,
+              l.ivaValor,
               l.total,
+              l.lineaOrigenId,
             ],
           ),
         );
@@ -246,5 +261,113 @@ export class NotaCreditoService {
 
       return { ...documento, lineas: lineasInsertadas };
     });
+  }
+
+  /**
+   * Qué líneas devuelve esta nota, y por cuánto.
+   *
+   * Sin `dto.lineas`, todas las de la factura por su cantidad completa —menos
+   * lo que notas anteriores ya devolvieron, porque una segunda nota "completa"
+   * sobre la misma factura no puede duplicar la devolución—. Con `dto.lineas`,
+   * solo esas, validando cada una contra lo que queda pendiente.
+   */
+  private async armarLineasADevolver(
+    factura: VentaDocumentoDetalle,
+    dto: CrearNotaCreditoDto,
+    t: Tx,
+  ): Promise<
+    Array<{
+      lineaOrigenId: string;
+      productoId: string;
+      cantidad: number;
+      precioUnitario: number;
+      ivaTarifa: number;
+      subtotal: number;
+      ivaValor: number;
+      total: number;
+    }>
+  > {
+    const yaDevuelto = await this.devueltoPorLinea(
+      factura.lineas.map((l) => l.id),
+      t,
+    );
+
+    // Sin `lineas`: todo lo que quede por devolver. Las líneas ya devueltas
+    // del todo se saltan —una segunda nota "completa" acredita el resto, no
+    // el total otra vez—, y si no queda ninguna, el error de abajo lo dice.
+    const pedido =
+      dto.lineas ??
+      factura.lineas
+        .map((l) => ({
+          lineaOrigenId: l.id,
+          cantidad: Number(l.cantidad) - (yaDevuelto.get(l.id) ?? 0),
+        }))
+        .filter((l) => l.cantidad > 0);
+
+    const porId = new Map(factura.lineas.map((l) => [l.id, l]));
+    const resultado = [];
+    for (const p of pedido) {
+      const original = porId.get(p.lineaOrigenId);
+      if (original === undefined) {
+        throw new BadRequestException(
+          'Una de las líneas que querés devolver no es de esta factura.',
+        );
+      }
+      const devolucion = calcularDevolucionPorLinea(
+        Number(original.cantidad),
+        yaDevuelto.get(p.lineaOrigenId) ?? 0,
+        p.cantidad,
+      );
+      if (!devolucion.ok) {
+        throw new BadRequestException(devolucion.motivo);
+      }
+
+      // El cálculo es el mismo de una línea de venta: así el IVA de la nota
+      // se redondea igual que el de la factura y los dos asientos cuadran.
+      const calculada = calcularLinea({
+        cantidad: p.cantidad,
+        precioUnitario: Number(original.precio_unitario),
+        ivaTarifa: Number(original.iva_tarifa),
+      });
+      resultado.push({
+        lineaOrigenId: p.lineaOrigenId,
+        productoId: original.producto_id,
+        ...calculada,
+      });
+    }
+
+    if (resultado.length === 0) {
+      throw new BadRequestException(
+        'Esta factura ya se devolvió completa: no queda nada por acreditar.',
+      );
+    }
+    return resultado;
+  }
+
+  /**
+   * Cuánto se devolvió ya de cada línea, sumando las notas crédito que la
+   * apuntan y no están anuladas. Una nota anulada no devolvió nada: su
+   * asiento se reversó.
+   */
+  private async devueltoPorLinea(
+    lineaIds: string[],
+    t: Tx,
+  ): Promise<Map<string, number>> {
+    if (lineaIds.length === 0) return new Map();
+    const devueltas = filas<{ linea_origen_id: string; cantidad: string }>(
+      await t.query(
+        `SELECT l.linea_origen_id, sum(l.cantidad)::text AS cantidad
+           FROM venta_documento_linea l
+           JOIN venta_documento d ON d.id = l.venta_documento_id
+          WHERE l.linea_origen_id = ANY($1)
+            AND d.tipo = 'NOTA_CREDITO'
+            AND d.estado <> 'ANULADA'
+          GROUP BY l.linea_origen_id`,
+        [lineaIds],
+      ),
+    );
+    return new Map(
+      devueltas.map((d) => [d.linea_origen_id, Number(d.cantidad)]),
+    );
   }
 }

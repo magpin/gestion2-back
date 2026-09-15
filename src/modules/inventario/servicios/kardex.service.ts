@@ -291,6 +291,49 @@ export class KardexService {
   }
 
   /**
+   * Devuelve al kardex lo que una compra anulada había metido.
+   *
+   * Sin asiento propio: el de la compra queda anulado y con eso el libro ya
+   * dejó de contar esa mercancía, así que la salida referencia ese mismo
+   * asiento y el conjunto queda en cero por los dos lados. Se valora al
+   * promedio vigente, igual que cualquier salida. Rechaza si las unidades ya
+   * no están —se vendieron— porque entonces no hay qué devolver.
+   */
+  async registrarSalidaPorAnulacionCompra(
+    ctx: CtxEmpresa,
+    productoId: string,
+    cantidad: number,
+    fecha: string,
+    motivo: string,
+    asientoId: string,
+    tx: Tx,
+  ): Promise<MovimientoResumen> {
+    await this.exigirProductoBloqueado(productoId, tx);
+    const { decimalesCantidad } = await this.exigirPromedioPonderado(ctx, tx);
+    const actual = (await this.ultimoMovimiento(productoId, tx)) ?? {
+      cantidad: 0,
+      costoPromedio: 0,
+    };
+    const resultado = calcularSalida(actual, cantidad, decimalesCantidad);
+    if (!resultado.ok) {
+      throw new BadRequestException(resultado.motivo);
+    }
+    return this.insertarMovimiento(
+      tx,
+      ctx,
+      randomUUID(),
+      productoId,
+      'SALIDA_AJUSTE',
+      fecha,
+      cantidad,
+      actual.costoPromedio,
+      resultado,
+      motivo,
+      asientoId,
+    );
+  }
+
+  /**
    * Inserta el movimiento de una compra, con el asiento ya resuelto. A
    * diferencia de una venta, una compra no tiene fase de "costear sin
    * insertar": el costo de una entrada es un dato de la factura del

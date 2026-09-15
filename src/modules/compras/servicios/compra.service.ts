@@ -8,7 +8,7 @@ import {
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import { fila, filas } from '../../../common/db/filas';
-import { esFechaFutura } from '../../../common/fecha';
+import { esFechaFutura, hoyEnColombia } from '../../../common/fecha';
 import { armarPagina, type Pagina } from '../../../common/dto/paginacion.dto';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import type { LineaAsientoDto } from '../../contabilidad/dto/asiento.dto';
@@ -506,14 +506,21 @@ export class CompraService {
   /**
    * Anula una compra: anula su asiento y marca el documento en la MISMA
    * transacción — las dos cosas se confirman juntas o ninguna, mismo
-   * patrón que `VentaDocumentoService.anular`. El kardex NO se revierte:
-   * si la mercancía se devuelve, es una salida de ajuste aparte.
+   * patrón que `VentaDocumentoService.anular`. El kardex SÍ se revierte: la
+   * mercancía de la compra sale con el mismo asiento (anulado) como
+   * referencia, y si ya no está, la compra no se anula.
    */
   async anular(ctx: CtxEmpresa, id: string, motivo: string): Promise<void> {
     await this.tx.enContexto(ctx, async (t) => {
-      const documento = fila<{ estado: string; asiento_id: string }>(
+      const documento = fila<{
+        estado: string;
+        asiento_id: string;
+        monto_pagado: string;
+        numero_factura_proveedor: string;
+      }>(
         await t.query(
-          `SELECT estado, asiento_id FROM compra_documento WHERE id = $1`,
+          `SELECT estado, asiento_id, monto_pagado, numero_factura_proveedor
+             FROM compra_documento WHERE id = $1`,
           [id],
         ),
       );
@@ -523,8 +530,54 @@ export class CompraService {
       if (documento.estado === 'ANULADA') {
         throw new BadRequestException('Esta compra ya está anulada.');
       }
+      // Mismo criterio que la factura cobrada: un pago que ya salió del
+      // banco no desaparece anulando el documento que lo motivó.
+      if (Number(documento.monto_pagado) > 0) {
+        throw new BadRequestException(
+          'Esta compra tiene pagos registrados y no se puede anular. Registrá la devolución del proveedor como un ingreso aparte.',
+        );
+      }
+
+      // La mercancía que entró con la compra sale del kardex en el mismo acto.
+      // Anular solo el asiento dejaba el inventario del libro sin esas
+      // unidades y el kardex con ellas, y el ajuste manual que se pedía después
+      // las volvía a acreditar: dos salidas contables por una sola física.
+      // Si alguna unidad ya se vendió, no hay qué devolver y no se anula.
+      const lineas = filas<{
+        producto_id: string;
+        producto_codigo: string;
+        cantidad: string;
+      }>(
+        await t.query(
+          `SELECT ${CAMPOS_LINEA} FROM compra_documento_linea
+            WHERE compra_documento_id = $1 ORDER BY orden`,
+          [id],
+        ),
+      );
+      for (const l of lineas) {
+        const saldo = await this.inventario.saldoActual(ctx, l.producto_id, t);
+        const disponible = Number(saldo?.cantidad ?? 0);
+        if (disponible < Number(l.cantidad)) {
+          throw new BadRequestException(
+            `De ${l.producto_codigo} entraron ${Number(l.cantidad)} con esta compra y solo quedan ${disponible}: parte ya se vendió y la compra no se puede anular.`,
+          );
+        }
+      }
 
       await this.contabilidad.anular(ctx, documento.asiento_id, motivo, t);
+
+      const hoy = hoyEnColombia();
+      for (const l of lineas) {
+        await this.inventario.revertirPorAnulacionCompra(
+          ctx,
+          l.producto_id,
+          Number(l.cantidad),
+          hoy,
+          `Anulación de la compra ${documento.numero_factura_proveedor}: ${motivo}`,
+          documento.asiento_id,
+          t,
+        );
+      }
 
       await t.query(
         `UPDATE compra_documento

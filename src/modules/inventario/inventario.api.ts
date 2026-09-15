@@ -149,4 +149,30 @@ export class InventarioApi {
     );
     return { movimientoId: movimiento.id };
   }
+
+  /**
+   * Revierte en el kardex la entrada de una compra que se anula. Mismo
+   * contrato que `incrementarPorCompra`: en la MISMA transacción y con el
+   * asiento —el de la compra, ya anulado— resuelto por quien llama.
+   */
+  async revertirPorAnulacionCompra(
+    ctx: CtxEmpresa,
+    productoId: string,
+    cantidad: number,
+    fecha: string,
+    motivo: string,
+    asientoId: string,
+    tx: Tx,
+  ): Promise<{ movimientoId: string }> {
+    const movimiento = await this.kardex.registrarSalidaPorAnulacionCompra(
+      ctx,
+      productoId,
+      cantidad,
+      fecha,
+      motivo,
+      asientoId,
+      tx,
+    );
+    return { movimientoId: movimiento.id };
+  }
 }

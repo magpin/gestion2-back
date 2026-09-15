@@ -319,9 +319,10 @@ export class VentaDocumentoService {
         tipo: string;
         estado: string;
         asiento_id: string | null;
+        monto_pagado: string;
       }>(
         await t.query(
-          `SELECT tipo, estado, asiento_id FROM venta_documento WHERE id = $1`,
+          `SELECT tipo, estado, asiento_id, monto_pagado FROM venta_documento WHERE id = $1`,
           [id],
         ),
       );
@@ -335,6 +336,15 @@ export class VentaDocumentoService {
       }
       if (documento.estado === 'ANULADA') {
         throw new BadRequestException('Este documento ya está anulado.');
+      }
+      // La plata ya entró: anular el documento dejaría un cobro colgado de
+      // nada y la cartera del cliente en negativo. Lo que corrige una
+      // factura cobrada es una nota crédito, que deja el saldo a favor
+      // registrado; el cobro no se toca porque ocurrió de verdad.
+      if (Number(documento.monto_pagado) > 0) {
+        throw new BadRequestException(
+          'Esta factura tiene cobros registrados y no se puede anular. Para corregirla, emití una nota crédito.',
+        );
       }
 
       // `asiento_id` no puede ser NULL acá: `ck_venta_fiscal` lo exige para

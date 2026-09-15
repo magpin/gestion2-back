@@ -739,14 +739,38 @@ describe('CompraService.anular', () => {
     return { fake, anular };
   }
 
+  const LINEA = {
+    producto_id: 'p-1',
+    producto_codigo: 'TEC-1',
+    cantidad: '5.000000',
+  };
+
   function txAnularFalso(
-    documento: { estado: string; asiento_id: string } | undefined,
+    documento:
+      | {
+          estado: string;
+          asiento_id: string;
+          monto_pagado?: string;
+          numero_factura_proveedor?: string;
+        }
+      | undefined,
   ) {
     const actualizaciones: unknown[][] = [];
     const tx = {
       query: jest.fn((sql: string, params?: unknown[]) => {
         if (sql.includes('SELECT estado, asiento_id')) {
-          return documento === undefined ? [] : [documento];
+          return documento === undefined
+            ? []
+            : [
+                {
+                  monto_pagado: '0',
+                  numero_factura_proveedor: 'FV-1',
+                  ...documento,
+                },
+              ];
+        }
+        if (sql.includes('FROM compra_documento_linea')) {
+          return [LINEA];
         }
         if (sql.includes('UPDATE compra_documento')) {
           actualizaciones.push(params ?? []);
@@ -758,17 +782,30 @@ describe('CompraService.anular', () => {
     return { tx, actualizaciones };
   }
 
-  it('anula el asiento y marca la compra, en la misma transacción', async () => {
+  /** El kardex con `disponible` unidades del producto de la línea. */
+  function inventarioAnularFalso(disponible: number) {
+    const revertir = jest.fn(() => Promise.resolve({ movimientoId: 'm-1' }));
+    const fake = {
+      saldoActual: jest.fn(() =>
+        Promise.resolve({ cantidad: disponible, costoPromedio: 1000 }),
+      ),
+      revertirPorAnulacionCompra: revertir,
+    } as unknown as ConstructorParameters<typeof CompraService>[2];
+    return { fake, revertir };
+  }
+
+  it('anula el asiento, devuelve el kardex y marca la compra, en la misma transacción', async () => {
     const { tx, actualizaciones } = txAnularFalso({
       estado: 'EMITIDA',
       asiento_id: 'asiento-1',
     });
     const { fake: contabilidad, anular: anularAsiento } =
       contabilidadAnularFalso();
+    const { fake: inventario, revertir } = inventarioAnularFalso(5);
     const servicio = new CompraService(
       txServiceFalso(tx),
       {} as never,
-      {} as never,
+      inventario,
       contabilidad,
       {} as never, // TesoreriaApi: no la usa este método.
     );
@@ -781,7 +818,59 @@ describe('CompraService.anular', () => {
       'Factura duplicada por error',
       tx,
     );
+    expect(revertir).toHaveBeenCalledWith(
+      ctx,
+      'p-1',
+      5,
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      expect.stringContaining('FV-1'),
+      'asiento-1',
+      tx,
+    );
     expect(actualizaciones).toHaveLength(1);
+  });
+
+  it('rechaza anular si parte de la mercancía ya salió del kardex', async () => {
+    const { tx, actualizaciones } = txAnularFalso({
+      estado: 'EMITIDA',
+      asiento_id: 'asiento-1',
+    });
+    const { fake: contabilidad, anular: anularAsiento } =
+      contabilidadAnularFalso();
+    const { fake: inventario, revertir } = inventarioAnularFalso(3);
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      {} as never,
+      inventario,
+      contabilidad,
+      {} as never,
+    );
+
+    await expect(servicio.anular(ctx, 'c-1', 'Motivo')).rejects.toThrow(
+      /solo quedan 3/,
+    );
+    expect(anularAsiento).not.toHaveBeenCalled();
+    expect(revertir).not.toHaveBeenCalled();
+    expect(actualizaciones).toHaveLength(0);
+  });
+
+  it('rechaza anular una compra con pagos registrados', async () => {
+    const { tx } = txAnularFalso({
+      estado: 'EMITIDA',
+      asiento_id: 'asiento-1',
+      monto_pagado: '40000',
+    });
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      {} as never,
+      inventarioAnularFalso(5).fake,
+      contabilidadAnularFalso().fake,
+      {} as never,
+    );
+
+    await expect(servicio.anular(ctx, 'c-1', 'Motivo')).rejects.toThrow(
+      /pagos registrados/,
+    );
   });
 
   it('rechaza anular una compra ya anulada', async () => {

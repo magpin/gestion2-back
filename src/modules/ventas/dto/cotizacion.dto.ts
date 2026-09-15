@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
+  IsBoolean,
   IsNumber,
   IsOptional,
   IsUUID,
@@ -56,4 +57,17 @@ export class CrearCotizacionDto {
 export class ConvertirCotizacionDto {
   @EsFechaCalendario()
   fecha!: string;
+
+  /**
+   * "Sé que no hay existencia y la emito igual".
+   *
+   * No es un permiso: es una confirmación. La empresa tiene que haber
+   * habilitado el descubierto (`inventario_configuracion.permite_existencia_negativa`)
+   * y el producto tiene que tener un costo promedio conocido; si falta
+   * cualquiera de las dos, la factura se rechaza aunque esto venga en `true`.
+   * Lo que salga sin estar queda anotado en `venta_faltante`.
+   */
+  @IsOptional()
+  @IsBoolean()
+  confirmaSinExistencia?: boolean;
 }

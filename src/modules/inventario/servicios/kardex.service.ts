@@ -226,7 +226,8 @@ export class KardexService {
     productoId: string,
     cantidad: number,
     tx: Tx,
-  ): Promise<{ costoUnitario: number; valorTotal: number }> {
+    sinExistencia = false,
+  ): Promise<{ costoUnitario: number; valorTotal: number; faltante: number }> {
     await this.exigirProductoBloqueado(productoId, tx);
     const { decimalesCantidad } = await this.exigirPromedioPonderado(ctx, tx);
     const actual = (await this.ultimoMovimiento(productoId, tx)) ?? {
@@ -234,7 +235,18 @@ export class KardexService {
       costoPromedio: 0,
     };
 
-    const resultado = calcularSalida(actual, cantidad, decimalesCantidad);
+    const permitirNegativo =
+      sinExistencia && (await this.permiteExistenciaNegativa(ctx, tx));
+    if (permitirNegativo && actual.cantidad < cantidad) {
+      this.exigirCostoConocido(actual, productoId);
+    }
+
+    const resultado = calcularSalida(
+      actual,
+      cantidad,
+      decimalesCantidad,
+      permitirNegativo,
+    );
     if (!resultado.ok) {
       throw new BadRequestException(resultado.motivo);
     }
@@ -242,7 +254,43 @@ export class KardexService {
     return {
       costoUnitario: actual.costoPromedio,
       valorTotal: resultado.valorMovimiento,
+      faltante: resultado.faltante,
     };
+  }
+
+  /**
+   * ¿Puede esta empresa quedar en descubierto? Lo decide quien responde por el
+   * inventario, una vez, en la configuración del módulo — no cada digitador
+   * documento por documento. La confirmación de quien factura es además de
+   * esto, no en vez de esto.
+   */
+  private async permiteExistenciaNegativa(
+    ctx: CtxEmpresa,
+    tx: Tx,
+  ): Promise<boolean> {
+    const config = fila<{ permite_existencia_negativa: boolean }>(
+      await tx.query(
+        `SELECT permite_existencia_negativa FROM inventario_configuracion
+          WHERE empresa_id = $1`,
+        [ctx.empresaId],
+      ),
+    );
+    return config?.permite_existencia_negativa ?? false;
+  }
+
+  /**
+   * Una salida en descubierto se valora al último costo promedio conocido. Si
+   * el producto nunca tuvo una entrada, ese dato no existe: el costo de venta
+   * quedaría en cero y el margen del período sería una mentira, así que la
+   * venta se rechaza aunque la empresa permita el descubierto y quien factura
+   * lo haya confirmado. Primero entra la mercancía —o un ajuste de carga
+   * inicial—, y después se vende.
+   */
+  private exigirCostoConocido(actual: SaldoKardex, productoId: string): void {
+    if (actual.costoPromedio > 0) return;
+    throw new BadRequestException(
+      `Este producto nunca ha tenido una entrada, así que no hay costo con el que valorar la venta (${productoId}). Registrá la compra o la carga inicial antes de facturarlo.`,
+    );
   }
 
   /**
@@ -263,6 +311,7 @@ export class KardexService {
     motivo: string,
     asientoId: string,
     tx: Tx,
+    sinExistencia = false,
   ): Promise<MovimientoResumen> {
     const { decimalesCantidad } = await this.exigirPromedioPonderado(ctx, tx);
     const actual = (await this.ultimoMovimiento(productoId, tx)) ?? {
@@ -270,7 +319,18 @@ export class KardexService {
       costoPromedio: 0,
     };
 
-    const resultado = calcularSalida(actual, cantidad, decimalesCantidad);
+    const permitirNegativo =
+      sinExistencia && (await this.permiteExistenciaNegativa(ctx, tx));
+    if (permitirNegativo && actual.cantidad < cantidad) {
+      this.exigirCostoConocido(actual, productoId);
+    }
+
+    const resultado = calcularSalida(
+      actual,
+      cantidad,
+      decimalesCantidad,
+      permitirNegativo,
+    );
     if (!resultado.ok) {
       throw new BadRequestException(resultado.motivo);
     }

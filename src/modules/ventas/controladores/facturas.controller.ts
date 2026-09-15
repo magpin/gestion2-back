@@ -68,7 +68,12 @@ export class FacturasController {
     @Param('cotizacionId', ParseUUIDPipe) cotizacionId: string,
     @Body() dto: ConvertirCotizacionDto,
   ) {
-    return this.facturas.convertirCotizacion(ctx, cotizacionId, dto.fecha);
+    return this.facturas.convertirCotizacion(
+      ctx,
+      cotizacionId,
+      dto.fecha,
+      dto.confirmaSinExistencia ?? false,
+    );
   }
 
   /** Anular es un acto de corrección, no de venta del día a día — no lo hace VENTAS. */

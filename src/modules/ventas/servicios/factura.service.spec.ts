@@ -91,13 +91,13 @@ function inventarioFalso(
   opciones: {
     producto?: Record<string, unknown> | null;
     precio?: number | null;
-    costeo?: { costoUnitario: number; valorTotal: number };
+    costeo?: { costoUnitario: number; valorTotal: number; faltante: number };
   } = {},
 ) {
   const {
     producto = productoActivo,
     precio = 289900,
-    costeo = { costoUnitario: 200000, valorTotal: 200000 },
+    costeo = { costoUnitario: 200000, valorTotal: 200000, faltante: 0 },
   } = opciones;
   return {
     producto: jest.fn(() => Promise.resolve(producto)),
@@ -176,6 +176,7 @@ function ventasFalso(cotizacion: VentaDocumentoDetalle = cotizacionEmitida) {
  */
 function txFalso(opciones: { estadoCotizacion?: string | null } = {}) {
   const { estadoCotizacion } = opciones;
+  const faltantesInsertados: unknown[][] = [];
   const tx = {
     query: jest.fn((sql: string, params?: unknown[]) => {
       if (sql.includes("WHERE id = $1 AND tipo = 'COTIZACION'")) {
@@ -184,6 +185,10 @@ function txFalso(opciones: { estadoCotizacion?: string | null } = {}) {
           : [{ estado: estadoCotizacion }];
       }
       if (sql.includes("SET estado = 'CONVERTIDA'")) {
+        return [];
+      }
+      if (sql.includes('INSERT INTO venta_faltante')) {
+        faltantesInsertados.push(params ?? []);
         return [];
       }
       if (sql.includes('INSERT INTO venta_documento\n')) {
@@ -252,7 +257,7 @@ function txFalso(opciones: { estadoCotizacion?: string | null } = {}) {
       throw new Error(`Query inesperada en el test: ${sql}`);
     }),
   } as unknown as Tx;
-  return { tx };
+  return { tx, faltantesInsertados };
 }
 
 describe('FacturaService.crear', () => {
@@ -378,6 +383,54 @@ describe('FacturaService.crear', () => {
       expect(tomarConsecutivo).not.toHaveBeenCalled();
     },
   );
+
+  it('anota en venta_faltante lo que salió sin existencia, con su costo de referencia', async () => {
+    const { tx, faltantesInsertados } = txFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      // El kardex ya decidió: dejó salir 2 unidades y 1,5 no estaban.
+      inventarioFalso({
+        costeo: { costoUnitario: 200000, valorTotal: 400000, faltante: 1.5 },
+      }),
+      contabilidadFalso().fake,
+      {} as never,
+    );
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      lineas: [{ productoId: 'p-1', cantidad: 2 }],
+      confirmaSinExistencia: true,
+    });
+
+    expect(faltantesInsertados).toHaveLength(1);
+    const [, , productoId, cantidadFaltante, costoReferencia] =
+      faltantesInsertados[0];
+    expect(productoId).toBe('p-1');
+    expect(cantidadFaltante).toBe(1.5);
+    expect(costoReferencia).toBe(200000);
+  });
+
+  it('no anota nada cuando había existencia', async () => {
+    const { tx, faltantesInsertados } = txFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso(),
+      contabilidadFalso().fake,
+      {} as never,
+    );
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      lineas: [{ productoId: 'p-1', cantidad: 2 }],
+      confirmaSinExistencia: true,
+    });
+
+    expect(faltantesInsertados).toHaveLength(0);
+  });
 
   it('rechaza si el mismo producto aparece en dos líneas', async () => {
     const { tx } = txFalso();

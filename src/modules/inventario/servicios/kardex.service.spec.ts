@@ -32,12 +32,16 @@ function nucleoFalso(
  */
 function txFalso(
   saldo: { saldo_cantidad: string; saldo_costo_promedio: string } | undefined,
+  permiteExistenciaNegativa = false,
 ) {
   const insertadas: unknown[][] = [];
   const tx = {
     query: jest.fn((sql: string, params?: unknown[]) => {
       if (sql.includes('FROM producto WHERE')) {
         return [{ id: 'p-1', cuenta_inventario_id: 'c-inv' }];
+      }
+      if (sql.includes('FROM inventario_configuracion')) {
+        return [{ permite_existencia_negativa: permiteExistenciaNegativa }];
       }
       if (sql.startsWith('SELECT saldo_cantidad')) {
         return saldo === undefined ? [] : [saldo];
@@ -101,7 +105,11 @@ describe('KardexService.costearSalida', () => {
 
     const resultado = await servicio.costearSalida(ctx, 'p-1', 4, tx);
 
-    expect(resultado).toEqual({ costoUnitario: 5000, valorTotal: 20000 });
+    expect(resultado).toEqual({
+      costoUnitario: 5000,
+      valorTotal: 20000,
+      faltante: 0,
+    });
     const consultas = (tx.query as jest.Mock).mock.calls.map(
       ([sql]: [string]) => sql,
     );
@@ -147,6 +155,72 @@ describe('KardexService.costearSalida', () => {
     await expect(servicio.costearSalida(ctx, 'p-1', 1, tx)).rejects.toThrow(
       /Solo hay 0/,
     );
+  });
+});
+
+describe('KardexService.costearSalida en descubierto', () => {
+  const servicio = new KardexService(
+    {} as never, // TxService: recibe `tx` directo.
+    nucleoFalso(),
+    {} as never, // ContabilidadApi: no interviene en una salida por venta.
+    {} as never, // ConfiguracionService: solo la usan los ajustes.
+  );
+
+  it('rechaza si la empresa no habilitó la existencia negativa, aunque quien factura confirme', async () => {
+    const { tx } = txFalso(
+      { saldo_cantidad: '3.000000', saldo_costo_promedio: '5000.00' },
+      false,
+    );
+
+    await expect(
+      servicio.costearSalida(ctx, 'p-1', 10, tx, true),
+    ).rejects.toThrow(/Solo hay 3 en existencia/);
+  });
+
+  it('con la empresa habilitada y el producto confirmado, cuesta al último promedio y dice cuánto faltó', async () => {
+    const { tx } = txFalso(
+      { saldo_cantidad: '3.000000', saldo_costo_promedio: '5000.00' },
+      true,
+    );
+
+    const resultado = await servicio.costearSalida(ctx, 'p-1', 10, tx, true);
+
+    // El costo es el último promedio conocido: 10 * 5.000.
+    expect(resultado).toEqual({
+      costoUnitario: 5000,
+      valorTotal: 50000,
+      faltante: 7,
+    });
+  });
+
+  it('sin confirmación, la empresa habilitada no alcanza: rechaza igual', async () => {
+    const { tx } = txFalso(
+      { saldo_cantidad: '3.000000', saldo_costo_promedio: '5000.00' },
+      true,
+    );
+
+    await expect(servicio.costearSalida(ctx, 'p-1', 10, tx)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('rechaza un producto que nunca tuvo una entrada: no hay costo con el que valorar la venta', async () => {
+    const { tx } = txFalso(undefined, true);
+
+    await expect(
+      servicio.costearSalida(ctx, 'p-1', 10, tx, true),
+    ).rejects.toThrow(/nunca ha tenido una entrada/);
+  });
+
+  it('con existencia suficiente, la confirmación no cambia nada', async () => {
+    const { tx } = txFalso(
+      { saldo_cantidad: '10.000000', saldo_costo_promedio: '5000.00' },
+      true,
+    );
+
+    const resultado = await servicio.costearSalida(ctx, 'p-1', 4, tx, true);
+
+    expect(resultado.faltante).toBe(0);
   });
 });
 

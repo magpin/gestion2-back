@@ -5,7 +5,7 @@ import {
   type SaldoKardex,
 } from './kardex.reglas';
 
-//esta función es para tal cosa.  
+//esta función es para tal cosa.
 const CERO: SaldoKardex = { cantidad: 0, costoPromedio: 0 };
 const DEC = 2; // decimales_cantidad y decimales_valor, para no repetirlo en cada caso
 
@@ -81,5 +81,28 @@ describe('calcularSalida', () => {
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.motivo).toBe('Solo hay 45 en existencia; no se puede sacar 60.');
+  });
+
+  it('con el descubierto permitido, sale igual y dice cuántas unidades faltaron', () => {
+    const actual: SaldoKardex = { cantidad: 45, costoPromedio: 500 };
+    const r = calcularSalida(actual, 60, DEC, true);
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.saldo.cantidad).toBe(-15);
+    // El promedio no cambia: una salida consume, no valora.
+    expect(r.saldo.costoPromedio).toBe(500);
+    // Las 60 unidades se valoran al promedio conocido, no solo las 45.
+    expect(r.valorMovimiento).toBe(30_000);
+    expect(r.faltante).toBe(15);
+  });
+
+  it('el faltante es cero cuando había existencia, aunque el descubierto esté permitido', () => {
+    const actual: SaldoKardex = { cantidad: 45, costoPromedio: 500 };
+    const r = calcularSalida(actual, 45, DEC, true);
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.faltante).toBe(0);
   });
 });

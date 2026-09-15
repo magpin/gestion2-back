@@ -23,6 +23,17 @@ export class ListarVentasDto extends PaginacionDto {
   terceroId?: string;
 }
 
+/**
+ * La lista de faltantes. `soloPendientes` deja fuera los que ya se
+ * resolvieron —la compra entró y el kardex volvió a positivo—, que es lo que
+ * quiere ver quien va a comprar.
+ */
+export class ListarFaltantesDto extends PaginacionDto {
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  soloPendientes?: 'true' | 'false';
+}
+
 /** Anular una factura o nota crédito. Una cotización no se anula por acá. */
 export class AnularVentaDto {
   @IsString()

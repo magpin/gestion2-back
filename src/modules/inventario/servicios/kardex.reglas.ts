@@ -27,7 +27,17 @@ export interface ResultadoEntrada {
 
 /** Una salida sí se puede rechazar: dejaría la existencia negativa. */
 export type ResultadoSalida =
-  | { ok: true; saldo: SaldoKardex; valorMovimiento: number }
+  | {
+      ok: true;
+      saldo: SaldoKardex;
+      valorMovimiento: number;
+      /**
+       * Cuántas unidades salieron sin estar. `0` en una salida normal; mayor
+       * que cero solo cuando se permitió el descubierto, y es lo que hay que
+       * comprar para volver a cero.
+       */
+      faltante: number;
+    }
   | { ok: false; motivo: string };
 
 /**
@@ -86,20 +96,29 @@ export function calcularEntrada(
 
 /**
  * Una salida. El costo promedio NO cambia — una salida consume, no valora—.
- * Se rechaza si deja el saldo negativo: la existencia no se puede vaciar más
- * de lo que tiene.
+ *
+ * Se rechaza si deja el saldo negativo, salvo que `permitirNegativo` diga lo
+ * contrario: la empresa puede habilitar el descubierto
+ * (`inventario_configuracion.permite_existencia_negativa`) y quien factura
+ * confirmarlo documento por documento. Cuando eso pasa, la salida sale igual y
+ * `faltante` dice cuántas unidades no estaban — es lo que hay que comprar—.
+ *
+ * El costo de una salida en descubierto es el último promedio conocido: no hay
+ * otro dato, y el servicio se encarga de rechazar el caso en que ni ese
+ * existe (un producto que nunca tuvo una entrada).
  */
 export function calcularSalida(
   actual: SaldoKardex,
   cantidadSalida: number,
   decimalesCantidad: number,
+  permitirNegativo = false,
 ): ResultadoSalida {
   const nuevaCantidad = redondear(
     actual.cantidad - cantidadSalida,
     decimalesCantidad,
   );
 
-  if (nuevaCantidad < 0) {
+  if (nuevaCantidad < 0 && !permitirNegativo) {
     return {
       ok: false,
       motivo: `Solo hay ${actual.cantidad} en existencia; no se puede sacar ${cantidadSalida}.`,
@@ -113,5 +132,7 @@ export function calcularSalida(
       cantidadSalida * actual.costoPromedio,
       DECIMALES_DINERO,
     ),
+    faltante:
+      nuevaCantidad < 0 ? redondear(-nuevaCantidad, decimalesCantidad) : 0,
   };
 }

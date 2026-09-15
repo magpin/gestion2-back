@@ -78,14 +78,27 @@ export class InventarioApi {
    * Rechaza si la cantidad deja el saldo negativo, con el costo unitario
    * (el promedio vigente, que una salida no modifica) y el valor total ya
    * redondeados a pesos.
+   *
+   * `sinExistencia` es la confirmación de quien factura: con ella, y solo si
+   * la empresa habilitó el descubierto, la salida se permite igual y
+   * `faltante` dice cuántas unidades no estaban. Sigue rechazando si el
+   * producto nunca tuvo una entrada: sin costo conocido no hay con qué
+   * valorar la venta.
    */
   async costearSalida(
     ctx: CtxEmpresa,
     productoId: string,
     cantidad: number,
     tx: Tx,
-  ): Promise<{ costoUnitario: number; valorTotal: number }> {
-    return this.kardex.costearSalida(ctx, productoId, cantidad, tx);
+    sinExistencia = false,
+  ): Promise<{ costoUnitario: number; valorTotal: number; faltante: number }> {
+    return this.kardex.costearSalida(
+      ctx,
+      productoId,
+      cantidad,
+      tx,
+      sinExistencia,
+    );
   }
 
   /**
@@ -104,6 +117,7 @@ export class InventarioApi {
     motivo: string,
     asientoId: string,
     tx: Tx,
+    sinExistencia = false,
   ): Promise<{ movimientoId: string }> {
     const movimiento = await this.kardex.registrarSalidaVenta(
       ctx,
@@ -113,6 +127,7 @@ export class InventarioApi {
       motivo,
       asientoId,
       tx,
+      sinExistencia,
     );
     return { movimientoId: movimiento.id };
   }

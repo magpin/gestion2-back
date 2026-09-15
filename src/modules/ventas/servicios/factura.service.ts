@@ -94,6 +94,7 @@ export class FacturaService {
     ctx: CtxEmpresa,
     cotizacionId: string,
     fecha: string,
+    confirmaSinExistencia = false,
   ): Promise<VentaDocumentoDetalle> {
     return this.tx.enContexto(ctx, async (t) => {
       const bloqueo = fila<{ estado: string }>(
@@ -130,6 +131,7 @@ export class FacturaService {
           productoId: l.producto_id,
           cantidad: Number(l.cantidad),
         })),
+        confirmaSinExistencia,
       };
 
       const factura = await this.crearInterno(ctx, dto, cotizacionId, t);
@@ -203,7 +205,12 @@ export class FacturaService {
     const cuentaIngresoDe: string[] = [];
     const cuentaCostoDe: string[] = [];
     const cuentaInventarioDe: string[] = [];
-    const costeos: Array<{ costoUnitario: number; valorTotal: number }> = [];
+    const costeos: Array<{
+      costoUnitario: number;
+      valorTotal: number;
+      /** Unidades que salieron sin estar; `0` cuando había existencia. */
+      faltante: number;
+    }> = [];
 
     for (const l of dto.lineas) {
       const producto = await this.inventario.producto(ctx, l.productoId, t);
@@ -237,11 +244,16 @@ export class FacturaService {
         );
       }
 
+      // `confirmaSinExistencia` es la confirmación de quien factura. No
+      // alcanza por sí sola: si la empresa no habilitó el descubierto, el
+      // kardex rechaza la salida igual, y si el producto nunca tuvo una
+      // entrada tampoco hay costo con el que valorarla.
       const costeo = await this.inventario.costearSalida(
         ctx,
         l.productoId,
         l.cantidad,
         t,
+        dto.confirmaSinExistencia ?? false,
       );
 
       cuentaIngresoDe.push(producto.cuenta_ingreso_id);
@@ -435,7 +447,30 @@ export class FacturaService {
         `Factura de venta ${numero.numero}`,
         asiento.id,
         t,
+        dto.confirmaSinExistencia ?? false,
       );
+
+      // Lo que salió sin estar queda anotado con la factura que lo sacó: es
+      // la lista de qué hay que comprar, y el rastro de por qué el kardex de
+      // ese producto quedó en rojo. `costeos[i].faltante` lo calculó el
+      // kardex cuando costeó, dentro del mismo candado.
+      const faltante = costeos[i].faltante;
+      if (faltante > 0) {
+        await t.query(
+          `INSERT INTO venta_faltante
+             (empresa_id, venta_documento_id, producto_id, cantidad_faltante,
+              costo_referencia, creado_por)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            ctx.empresaId,
+            documento.id,
+            dto.lineas[i].productoId,
+            faltante,
+            costeos[i].costoUnitario,
+            ctx.usuarioId,
+          ],
+        );
+      }
     }
 
     return { ...documento, lineas: lineasInsertadas };

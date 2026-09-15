@@ -6,8 +6,10 @@ import { NucleoModule } from '../nucleo/nucleo.module';
 import { TesoreriaModule } from '../tesoreria/tesoreria.module';
 import { CotizacionesController } from './controladores/cotizaciones.controller';
 import { FacturasController } from './controladores/facturas.controller';
+import { FaltantesController } from './controladores/faltantes.controller';
 import { NotasCreditoController } from './controladores/notas-credito.controller';
 import { FacturaService } from './servicios/factura.service';
+import { FaltanteService } from './servicios/faltante.service';
 import { NotaCreditoService } from './servicios/nota-credito.service';
 import { VentaDocumentoService } from './servicios/venta-documento.service';
 import { VentasApi } from './ventas.api';
@@ -35,11 +37,13 @@ import { VentasApi } from './ventas.api';
   controllers: [
     CotizacionesController,
     FacturasController,
+    FaltantesController,
     NotasCreditoController,
   ],
   providers: [
     VentaDocumentoService,
     FacturaService,
+    FaltanteService,
     NotaCreditoService,
     VentasApi,
   ],

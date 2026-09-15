@@ -241,7 +241,7 @@ export class CajaArqueoService {
         `SELECT saldo_valor
            FROM caja_movimiento
           WHERE caja_id = $1
-          ORDER BY creado_en DESC, id DESC
+          ORDER BY secuencia DESC
           LIMIT 1`,
         [cajaId],
       ),

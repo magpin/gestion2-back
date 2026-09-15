@@ -325,7 +325,7 @@ export class ExtractoService {
         await t.query(
           `SELECT saldo_valor FROM banco_movimiento
             WHERE cuenta_bancaria_id = $1
-            ORDER BY creado_en DESC, id DESC
+            ORDER BY secuencia DESC
             LIMIT 1`,
           [extracto.cuenta_bancaria_id],
         ),

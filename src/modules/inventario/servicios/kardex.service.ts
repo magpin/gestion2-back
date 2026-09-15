@@ -375,7 +375,7 @@ export class KardexService {
           `SELECT ${CAMPOS}
              FROM producto_movimiento
              ${where}
-            ORDER BY creado_en DESC, id DESC
+            ORDER BY secuencia DESC
             LIMIT $${params.length - 1} OFFSET $${params.length}`,
           params,
         ),
@@ -442,7 +442,7 @@ export class KardexService {
         `SELECT saldo_cantidad, saldo_costo_promedio
            FROM producto_movimiento
           WHERE producto_id = $1
-          ORDER BY creado_en DESC, id DESC
+          ORDER BY secuencia DESC
           LIMIT 1`,
         [productoId],
       ),

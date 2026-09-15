@@ -208,7 +208,7 @@ export class BancoMovimientoService {
           `SELECT ${CAMPOS}
              FROM banco_movimiento
             WHERE cuenta_bancaria_id = $1
-            ORDER BY creado_en DESC, id DESC
+            ORDER BY secuencia DESC
             LIMIT $2 OFFSET $3`,
           [cuentaBancariaId, p.tamano, p.salto],
         ),
@@ -369,7 +369,7 @@ export class BancoMovimientoService {
         `SELECT saldo_valor
            FROM banco_movimiento
           WHERE cuenta_bancaria_id = $1
-          ORDER BY creado_en DESC, id DESC
+          ORDER BY secuencia DESC
           LIMIT 1`,
         [cuentaBancariaId],
       ),

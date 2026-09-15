@@ -153,20 +153,28 @@ export class VentaDocumentoService {
           );
         }
 
+        // El precio de lista manda cuando existe; el digitado en la línea es
+        // la salida para un producto que todavía no tiene precio —los 1.638
+        // importados llegaron así—. Una cotización no es un dato fiscal: que
+        // quede trabada por un dato que falta en la ficha no le sirve a nadie.
         const precioVigente = await this.inventario.precioVigente(
           ctx,
           l.productoId,
           t,
         );
-        if (precioVigente === null) {
+        const precio =
+          precioVigente !== null && precioVigente > 0
+            ? precioVigente
+            : l.precioUnitario;
+        if (precio === undefined) {
           throw new BadRequestException(
-            `El producto ${producto.codigo} no tiene un precio de venta configurado.`,
+            `El producto ${producto.codigo} no tiene precio de venta configurado: fijale uno en su ficha, o digitá el precio en la línea.`,
           );
         }
 
         entradas.push({
           cantidad: l.cantidad,
-          precioUnitario: precioVigente,
+          precioUnitario: precio,
           ivaTarifa: responsableIva ? Number(producto.iva_tarifa) : 0,
         });
       }

@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsNumber,
+  IsOptional,
   IsUUID,
   Min,
   ValidateNested,
@@ -12,14 +13,24 @@ export class LineaCotizacionDto {
   @IsUUID()
   productoId!: string;
 
-  /**
-   * Sin `precioUnitario`: este corte no negocia precio por documento — se
-   * toma el precio de lista vigente del producto. Ver "Descuentos por
-   * línea o por documento" en `docs/planes/ventas-backend.md`.
-   */
   @IsNumber({ maxDecimalPlaces: 6 })
   @Min(0.000001)
   cantidad!: number;
+
+  /**
+   * El precio de esta línea, solo cuando el producto todavía no tiene precio
+   * de lista.
+   *
+   * No es negociar precio por documento —eso sigue afuera, ver "Descuentos por
+   * línea o por documento" en `docs/planes/ventas-backend.md`—: es que una
+   * cotización no puede quedar trabada porque a un producto recién importado
+   * le falta un dato. Si el producto tiene precio vigente, manda el de lista y
+   * esto se ignora.
+   */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  precioUnitario?: number;
 }
 
 export class CrearCotizacionDto {

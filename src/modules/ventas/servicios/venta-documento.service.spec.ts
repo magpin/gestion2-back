@@ -247,7 +247,7 @@ describe('VentaDocumentoService.crearCotizacion', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
-  it('rechaza si el producto no tiene precio de venta configurado', async () => {
+  it('rechaza si el producto no tiene precio de lista y la línea tampoco lo trae', async () => {
     const { tx } = txFalso();
     const servicio = new VentaDocumentoService(
       txServiceFalso(tx),
@@ -263,7 +263,69 @@ describe('VentaDocumentoService.crearCotizacion', () => {
         fecha: '2026-09-07',
         lineas: [{ productoId: 'p-1', cantidad: 1 }],
       }),
-    ).rejects.toThrow(/precio de venta configurado/);
+    ).rejects.toThrow(/digitá el precio en la línea/);
+  });
+
+  it('usa el precio digitado en la línea cuando el producto no tiene precio de lista', async () => {
+    const { tx } = txFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      inventarioFalso({ precio: null }),
+      {} as never,
+      {} as never, // TesoreriaApi: no la usa este método.
+    );
+
+    const documento = await servicio.crearCotizacion(ctx, {
+      terceroId: 'ter-1',
+      fecha: '2026-09-07',
+      lineas: [{ productoId: 'p-1', cantidad: 2, precioUnitario: 100000 }],
+    });
+
+    expect(documento.lineas[0].precio_unitario).toBe('100000');
+    expect(documento.subtotal).toBe('200000');
+    expect(documento.total_iva).toBe('38000');
+  });
+
+  it('el precio de lista manda sobre el digitado cuando el producto sí tiene precio', async () => {
+    const { tx } = txFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      inventarioFalso(),
+      {} as never,
+      {} as never, // TesoreriaApi: no la usa este método.
+    );
+
+    const documento = await servicio.crearCotizacion(ctx, {
+      terceroId: 'ter-1',
+      fecha: '2026-09-07',
+      lineas: [{ productoId: 'p-1', cantidad: 1, precioUnitario: 1 }],
+    });
+
+    expect(documento.lineas[0].precio_unitario).toBe('289900');
+  });
+
+  it('no mira la existencia: cotiza 9.999 unidades de un producto sin nada en bodega', async () => {
+    const { tx } = txFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      // El doble de InventarioApi solo sabe de `producto` y `precioVigente`:
+      // si la cotización consultara el saldo o el kardex, reventaría acá.
+      inventarioFalso(),
+      {} as never,
+      {} as never, // TesoreriaApi: no la usa este método.
+    );
+
+    const documento = await servicio.crearCotizacion(ctx, {
+      terceroId: 'ter-1',
+      fecha: '2026-09-07',
+      lineas: [{ productoId: 'p-1', cantidad: 9999 }],
+    });
+
+    expect(documento.lineas).toHaveLength(1);
+    expect(documento.lineas[0].cantidad).toBe('9999');
   });
 });
 

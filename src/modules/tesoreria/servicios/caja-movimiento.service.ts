@@ -358,6 +358,7 @@ export class CajaMovimientoService {
       concepto: string;
       valor: number;
       contraCuentaId: string;
+      terceroId?: string | null;
     },
     tipo: 'INGRESO' | 'EGRESO',
     movimientoId: string,
@@ -390,6 +391,10 @@ export class CajaMovimientoService {
             cuentaId: dto.contraCuentaId,
             debito: tipo === 'EGRESO' ? dto.valor : 0,
             credito: tipo === 'INGRESO' ? dto.valor : 0,
+            // Un cobro o pago va contra Clientes/Proveedores, y esas cuentas
+            // exigen tercero: sin él el libro no sabe quién pagó ni a quién.
+            // Un movimiento manual no lo trae y su contracuenta no lo pide.
+            terceroId: dto.terceroId ?? undefined,
           },
         ],
       },

@@ -1,10 +1,11 @@
-import { IsISO8601, IsUUID } from 'class-validator';
+import { IsUUID } from 'class-validator';
+import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
 
 export class RangoDto {
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   desde!: string;
 
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   hasta!: string;
 }
 

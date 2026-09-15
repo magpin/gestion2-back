@@ -3,7 +3,6 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
-  IsISO8601,
   IsNumber,
   IsOptional,
   IsString,
@@ -14,6 +13,7 @@ import {
 } from 'class-validator';
 
 import { PaginacionDto } from '../../../common/dto/paginacion.dto';
+import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
 
 /**
  * Una línea del asiento.
@@ -62,7 +62,7 @@ export class CrearAsientoDto {
   comprobanteTipoId!: string;
 
   /** La fecha del hecho, no la de digitación. Decide en qué período cae. */
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fecha!: string;
 
   /**
@@ -100,11 +100,11 @@ const aBooleano = ({ value }: { value: unknown }): boolean | undefined =>
 
 export class FiltroAsientosDto extends PaginacionDto {
   @IsOptional()
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   desde?: string;
 
   @IsOptional()
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   hasta?: string;
 
   @IsOptional()

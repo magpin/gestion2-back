@@ -212,6 +212,14 @@ export class AsientoService {
     return this.tx.enContexto(
       ctx,
       async (t) => {
+        // Los módulos llaman a esto con fechas que a veces vienen de la base, y
+        // pg entrega las columnas `date` como `Date`, no como texto. Mejor
+        // decirlo acá que dejar que un mes `NaN` reviente en Postgres.
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dto.fecha))) {
+          throw new BadRequestException(
+            `La fecha del asiento tiene que ser AAAA-MM-DD; llegó "${String(dto.fecha)}".`,
+          );
+        }
         const fecha = new Date(`${dto.fecha}T12:00:00`);
         const periodo = await this.periodos.exigirAbierto(ctx, fecha, t);
 

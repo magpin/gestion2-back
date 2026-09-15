@@ -1,20 +1,14 @@
-import {
-  IsISO8601,
-  IsNumber,
-  IsOptional,
-  IsString,
-  Length,
-  Min,
-} from 'class-validator';
+import { IsNumber, IsOptional, IsString, Length, Min } from 'class-validator';
 
 import { PaginacionDto } from '../../../common/dto/paginacion.dto';
+import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
 
 export class CambiarPrecioDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   precioVenta!: number;
 
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fechaInicio!: string;
 
   /** Por qué cambió. Opcional a propósito: ver el comentario en `0025`. */
@@ -27,10 +21,10 @@ export class CambiarPrecioDto {
 /** La bitácora completa: todos los productos, filtrable por rango de fecha. */
 export class ListarPreciosDto extends PaginacionDto {
   @IsOptional()
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   desde?: string;
 
   @IsOptional()
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   hasta?: string;
 }

@@ -2,7 +2,6 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsIn,
-  IsISO8601,
   IsNumber,
   IsOptional,
   IsString,
@@ -14,6 +13,7 @@ import {
 } from 'class-validator';
 
 import { PaginacionDto } from '../../../common/dto/paginacion.dto';
+import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
 
 /** Los seis conceptos que ya siembra `plan-cuentas.reglas.ts` (cuenta 2365xx). */
 export const CONCEPTOS_RETENCION = [
@@ -66,7 +66,7 @@ export class CrearCompraDto {
   @IsUUID()
   terceroId!: string;
 
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fecha!: string;
 
   /** El número que el proveedor le puso a SU factura — dato externo. */
@@ -125,7 +125,7 @@ export class PagarDto {
   @IsUUID()
   cuentaBancariaId?: string;
 
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fecha!: string;
 
   @IsNumber({ maxDecimalPlaces: 2 })

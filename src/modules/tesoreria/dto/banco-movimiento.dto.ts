@@ -1,14 +1,7 @@
-import {
-  IsIn,
-  IsISO8601,
-  IsNumber,
-  IsString,
-  IsUUID,
-  Length,
-  Min,
-} from 'class-validator';
+import { IsIn, IsNumber, IsString, IsUUID, Length, Min } from 'class-validator';
 
 import { PaginacionDto } from '../../../common/dto/paginacion.dto';
+import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
 
 /**
  * El saldo con el que arranca una cuenta bancaria recién creada. No
@@ -18,7 +11,7 @@ import { PaginacionDto } from '../../../common/dto/paginacion.dto';
  */
 export class CargaInicialBancoDto {
   /** La fecha del hecho, no la de digitación. */
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fecha!: string;
 
   @IsNumber({ maxDecimalPlaces: 2 })
@@ -60,7 +53,7 @@ export class RegistrarMovimientoBancoDto {
   @IsIn(TIPOS_MOVIMIENTO_BANCO_MANUAL)
   tipo!: (typeof TIPOS_MOVIMIENTO_BANCO_MANUAL)[number];
 
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fecha!: string;
 
   @IsNumber({ maxDecimalPlaces: 2 })

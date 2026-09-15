@@ -1,5 +1,4 @@
 import {
-  IsISO8601,
   IsNumber,
   IsOptional,
   IsString,
@@ -9,10 +8,11 @@ import {
 } from 'class-validator';
 
 import { PaginacionDto } from '../../../common/dto/paginacion.dto';
+import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
 
 export class CargaInicialDto {
   /** La fecha del hecho, no la de digitación. */
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fecha!: string;
 
   @IsNumber({ maxDecimalPlaces: 6 })
@@ -32,7 +32,7 @@ export class CargaInicialDto {
 export class EntradaAjusteDto extends CargaInicialDto {}
 
 export class SalidaAjusteDto {
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fecha!: string;
 
   @IsNumber({ maxDecimalPlaces: 6 })

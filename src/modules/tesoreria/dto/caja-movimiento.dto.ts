@@ -1,13 +1,7 @@
-import {
-  IsISO8601,
-  IsNumber,
-  IsString,
-  IsUUID,
-  Length,
-  Min,
-} from 'class-validator';
+import { IsNumber, IsString, IsUUID, Length, Min } from 'class-validator';
 
 import { PaginacionDto } from '../../../common/dto/paginacion.dto';
+import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
 
 /**
  * El saldo con el que arranca una caja recién creada. No genera asiento —
@@ -17,7 +11,7 @@ import { PaginacionDto } from '../../../common/dto/paginacion.dto';
  */
 export class CargaInicialCajaDto {
   /** La fecha del hecho, no la de digitación. */
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fecha!: string;
 
   @IsNumber({ maxDecimalPlaces: 2 })
@@ -40,7 +34,7 @@ export class ListarMovimientosCajaDto extends PaginacionDto {}
  * movimiento la elige, porque acá no hay un documento que ya la sepa.
  */
 export class IngresoCajaDto {
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fecha!: string;
 
   @IsNumber({ maxDecimalPlaces: 2 })

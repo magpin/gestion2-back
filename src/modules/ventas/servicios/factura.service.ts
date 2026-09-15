@@ -8,6 +8,7 @@ import {
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import { fila } from '../../../common/db/filas';
+import { esFechaFutura } from '../../../common/fecha';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import type { LineaAsientoDto } from '../../contabilidad/dto/asiento.dto';
 import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
@@ -163,6 +164,11 @@ export class FacturaService {
       );
     }
 
+    if (esFechaFutura(dto.fecha)) {
+      throw new BadRequestException(
+        'La fecha de la factura no puede ser posterior a hoy.',
+      );
+    }
     const periodoAbierto = await this.contabilidad.periodoAbiertoEn(
       ctx,
       new Date(dto.fecha),

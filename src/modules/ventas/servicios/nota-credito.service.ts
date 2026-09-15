@@ -15,6 +15,7 @@ import {
   type VentaDocumentoLineaResumen,
   type VentaDocumentoResumen,
 } from './venta-documento.service';
+import { esFechaFutura } from '../../../common/fecha';
 
 const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, estado, prefijo, consecutivo,
                            resolucion_id, documento_origen_id, subtotal, total_iva, total,
@@ -56,6 +57,11 @@ export class NotaCreditoService {
     dto: CrearNotaCreditoDto,
   ): Promise<VentaDocumentoDetalle> {
     return this.tx.enContexto(ctx, async (t) => {
+      if (esFechaFutura(dto.fecha)) {
+        throw new BadRequestException(
+          'La fecha de la nota crédito no puede ser posterior a hoy.',
+        );
+      }
       const periodoAbierto = await this.contabilidad.periodoAbiertoEn(
         ctx,
         new Date(dto.fecha),

@@ -1,12 +1,12 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
-  IsISO8601,
   IsNumber,
   IsUUID,
   Min,
   ValidateNested,
 } from 'class-validator';
+import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
 
 export class LineaCotizacionDto {
   @IsUUID()
@@ -26,7 +26,7 @@ export class CrearCotizacionDto {
   @IsUUID()
   terceroId!: string;
 
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fecha!: string;
 
   @ValidateNested({ each: true })
@@ -43,6 +43,6 @@ export class CrearCotizacionDto {
  * la cotización.
  */
 export class ConvertirCotizacionDto {
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fecha!: string;
 }

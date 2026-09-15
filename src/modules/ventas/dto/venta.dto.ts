@@ -1,6 +1,5 @@
 import {
   IsIn,
-  IsISO8601,
   IsNumber,
   IsOptional,
   IsString,
@@ -11,6 +10,7 @@ import {
 } from 'class-validator';
 
 import { PaginacionDto } from '../../../common/dto/paginacion.dto';
+import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
 
 /**
  * Compartido entre `cotizaciones`, `facturas` y `notas-credito`: los tres
@@ -52,7 +52,7 @@ export class CobrarDto {
   @IsUUID()
   cuentaBancariaId?: string;
 
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fecha!: string;
 
   @IsNumber({ maxDecimalPlaces: 2 })

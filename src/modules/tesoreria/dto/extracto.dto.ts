@@ -1,21 +1,14 @@
-import {
-  IsIn,
-  IsISO8601,
-  IsNumber,
-  IsString,
-  IsUUID,
-  Length,
-  Min,
-} from 'class-validator';
+import { IsIn, IsNumber, IsString, IsUUID, Length, Min } from 'class-validator';
 
 import { PaginacionDto } from '../../../common/dto/paginacion.dto';
+import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
 
 /** La cabecera: el rango de fechas y los saldos que dice el banco. */
 export class CrearExtractoDto {
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fechaDesde!: string;
 
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fechaHasta!: string;
 
   @IsNumber({ maxDecimalPlaces: 2 })
@@ -29,7 +22,7 @@ export const TIPOS_LINEA_EXTRACTO = ['DEBITO', 'CREDITO'] as const;
 
 /** Un renglón del extracto, digitado a mano. */
 export class AgregarLineaExtractoDto {
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fecha!: string;
 
   @IsString()

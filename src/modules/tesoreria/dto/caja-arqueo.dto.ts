@@ -1,17 +1,11 @@
-import {
-  IsISO8601,
-  IsNumber,
-  IsOptional,
-  IsString,
-  Length,
-  Min,
-} from 'class-validator';
+import { IsNumber, IsOptional, IsString, Length, Min } from 'class-validator';
 
 import { PaginacionDto } from '../../../common/dto/paginacion.dto';
+import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
 
 /** Abre el arqueo del día: `saldo_sistema` lo congela el servicio, no acá. */
 export class AbrirArqueoDto {
-  @IsISO8601({ strict: true })
+  @EsFechaCalendario()
   fecha!: string;
 
   @IsOptional()

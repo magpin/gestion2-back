@@ -36,7 +36,10 @@ export interface ArqueoResumen {
   asiento_ajuste_id: string | null;
 }
 
-const CAMPOS = `id, caja_id, fecha, saldo_sistema, saldo_contado, diferencia,
+// `fecha` sale como texto AAAA-MM-DD y no como `Date` de pg: al cerrar, esa
+// fecha vuelve al motor de asientos, que arma el período con `new Date(\`${fecha}T12:00:00\`)`
+// y con un `Date` serializado producía un mes NaN.
+const CAMPOS = `id, caja_id, to_char(fecha, 'YYYY-MM-DD') AS fecha, saldo_sistema, saldo_contado, diferencia,
                 estado, cerrado_en, cerrado_por, nota, asiento_ajuste_id`;
 
 /** El ajuste de un arqueo es un asiento de diario, no un ingreso/egreso de caja. */

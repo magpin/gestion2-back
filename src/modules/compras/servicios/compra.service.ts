@@ -8,6 +8,7 @@ import {
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import { fila, filas } from '../../../common/db/filas';
+import { esFechaFutura } from '../../../common/fecha';
 import { armarPagina, type Pagina } from '../../../common/dto/paginacion.dto';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import type { LineaAsientoDto } from '../../contabilidad/dto/asiento.dto';
@@ -130,6 +131,11 @@ export class CompraService {
     ctx: CtxEmpresa,
     dto: CrearCompraDto,
   ): Promise<CompraDocumentoDetalle> {
+    if (esFechaFutura(dto.fecha)) {
+      throw new BadRequestException(
+        'La fecha de la compra no puede ser posterior a hoy.',
+      );
+    }
     const productoIds = dto.lineas.map((l) => l.productoId);
     if (new Set(productoIds).size !== productoIds.length) {
       throw new BadRequestException(

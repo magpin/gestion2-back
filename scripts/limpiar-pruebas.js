@@ -31,25 +31,50 @@ const PATRONES = [
   'sofia1%',
 ];
 
-// De la hoja a la raíz: cada tabla antes de aquella a la que apunta.
-const TABLAS = [
+// Lo que cuelga del tenant y no de una empresa. Lo que cuelga de una empresa
+// no se lista: se descubre en la base por la columna `empresa_id`, así cada
+// módulo nuevo —contabilidad, inventario, ventas, tesorería— queda cubierto sin
+// tocar este archivo. El orden lo resuelven las FK: se intenta cada tabla y la
+// que todavía tiene hijos vivos se reintenta en la vuelta siguiente.
+const TABLAS_TENANT = [
   ['plataforma_bitacora', 'tenant_id = ANY($1)'],
-  ['tercero_responsabilidad_fiscal', 'empresa_id IN (SELECT id FROM empresa WHERE tenant_id = ANY($1))'],
-  ['tercero', 'empresa_id IN (SELECT id FROM empresa WHERE tenant_id = ANY($1))'],
-  ['empresa_credencial_dian', 'empresa_id IN (SELECT id FROM empresa WHERE tenant_id = ANY($1))'],
-  ['empresa_resolucion_dian', 'empresa_id IN (SELECT id FROM empresa WHERE tenant_id = ANY($1))'],
-  ['empresa_configuracion_contable', 'empresa_id IN (SELECT id FROM empresa WHERE tenant_id = ANY($1))'],
-  ['empresa_matricula_mercantil', 'empresa_id IN (SELECT id FROM empresa WHERE tenant_id = ANY($1))'],
-  ['empresa_representante', 'empresa_id IN (SELECT id FROM empresa WHERE tenant_id = ANY($1))'],
-  ['empresa_regimen_tributario', 'empresa_id IN (SELECT id FROM empresa WHERE tenant_id = ANY($1))'],
-  ['empresa_actividad_economica', 'empresa_id IN (SELECT id FROM empresa WHERE tenant_id = ANY($1))'],
-  ['empresa_sede', 'empresa_id IN (SELECT id FROM empresa WHERE tenant_id = ANY($1))'],
   ['usuario_empresa_rol', 'tenant_id = ANY($1)'],
   ['usuario_rol_tenant', 'tenant_id = ANY($1)'],
   ['empresa', 'tenant_id = ANY($1)'],
   ['usuario', 'tenant_id = ANY($1)'],
   ['tenant', 'id = ANY($1)'],
 ];
+
+/** Borra en vueltas hasta que ninguna tabla quede bloqueada por una FK. */
+async function borrarPorEmpresa(c, ids) {
+  const { rows } = await c.query(
+    `SELECT DISTINCT table_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND column_name = 'empresa_id'`,
+  );
+  let pendientes = rows.map((r) => r.table_name);
+  for (let vuelta = 0; pendientes.length > 0 && vuelta < 30; vuelta += 1) {
+    const siguen = [];
+    for (const tabla of pendientes) {
+      await c.query('SAVEPOINT tabla');
+      try {
+        const r = await c.query(
+          `DELETE FROM "${tabla}" WHERE empresa_id IN (SELECT id FROM empresa WHERE tenant_id = ANY($1))`,
+          [ids],
+        );
+        if (r.rowCount > 0) console.log(`    ${String(r.rowCount).padStart(5)}  ${tabla}`);
+        await c.query('RELEASE SAVEPOINT tabla');
+      } catch (e) {
+        if (e.code !== '23503') throw e; // solo una FK justifica reintentar
+        await c.query('ROLLBACK TO SAVEPOINT tabla');
+        siguen.push(tabla);
+      }
+    }
+    if (siguen.length === pendientes.length) {
+      throw new Error(`Quedan tablas que no se pueden vaciar: ${siguen.join(', ')}`);
+    }
+    pendientes = siguen;
+  }
+}
 
 (async () => {
   const confirmar = process.argv.includes('--confirmar');
@@ -88,7 +113,8 @@ const TABLAS = [
 
   try {
     await c.query('BEGIN');
-    for (const [tabla, donde] of TABLAS) {
+    await borrarPorEmpresa(c, ids);
+    for (const [tabla, donde] of TABLAS_TENANT) {
       const r = await c.query(`DELETE FROM ${tabla} WHERE ${donde}`, [ids]);
       if (r.rowCount > 0) console.log(`    ${String(r.rowCount).padStart(5)}  ${tabla}`);
     }

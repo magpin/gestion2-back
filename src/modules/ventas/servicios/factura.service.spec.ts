@@ -117,6 +117,7 @@ const cotizacionEmitida: VentaDocumentoDetalle = {
   tipo: 'COTIZACION',
   tercero_id: 'ter-1',
   tercero_nombre: 'Tercero uno',
+  tercero_identificacion: 'NIT 900123456-7',
   fecha: '2026-09-01',
   estado: 'EMITIDA',
   prefijo: 'COT',

@@ -28,6 +28,8 @@ export interface VentaDocumentoResumen {
   tipo: string;
   tercero_id: string;
   tercero_nombre: string;
+  /** Ya formateada para mostrar: `NIT 900123456-7`, `CC 19400748`. */
+  tercero_identificacion: string;
   fecha: string;
   estado: string;
   prefijo: string | null;
@@ -62,6 +64,19 @@ export interface VentaDocumentoDetalle extends VentaDocumentoResumen {
   lineas: VentaDocumentoLineaResumen[];
 }
 
+/**
+ * El documento y su número, armados en la consulta.
+ *
+ * Con 4.282 terceros hay homónimos y nombres partidos por heurística al
+ * importar: el nombre solo no identifica a nadie, y quien factura reconoce al
+ * cliente por el NIT. Se arma acá y no en el frontend por el mismo motivo que
+ * el nombre —una sola vuelta a `tercero`— y porque el guion del DV es parte
+ * del número, no una decisión de cada pantalla.
+ */
+const IDENTIFICACION_TERCERO = `(SELECT concat_ws(' ', x.tipo_documento,
+                                        x.numero_documento || coalesce('-' || x.dv, ''))
+                                   FROM tercero x WHERE x.id = tercero_id)`;
+
 // El nombre del tercero y del producto viajan con el documento: una lista de
 // facturas que muestre ids obliga al frontend a traerse el maestro entero —con
 // miles de terceros, no cabe en una página—. Subconsultas y no JOIN, para que
@@ -70,7 +85,8 @@ const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, estado, prefijo, consecut
                            resolucion_id, documento_origen_id, subtotal, total_iva, total,
                            monto_pagado, asiento_id,
                            (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
-                              FROM tercero x WHERE x.id = tercero_id) AS tercero_nombre`;
+                              FROM tercero x WHERE x.id = tercero_id) AS tercero_nombre,
+                           ${IDENTIFICACION_TERCERO} AS tercero_identificacion`;
 
 const CAMPOS_LINEA = `id, venta_documento_id, orden, producto_id, cantidad, precio_unitario,
                        iva_tarifa, subtotal, iva_valor, total, costo_unitario,

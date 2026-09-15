@@ -34,6 +34,8 @@ export interface CompraDocumentoResumen {
   id: string;
   tercero_id: string;
   tercero_nombre: string;
+  /** Ya formateada para mostrar: `NIT 900123456-7`, `CC 19400748`. */
+  tercero_identificacion: string;
   fecha: string;
   numero_factura_proveedor: string;
   estado: string;
@@ -77,12 +79,18 @@ export interface CompraDocumentoDetalle extends CompraDocumentoResumen {
   retenciones: CompraRetencionResumen[];
 }
 
-// Mismo criterio que `VentaDocumentoService`: el nombre viaja con el documento.
+// Mismo criterio que `VentaDocumentoService`: el nombre y la identificación
+// viajan con el documento, y el porqué está escrito allá.
+const IDENTIFICACION_TERCERO = `(SELECT concat_ws(' ', x.tipo_documento,
+                                        x.numero_documento || coalesce('-' || x.dv, ''))
+                                   FROM tercero x WHERE x.id = tercero_id)`;
+
 const CAMPOS_DOCUMENTO = `id, tercero_id, fecha, numero_factura_proveedor, estado,
                            subtotal, total_iva, total, total_retenciones, neto_a_pagar,
                            monto_pagado, asiento_id,
                            (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
-                              FROM tercero x WHERE x.id = tercero_id) AS tercero_nombre`;
+                              FROM tercero x WHERE x.id = tercero_id) AS tercero_nombre,
+                           ${IDENTIFICACION_TERCERO} AS tercero_identificacion`;
 
 const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cantidad,
                        costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable,

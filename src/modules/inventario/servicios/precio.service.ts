@@ -46,6 +46,29 @@ export class PrecioService {
     dto: CambiarPrecioDto,
   ): Promise<PrecioResumen> {
     return this.tx.enContexto(ctx, async (t) => {
+      // Se mira antes de cerrar: el CHECK de la base rechazaría igual, pero
+      // hablando de una "fecha de fin" que el usuario nunca escribió. Lo que
+      // él eligió es el inicio del precio nuevo, y eso es lo que se le dice.
+      const vigente = fila<{ fecha_inicio: string }>(
+        await t.query(
+          `SELECT to_char(fecha_inicio, 'YYYY-MM-DD') AS fecha_inicio
+             FROM producto_precio
+            WHERE producto_id = $1 AND fecha_fin IS NULL
+              FOR UPDATE`,
+          [productoId],
+        ),
+      );
+      if (vigente === undefined) {
+        throw new NotFoundException(
+          'El producto no tiene un precio vigente que cerrar.',
+        );
+      }
+      if (dto.fechaInicio <= vigente.fecha_inicio) {
+        throw new BadRequestException(
+          `El precio vigente rige desde ${vigente.fecha_inicio}; el nuevo tiene que empezar después de esa fecha.`,
+        );
+      }
+
       const cerrado = fila<{ id: string }>(
         await t.query(
           `UPDATE producto_precio

@@ -228,7 +228,10 @@ export class FacturaService {
         l.productoId,
         t,
       );
-      if (precioVigente === null) {
+      // Un precio en cero también cuenta como "sin precio": la línea saldría en
+      // cero y el asiento fallaría más abajo con un mensaje contable que no le
+      // dice nada a quien está facturando.
+      if (precioVigente === null || precioVigente <= 0) {
         throw new BadRequestException(
           `El producto ${producto.codigo} no tiene un precio de venta configurado.`,
         );

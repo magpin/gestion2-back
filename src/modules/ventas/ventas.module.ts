@@ -8,9 +8,11 @@ import { CotizacionesController } from './controladores/cotizaciones.controller'
 import { FacturasController } from './controladores/facturas.controller';
 import { FaltantesController } from './controladores/faltantes.controller';
 import { NotasCreditoController } from './controladores/notas-credito.controller';
+import { NotasDebitoController } from './controladores/notas-debito.controller';
 import { FacturaService } from './servicios/factura.service';
 import { FaltanteService } from './servicios/faltante.service';
 import { NotaCreditoService } from './servicios/nota-credito.service';
+import { NotaDebitoService } from './servicios/nota-debito.service';
 import { VentaDocumentoService } from './servicios/venta-documento.service';
 import { VentasApi } from './ventas.api';
 
@@ -39,12 +41,14 @@ import { VentasApi } from './ventas.api';
     FacturasController,
     FaltantesController,
     NotasCreditoController,
+    NotasDebitoController,
   ],
   providers: [
     VentaDocumentoService,
     FacturaService,
     FaltanteService,
     NotaCreditoService,
+    NotaDebitoService,
     VentasApi,
   ],
   exports: [VentasApi],

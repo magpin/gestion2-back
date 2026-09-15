@@ -23,6 +23,10 @@ import {
 /** [BASE] en toda empresa (`preactivacion-cuentas-comercio.md`): cartera, exige tercero. */
 const CODIGO_CUENTA_CARTERA = '130505';
 
+/** Los cuatro documentos que viven en `venta_documento`. */
+export type TipoVentaDocumento =
+  'COTIZACION' | 'FACTURA' | 'NOTA_CREDITO' | 'NOTA_DEBITO';
+
 export interface VentaDocumentoResumen {
   id: string;
   tipo: string;
@@ -417,7 +421,7 @@ export class VentaDocumentoService {
    */
   async listar(
     ctx: CtxEmpresa,
-    tipo: 'COTIZACION' | 'FACTURA' | 'NOTA_CREDITO',
+    tipo: TipoVentaDocumento,
     p: ListarVentasDto,
   ): Promise<Pagina<VentaDocumentoResumen>> {
     return this.tx.enContexto(ctx, async (t) => {
@@ -462,7 +466,7 @@ export class VentaDocumentoService {
    */
   async porId(
     ctx: CtxEmpresa,
-    tipo: 'COTIZACION' | 'FACTURA' | 'NOTA_CREDITO',
+    tipo: TipoVentaDocumento,
     id: string,
     tx?: Tx,
   ): Promise<VentaDocumentoDetalle> {

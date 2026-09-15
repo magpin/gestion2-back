@@ -33,6 +33,7 @@ import type { LineaCompraEntrada } from './compra.reglas';
 export interface CompraDocumentoResumen {
   id: string;
   tercero_id: string;
+  tercero_nombre: string;
   fecha: string;
   numero_factura_proveedor: string;
   estado: string;
@@ -51,6 +52,8 @@ export interface CompraDocumentoLineaResumen {
   compra_documento_id: string;
   orden: number;
   producto_id: string;
+  producto_codigo: string;
+  producto_nombre: string;
   cantidad: string;
   costo_unitario: string;
   iva_tarifa: string;
@@ -74,12 +77,17 @@ export interface CompraDocumentoDetalle extends CompraDocumentoResumen {
   retenciones: CompraRetencionResumen[];
 }
 
+// Mismo criterio que `VentaDocumentoService`: el nombre viaja con el documento.
 const CAMPOS_DOCUMENTO = `id, tercero_id, fecha, numero_factura_proveedor, estado,
                            subtotal, total_iva, total, total_retenciones, neto_a_pagar,
-                           monto_pagado, asiento_id`;
+                           monto_pagado, asiento_id,
+                           (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
+                              FROM tercero x WHERE x.id = tercero_id) AS tercero_nombre`;
 
 const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cantidad,
-                       costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable`;
+                       costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable,
+                       (SELECT x.codigo FROM producto x WHERE x.id = producto_id) AS producto_codigo,
+                       (SELECT x.nombre FROM producto x WHERE x.id = producto_id) AS producto_nombre`;
 
 const CAMPOS_RETENCION = `id, compra_documento_id, concepto, cuenta_id, base, valor`;
 

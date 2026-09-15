@@ -27,6 +27,7 @@ export interface VentaDocumentoResumen {
   id: string;
   tipo: string;
   tercero_id: string;
+  tercero_nombre: string;
   fecha: string;
   estado: string;
   prefijo: string | null;
@@ -46,6 +47,8 @@ export interface VentaDocumentoLineaResumen {
   venta_documento_id: string;
   orden: number;
   producto_id: string;
+  producto_codigo: string;
+  producto_nombre: string;
   cantidad: string;
   precio_unitario: string;
   iva_tarifa: string;
@@ -59,12 +62,20 @@ export interface VentaDocumentoDetalle extends VentaDocumentoResumen {
   lineas: VentaDocumentoLineaResumen[];
 }
 
+// El nombre del tercero y del producto viajan con el documento: una lista de
+// facturas que muestre ids obliga al frontend a traerse el maestro entero —con
+// miles de terceros, no cabe en una página—. Subconsultas y no JOIN, para que
+// las mismas columnas sirvan en los RETURNING de los INSERT/UPDATE.
 const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, estado, prefijo, consecutivo,
                            resolucion_id, documento_origen_id, subtotal, total_iva, total,
-                           monto_pagado, asiento_id`;
+                           monto_pagado, asiento_id,
+                           (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
+                              FROM tercero x WHERE x.id = tercero_id) AS tercero_nombre`;
 
 const CAMPOS_LINEA = `id, venta_documento_id, orden, producto_id, cantidad, precio_unitario,
-                       iva_tarifa, subtotal, iva_valor, total, costo_unitario`;
+                       iva_tarifa, subtotal, iva_valor, total, costo_unitario,
+                       (SELECT x.codigo FROM producto x WHERE x.id = producto_id) AS producto_codigo,
+                       (SELECT x.nombre FROM producto x WHERE x.id = producto_id) AS producto_nombre`;
 
 /** Fijo en código: una cotización no es un dato fiscal que alguien elija. */
 const PREFIJO_COTIZACION = 'COT';

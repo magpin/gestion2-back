@@ -32,6 +32,10 @@ import type { LineaCompraEntrada } from './compra.reglas';
 
 export interface CompraDocumentoResumen {
   id: string;
+  /** FACTURA, o una de las dos notas — ver migración `0039`. */
+  tipo: 'FACTURA' | 'NOTA_CREDITO' | 'NOTA_DEBITO';
+  /** La factura que la nota corrige. `null` en una factura. */
+  documento_origen_id: string | null;
   tercero_id: string;
   tercero_nombre: string;
   /** Ya formateada para mostrar: `NIT 900123456-7`, `CC 19400748`. */
@@ -85,7 +89,8 @@ const IDENTIFICACION_TERCERO = `(SELECT concat_ws(' ', x.tipo_documento,
                                         x.numero_documento || coalesce('-' || x.dv, ''))
                                    FROM tercero x WHERE x.id = tercero_id)`;
 
-const CAMPOS_DOCUMENTO = `id, tercero_id, fecha, numero_factura_proveedor, estado,
+const CAMPOS_DOCUMENTO = `id, tipo, documento_origen_id,
+                           tercero_id, fecha, numero_factura_proveedor, estado,
                            subtotal, total_iva, total, total_retenciones, neto_a_pagar,
                            monto_pagado, asiento_id,
                            (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
@@ -429,13 +434,22 @@ export class CompraService {
   }
 
   /** Las compras, sin sus líneas ni retenciones — para el listado. */
+  /**
+   * Los documentos de compra de un tipo. `tipo` por defecto es `FACTURA`:
+   * desde `0039` las notas viven en la misma tabla, y la pantalla de compras
+   * no debería empezar a mostrarlas mezcladas de un día para otro.
+   */
   async listar(
     ctx: CtxEmpresa,
     p: ListarComprasDto,
+    tipo: 'FACTURA' | 'NOTA_CREDITO' | 'NOTA_DEBITO' = 'FACTURA',
   ): Promise<Pagina<CompraDocumentoResumen>> {
     return this.tx.enContexto(ctx, async (t) => {
       const condiciones: string[] = [];
       const params: unknown[] = [];
+
+      params.push(tipo);
+      condiciones.push(`tipo = $${params.length}`);
 
       if (p.terceroId !== undefined) {
         params.push(p.terceroId);

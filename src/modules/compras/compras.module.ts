@@ -5,12 +5,15 @@ import { InventarioModule } from '../inventario/inventario.module';
 import { NucleoModule } from '../nucleo/nucleo.module';
 import { TesoreriaModule } from '../tesoreria/tesoreria.module';
 import { ComprasController } from './controladores/compras.controller';
+import { NotasCompraController } from './controladores/notas-compra.controller';
+import { CompraNotaService } from './servicios/compra-nota.service';
 import { CompraService } from './servicios/compra.service';
 import { ComprasApi } from './compras.api';
 
 /**
  * Compras — módulo #5 de la secuencia. Factura de compra, su entrada al
- * inventario y el asiento que produce.
+ * inventario, el asiento que produce, y las dos notas del proveedor —crédito
+ * y débito— que viven en la misma tabla desde `0039`.
  *
  * Importa `NucleoModule`, `ContabilidadModule` e `InventarioModule`, igual
  * que `VentasModule`: necesita un proveedor a quién comprarle, un producto
@@ -27,8 +30,8 @@ import { ComprasApi } from './compras.api';
     InventarioModule,
     TesoreriaModule,
   ],
-  controllers: [ComprasController],
-  providers: [CompraService, ComprasApi],
+  controllers: [ComprasController, NotasCompraController],
+  providers: [CompraService, CompraNotaService, ComprasApi],
   exports: [ComprasApi],
 })
 export class ComprasModule {}

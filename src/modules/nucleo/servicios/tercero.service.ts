@@ -27,10 +27,15 @@ export interface TerceroResumen {
 export class TerceroService {
   constructor(private readonly tx: TxService) {}
 
+  /**
+   * Devuelve el resumen —la misma forma que `listar`— y no la fila cruda:
+   * quien crea un tercero desde la digitación de una venta lo necesita para
+   * dejarlo seleccionado, y la fila cruda no trae el `nombre` ya armado.
+   */
   async crear(
     ctx: CtxEmpresa,
     dto: CrearTerceroDto,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<TerceroResumen> {
     return this.tx.enContexto(ctx, async (t) => {
       await exigirTipoDocumento(t, dto.tipoDocumento);
 
@@ -75,7 +80,7 @@ export class TerceroService {
         fila.id as string,
         dto.responsabilidadesDian ?? [],
       );
-      return fila;
+      return this.resumir(fila);
     });
   }
 
@@ -177,7 +182,7 @@ export class TerceroService {
     ctx: CtxEmpresa,
     id: string,
     dto: EditarTerceroDto,
-  ): Promise<Record<string, unknown>> {
+  ): Promise<TerceroResumen> {
     return this.tx.enContexto(ctx, async (t) => {
       const editado = fila<Record<string, unknown>>(
         await t.query(
@@ -234,7 +239,7 @@ export class TerceroService {
           dto.responsabilidadesDian,
         );
       }
-      return editado;
+      return this.resumir(editado);
     });
   }
 

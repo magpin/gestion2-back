@@ -218,6 +218,52 @@ export class BancoMovimientoService {
     });
   }
 
+  /**
+   * Cuánto entró y cuánto salió en el libro entero. Espejo del de caja, y allá
+   * está escrito el porqué; lo que cambia es qué cuenta como entrada, que en
+   * un banco son dos tipos y no uno.
+   */
+  async resumen(
+    ctx: CtxEmpresa,
+    cuentaBancariaId: string,
+  ): Promise<{
+    entradas: string;
+    salidas: string;
+    saldo_inicial: string;
+    saldo: string;
+  }> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const total = fila<{
+        entradas: string;
+        salidas: string;
+        saldo_inicial: string;
+        saldo: string;
+      }>(
+        await t.query(
+          `SELECT coalesce(sum(valor) FILTER (WHERE tipo IN ('CONSIGNACION', 'TRANSFERENCIA_ENTRANTE')), 0)::text AS entradas,
+                  coalesce(sum(valor) FILTER (WHERE tipo IN ('RETIRO', 'TRANSFERENCIA_SALIENTE')), 0)::text AS salidas,
+                  coalesce(sum(valor) FILTER (WHERE tipo = 'SALDO_INICIAL'), 0)::text AS saldo_inicial,
+                  coalesce(
+                    (SELECT m.saldo_valor FROM banco_movimiento m
+                      WHERE m.cuenta_bancaria_id = $1
+                      ORDER BY m.secuencia DESC
+                      LIMIT 1), 0)::text AS saldo
+             FROM banco_movimiento
+            WHERE cuenta_bancaria_id = $1`,
+          [cuentaBancariaId],
+        ),
+      );
+      return (
+        total ?? {
+          entradas: '0',
+          salidas: '0',
+          saldo_inicial: '0',
+          saldo: '0',
+        }
+      );
+    });
+  }
+
   // ---------------------------------------------------------------------------
 
   /**

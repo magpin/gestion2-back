@@ -41,6 +41,16 @@ export class BancoMovimientosController {
     return this.movimientos.listar(ctx, cuentaBancariaId, q);
   }
 
+  /** Cuánto entró y cuánto salió en el libro entero, no en la página. */
+  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'CONSULTA')
+  @Get('resumen')
+  resumen(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) cuentaBancariaId: string,
+  ) {
+    return this.movimientos.resumen(ctx, cuentaBancariaId);
+  }
+
   /** Solo una vez por cuenta: el saldo con el que arranca. No genera asiento. */
   @Roles('CAJA', 'DIRECTOR')
   @Post('saldo-inicial')

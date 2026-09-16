@@ -16,9 +16,23 @@ export interface CuentaBancaria {
   tipo_cuenta: 'AHORROS' | 'CORRIENTE';
   cuenta_id: string;
   activa: boolean;
+  /** Cuánta plata hay hoy. Puede ser negativo: el banco admite sobregiro. */
+  saldo: string;
+  /** El día del último movimiento, o `null` si no hubo ninguno. */
+  ultimo_movimiento: string | null;
 }
 
-const CAMPOS = 'id, banco, numero_cuenta, tipo_cuenta, cuenta_id, activa';
+/** Igual que en `CajaService`, y allá está escrito el porqué. */
+const ultimo = (columna: string, porDefecto: string) =>
+  `(SELECT coalesce(
+      (SELECT m.${columna} FROM banco_movimiento m
+        WHERE m.cuenta_bancaria_id = cuenta_bancaria.id
+        ORDER BY m.secuencia DESC
+        LIMIT 1), ${porDefecto}))`;
+
+const CAMPOS = `id, banco, numero_cuenta, tipo_cuenta, cuenta_id, activa,
+                ${ultimo('saldo_valor', '0')} AS saldo,
+                ${ultimo('fecha', 'NULL')} AS ultimo_movimiento`;
 
 /**
  * El maestro de cuentas bancarias. Sin movimientos todavía —eso es

@@ -42,6 +42,16 @@ export class CajaMovimientosController {
     return this.movimientos.listar(ctx, cajaId, q);
   }
 
+  /** Cuánto entró y cuánto salió en el libro entero, no en la página. */
+  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'CONSULTA')
+  @Get('resumen')
+  resumen(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) cajaId: string,
+  ) {
+    return this.movimientos.resumen(ctx, cajaId);
+  }
+
   /** Solo una vez por caja: el saldo con el que arranca. No genera asiento. */
   @Roles('CAJA', 'DIRECTOR')
   @Post('saldo-inicial')

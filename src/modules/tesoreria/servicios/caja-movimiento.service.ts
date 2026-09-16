@@ -249,6 +249,55 @@ export class CajaMovimientoService {
     });
   }
 
+  /**
+   * Cuánto entró y cuánto salió en el libro entero, y con qué saldo quedó.
+   *
+   * No se saca de sumar la página que se está mirando: el libro viene paginado
+   * y sumar cincuenta renglones para titularlo "entradas" sería mentir. El
+   * saldo inicial no entra en ninguno de los dos —no es plata que entró, es de
+   * dónde arrancó la cuenta— y por eso va aparte.
+   */
+  async resumen(
+    ctx: CtxEmpresa,
+    cajaId: string,
+  ): Promise<{
+    entradas: string;
+    salidas: string;
+    saldo_inicial: string;
+    saldo: string;
+  }> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const total = fila<{
+        entradas: string;
+        salidas: string;
+        saldo_inicial: string;
+        saldo: string;
+      }>(
+        await t.query(
+          `SELECT coalesce(sum(valor) FILTER (WHERE tipo = 'INGRESO'), 0)::text AS entradas,
+                  coalesce(sum(valor) FILTER (WHERE tipo = 'EGRESO'), 0)::text AS salidas,
+                  coalesce(sum(valor) FILTER (WHERE tipo = 'SALDO_INICIAL'), 0)::text AS saldo_inicial,
+                  coalesce(
+                    (SELECT m.saldo_valor FROM caja_movimiento m
+                      WHERE m.caja_id = $1
+                      ORDER BY m.secuencia DESC
+                      LIMIT 1), 0)::text AS saldo
+             FROM caja_movimiento
+            WHERE caja_id = $1`,
+          [cajaId],
+        ),
+      );
+      return (
+        total ?? {
+          entradas: '0',
+          salidas: '0',
+          saldo_inicial: '0',
+          saldo: '0',
+        }
+      );
+    });
+  }
+
   // ---------------------------------------------------------------------------
 
   /**

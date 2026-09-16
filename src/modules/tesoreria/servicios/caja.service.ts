@@ -16,9 +16,28 @@ export interface Caja {
   sede_id: string | null;
   cuenta_id: string;
   activa: boolean;
+  /** Cuánta plata hay adentro hoy. `0` si la caja nunca se movió. */
+  saldo: string;
+  /** El día del último movimiento, o `null` si no hubo ninguno. */
+  ultimo_movimiento: string | null;
 }
 
-const CAMPOS = 'id, nombre, tipo, sede_id, cuenta_id, activa';
+/**
+ * El saldo es el del último movimiento, no una suma: `CajaMovimientoService`
+ * ya lleva el corrido y volver a sumarlo acá serían dos versiones de la misma
+ * verdad. Ordena `secuencia` —dos movimientos del mismo día necesitan un orden
+ * total— y para eso existe `ix_caja_movimiento_ultimo`.
+ */
+const ultimo = (columna: string, porDefecto: string) =>
+  `(SELECT coalesce(
+      (SELECT m.${columna} FROM caja_movimiento m
+        WHERE m.caja_id = caja.id
+        ORDER BY m.secuencia DESC
+        LIMIT 1), ${porDefecto}))`;
+
+const CAMPOS = `id, nombre, tipo, sede_id, cuenta_id, activa,
+                ${ultimo('saldo_valor', '0')} AS saldo,
+                ${ultimo('fecha', 'NULL')} AS ultimo_movimiento`;
 
 /**
  * El maestro de cajas. Sin movimientos todavía —eso es `CajaMovimientoService`,

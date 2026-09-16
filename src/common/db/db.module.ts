@@ -29,6 +29,12 @@ export const DATA_SOURCE_PROVISION = Symbol('DATA_SOURCE_PROVISION');
         username: env.db.usuario,
         password: env.db.password,
         database: env.db.nombre,
+        // `rejectUnauthorized: false` porque los proveedores administrados
+        // rotan sus certificados intermedios y no publican una CA estable que
+        // valga la pena fijar acá. El tráfico va cifrado igual; lo que no se
+        // verifica es la identidad del servidor, que en una red privada o con
+        // un host fijo es un riesgo distinto del de viajar en claro.
+        ssl: env.db.ssl ? { rejectUnauthorized: false } : false,
         // Sin entidades a proposito: el esquema vive en las migraciones SQL y los
         // repositorios consultan con SQL. Una segunda definicion del esquema en
         // decoradores terminaria separandose de la primera.

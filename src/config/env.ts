@@ -16,6 +16,12 @@ export interface Entorno {
     usuario: string;
     password: string;
     nombre: string;
+    /**
+     * Si la conexión va cifrada. Un Postgres local no lo necesita; uno
+     * administrado —Neon, RDS, Supabase— lo exige y rechaza la conexión sin
+     * él. Se enciende con `DB_SSL=true`.
+     */
+    ssl: boolean;
   };
 
   /**
@@ -94,6 +100,15 @@ export function leerEntorno(): Entorno {
       usuario: usuarioApp ?? requerido('DB_USERNAME'),
       password: opcional('DB_APP_PASSWORD') ?? opcional('DB_PASSWORD') ?? '',
       nombre: requerido('DB_NAME'),
+      // Se deduce del host cuando no se dice: los proveedores administrados
+      // tienen dominios reconocibles, y olvidarse de la variable no debería
+      // significar "intentá sin cifrar contra un servidor que lo exige".
+      ssl:
+        opcional('DB_SSL') === 'true' ||
+        (opcional('DB_SSL') === undefined &&
+          /neon\.tech|amazonaws\.com|supabase\.co|azure\.com/.test(
+            opcional('DB_HOST') ?? '',
+          )),
     },
     dbProvision:
       provisionUsuario !== undefined && provisionPassword !== undefined

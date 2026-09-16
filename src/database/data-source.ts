@@ -24,6 +24,16 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USERNAME ?? 'postgres',
   password: process.env.DB_PASSWORD ?? '',
   database: process.env.DB_NAME ?? 'db_gestion5',
+  // Mismo criterio que la API (`env.ts`): los proveedores administrados exigen
+  // TLS y se reconocen por el host.
+  ssl:
+    process.env.DB_SSL === 'true' ||
+    (process.env.DB_SSL === undefined &&
+      /neon\.tech|amazonaws\.com|supabase\.co|azure\.com/.test(
+        process.env.DB_HOST ?? '',
+      ))
+      ? { rejectUnauthorized: false }
+      : false,
   schema: 'public',
   synchronize: false,
   logging: ['error', 'migration', 'schema'],

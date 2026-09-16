@@ -25,10 +25,38 @@ export interface ProductoResumen {
   cuenta_costo_venta_id: string | null;
   cuenta_ingreso_id: string | null;
   activo: boolean;
+  /** Cuántas unidades hay hoy. `0` si el producto nunca se movió. */
+  saldo_cantidad: string;
+  /** El promedio ponderado con el que salen las ventas. `0` sin movimientos. */
+  saldo_costo_promedio: string;
+  /** `saldo_cantidad × saldo_costo_promedio`: cuánta plata hay parada en este producto. */
+  saldo_valor: string;
 }
 
+/**
+ * El saldo de hoy es el del último movimiento del kardex, no una suma: el
+ * kardex ya lleva el corrido y recalcularlo acá sería tener dos versiones de
+ * la misma verdad. `secuencia` —y no la fecha— es lo que ordena, por lo mismo
+ * que en `KardexService`: dos movimientos del mismo día necesitan un orden
+ * total, y para eso existe `ix_producto_movimiento_ultimo`.
+ *
+ * Son tres subconsultas sobre el mismo índice. Se paga a propósito: así el
+ * saldo viaja con el producto en la lista, en el detalle y en el `RETURNING`
+ * de crear —donde todavía vale cero—, sin que ninguna pantalla tenga que
+ * pedirlo aparte producto por producto.
+ */
+const ultimoSaldo = (columna: string) =>
+  `(SELECT coalesce(
+      (SELECT m.${columna} FROM producto_movimiento m
+        WHERE m.producto_id = producto.id
+        ORDER BY m.secuencia DESC
+        LIMIT 1), 0))`;
+
 const CAMPOS = `id, codigo, nombre, unidad_medida, iva_tarifa, cuenta_inventario_id,
-                cuenta_costo_venta_id, cuenta_ingreso_id, activo`;
+                cuenta_costo_venta_id, cuenta_ingreso_id, activo,
+                ${ultimoSaldo('saldo_cantidad')} AS saldo_cantidad,
+                ${ultimoSaldo('saldo_costo_promedio')} AS saldo_costo_promedio,
+                ${ultimoSaldo('saldo_valor')} AS saldo_valor`;
 
 /**
  * El maestro de productos. Sin kardex todavía — eso es `KardexService`, que
@@ -82,6 +110,43 @@ export class ProductoService {
       );
 
       return creado;
+    });
+  }
+
+  /**
+   * Cuánta plata hay parada en el inventario: la suma del saldo de cada
+   * producto activo.
+   *
+   * No sale de sumar la página que se está mirando —eso daría el valor de
+   * cincuenta productos y lo llamaría "el inventario"—, y por eso es su propia
+   * consulta. Acá sí se puede usar `LATERAL`, que no sirve en los `CAMPOS`
+   * porque esos tienen que valer también dentro de un `RETURNING`.
+   */
+  async valorInventario(
+    ctx: CtxEmpresa,
+  ): Promise<{ valor: string; productos: string; sin_existencia: string }> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const total = fila<{
+        valor: string;
+        productos: string;
+        sin_existencia: string;
+      }>(
+        await t.query(
+          `SELECT coalesce(sum(u.saldo_valor), 0)::text AS valor,
+                  count(*)::text AS productos,
+                  count(*) FILTER (WHERE u.saldo_cantidad <= 0)::text AS sin_existencia
+             FROM producto p
+             LEFT JOIN LATERAL (
+               SELECT m.saldo_valor, m.saldo_cantidad
+                 FROM producto_movimiento m
+                WHERE m.producto_id = p.id
+                ORDER BY m.secuencia DESC
+                LIMIT 1
+             ) u ON true
+            WHERE p.activo`,
+        ),
+      );
+      return total ?? { valor: '0', productos: '0', sin_existencia: '0' };
     });
   }
 

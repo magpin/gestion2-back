@@ -54,6 +54,13 @@ export class ProductosController {
     return this.precios.listarTodos(ctx, q);
   }
 
+  /** Va antes de `:id`, por lo mismo que `precios`. */
+  @Roles('DIRECTOR', 'CONTADOR', 'INVENTARIO', 'VENTAS', 'COMPRAS', 'CONSULTA')
+  @Get('valor')
+  valorInventario(@ActorEmpresa() ctx: CtxEmpresa) {
+    return this.productos.valorInventario(ctx);
+  }
+
   @Roles('DIRECTOR', 'CONTADOR', 'INVENTARIO', 'VENTAS', 'COMPRAS', 'CONSULTA')
   @Get()
   listar(@ActorEmpresa() ctx: CtxEmpresa, @Query() q: ListarProductosDto) {

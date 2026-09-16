@@ -65,6 +65,8 @@ export const DATA_SOURCE_PROVISION = Symbol('DATA_SOURCE_PROVISION');
           username: env.dbProvision.usuario,
           password: env.dbProvision.password,
           database: env.db.nombre,
+          // La misma conexión cifrada que la principal: es el mismo servidor.
+          ssl: env.db.ssl ? { rejectUnauthorized: false } : false,
           entities: [],
           synchronize: false,
         });

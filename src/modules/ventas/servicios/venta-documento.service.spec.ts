@@ -217,10 +217,11 @@ function txCobrarFalso(
     | undefined,
 ) {
   const actualizaciones: unknown[][] = [];
-  // El `saldo_efectivo` lo calcula la consulta, no el servicio: acá se
-  // replica esa suma para que el caso se siga escribiendo en los términos
-  // en que se piensa —"esta factura tiene una nota crédito de 19.000"—.
-  const saldoEfectivo =
+  // `por_cobrar` lo calcula la consulta, no el servicio: acá se replica esa
+  // cuenta para que el caso se siga escribiendo en los términos en que se
+  // piensa —"esta factura tiene una nota crédito de 19.000"—. Sin retenciones
+  // en estos casos: son el otro lado y tienen sus propios tests.
+  const porCobrar =
     documento === undefined
       ? undefined
       : String(Number(documento.total) + Number(documento.ajuste_notas));
@@ -229,7 +230,7 @@ function txCobrarFalso(
       if (sql.includes('FOR UPDATE')) {
         return documento === undefined
           ? []
-          : [{ ...documento, saldo_efectivo: saldoEfectivo }];
+          : [{ ...documento, por_cobrar: porCobrar }];
       }
       if (sql.includes('UPDATE venta_documento')) {
         actualizaciones.push(params ?? []);

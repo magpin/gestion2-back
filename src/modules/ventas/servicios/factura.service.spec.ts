@@ -145,6 +145,7 @@ const cotizacionEmitida: VentaDocumentoDetalle = {
   monto_pagado: '0',
   ajuste_notas: '0',
   saldo_efectivo: '344981',
+  total_retenido: '0',
   pendiente: '344981',
   saldo_a_favor: '0',
   asiento_id: null,
@@ -276,6 +277,8 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidad,
       {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones.
+      {} as never,
     );
 
     const factura = await servicio.crear(ctx, {
@@ -328,6 +331,8 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones.
+      {} as never,
     );
 
     const factura = await servicio.crear(ctx, {
@@ -350,6 +355,8 @@ describe('FacturaService.crear', () => {
       nucleo,
       inventarioFalso(),
       contabilidadFalso({ periodoAbierto: false }).fake,
+      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones.
       {} as never,
     );
 
@@ -377,6 +384,8 @@ describe('FacturaService.crear', () => {
         inventarioFalso(),
         contabilidadFalso().fake,
         {} as never,
+        // RetencionesApi: ninguno de estos casos trae retenciones.
+        {} as never,
       );
 
       await expect(
@@ -400,6 +409,8 @@ describe('FacturaService.crear', () => {
         costeo: { costoUnitario: 200000, valorTotal: 400000, faltante: 1.5 },
       }),
       contabilidadFalso().fake,
+      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones.
       {} as never,
     );
 
@@ -430,6 +441,8 @@ describe('FacturaService.crear', () => {
       }),
       contabilidadFalso().fake,
       {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones.
+      {} as never,
     );
 
     await expect(
@@ -451,6 +464,8 @@ describe('FacturaService.crear', () => {
         costeo: { costoUnitario: 200000, valorTotal: 400000, faltante: 0 },
       }),
       contabilidadFalso().fake,
+      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones.
       {} as never,
     );
 
@@ -474,6 +489,8 @@ describe('FacturaService.crear', () => {
         costeo: { costoUnitario: 200000, valorTotal: 400000, faltante: 0 },
       }),
       contabilidadFalso().fake,
+      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones.
       {} as never,
     );
 
@@ -500,6 +517,8 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones.
+      {} as never,
     );
 
     await servicio.crear(ctx, {
@@ -519,6 +538,8 @@ describe('FacturaService.crear', () => {
       nucleoFalso().fake,
       inventarioFalso(),
       contabilidadFalso().fake,
+      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones.
       {} as never,
     );
 
@@ -542,6 +563,8 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones.
+      {} as never,
     );
 
     await expect(
@@ -562,6 +585,8 @@ describe('FacturaService.crear', () => {
         producto: { ...productoActivo, cuenta_costo_venta_id: null },
       }),
       contabilidadFalso().fake,
+      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones.
       {} as never,
     );
 
@@ -584,6 +609,8 @@ describe('FacturaService.crear', () => {
       }),
       contabilidadFalso().fake,
       {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones.
+      {} as never,
     );
 
     await expect(
@@ -602,6 +629,8 @@ describe('FacturaService.crear', () => {
       nucleoFalso({ cuentas: {} }).fake,
       inventarioFalso(),
       contabilidadFalso().fake,
+      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones.
       {} as never,
     );
 
@@ -624,6 +653,8 @@ describe('FacturaService.convertirCotizacion', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       ventasFalso(),
+      // RetencionesApi: ninguno de estos casos trae retenciones.
+      {} as never,
     );
 
     const factura = await servicio.convertirCotizacion(ctx, 'cot-1', HOY);
@@ -645,6 +676,8 @@ describe('FacturaService.convertirCotizacion', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       ventasFalso(),
+      // RetencionesApi: ninguno de estos casos trae retenciones.
+      {} as never,
     );
 
     await expect(
@@ -660,6 +693,8 @@ describe('FacturaService.convertirCotizacion', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       ventasFalso(),
+      // RetencionesApi: ninguno de estos casos trae retenciones.
+      {} as never,
     );
 
     await expect(
@@ -675,6 +710,8 @@ describe('FacturaService.convertirCotizacion', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       ventasFalso(),
+      // RetencionesApi: ninguno de estos casos trae retenciones.
+      {} as never,
     );
 
     await expect(

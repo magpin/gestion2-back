@@ -14,7 +14,8 @@ import type { LineaAsientoDto } from '../../contabilidad/dto/asiento.dto';
 import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import { InventarioApi } from '../../inventario/inventario.api';
 import { NucleoApi } from '../../nucleo/nucleo.api';
-import type { CrearFacturaDto } from '../dto/factura.dto';
+import { RetencionesApi } from '../../retenciones/retenciones.api';
+import type { CrearFacturaDto, RetencionVentaDto } from '../dto/factura.dto';
 import {
   CAMPOS_DOCUMENTO,
   VentaDocumentoService,
@@ -69,6 +70,7 @@ export class FacturaService {
     private readonly inventario: InventarioApi,
     private readonly contabilidad: ContabilidadApi,
     private readonly ventas: VentaDocumentoService,
+    private readonly retenciones: RetencionesApi,
   ) {}
 
   async crear(
@@ -341,16 +343,38 @@ export class FacturaService {
       dto.fecha,
     );
 
-    // El asiento: débito cartera por el total, crédito ingreso por línea,
-    // crédito IVA si aplica, y el par costo/inventario por línea —
-    // débito costo de venta, crédito inventario, mismo valor los dos.
+    // Lo que el cliente nos retiene. No baja el total de la factura: baja lo
+    // que nos van a pagar, y por eso el débito de cartera es el total MENOS lo
+    // retenido, con lo retenido debitado aparte contra su propia cuenta.
+    const retenciones = await this.resolverRetenciones(
+      ctx,
+      dto.retenciones ?? [],
+      dto.fecha,
+      totales.total,
+      t,
+    );
+    const totalRetenido = retenciones.reduce((acc, r) => acc + r.valor, 0);
+
+    // El asiento: débito cartera por lo que queda por cobrar, débito de las
+    // retenciones que nos practicaron, crédito ingreso por línea, crédito IVA
+    // si aplica, y el par costo/inventario por línea — débito costo de venta,
+    // crédito inventario, mismo valor los dos.
     const lineasAsiento: LineaAsientoDto[] = [
       {
         cuentaId: cuentaCartera.id,
         terceroId: dto.terceroId,
-        debito: totales.total,
+        debito: totales.total - totalRetenido,
         credito: 0,
       },
+      // Un activo: es impuesto nuestro pagado por anticipado, no un menor
+      // ingreso. Registrarlo como menor ingreso diría que vendimos menos de lo
+      // que vendimos.
+      ...retenciones.map((r) => ({
+        cuentaId: r.cuentaId,
+        terceroId: dto.terceroId,
+        debito: r.valor,
+        credito: 0,
+      })),
     ];
     lineas.forEach((l, i) => {
       lineasAsiento.push({
@@ -466,6 +490,28 @@ export class FacturaService {
       lineasInsertadas.push(insertada);
     }
 
+    // Las retenciones, con la tarifa y la base con las que se calcularon: un
+    // certificado de retención se explica con la tarifa de SU año, y si el
+    // catálogo cambia el año que viene, esta fila tiene que seguir diciendo lo
+    // mismo que el papel que se le entregó al cliente.
+    for (const r of retenciones) {
+      await t.query(
+        `INSERT INTO venta_retencion
+           (empresa_id, venta_documento_id, tipo, concepto, cuenta_id, base, tarifa, valor)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [
+          ctx.empresaId,
+          documento.id,
+          r.tipo,
+          r.concepto,
+          r.cuentaId,
+          r.base,
+          r.tarifa,
+          r.valor,
+        ],
+      );
+    }
+
     // Recién ahora se escribe el kardex — el asiento y la factura ya
     // existen, así que `descontarPorVenta` los enlaza, no los adivina.
     for (let i = 0; i < lineas.length; i++) {
@@ -504,5 +550,67 @@ export class FacturaService {
     }
 
     return { ...documento, lineas: lineasInsertadas };
+  }
+  /**
+   * Las retenciones que el cliente nos practica, calculadas contra el catálogo
+   * del año del documento.
+   *
+   * Solo entra lo que el cliente **efectivamente** retuvo: a diferencia de
+   * compras —donde la empresa es el agente y responde ante la DIAN por lo que
+   * debió retener—, acá la decisión no es nuestra. Lo que hacemos es registrar
+   * lo que el comprobante de retención dice, con el valor calculado para que
+   * cuadre contra ese papel.
+   */
+  private async resolverRetenciones(
+    ctx: CtxEmpresa,
+    retenciones: RetencionVentaDto[],
+    fecha: string,
+    total: number,
+    t: Tx,
+  ): Promise<
+    Array<{
+      tipo: string;
+      concepto: string;
+      cuentaId: string;
+      base: number;
+      tarifa: number;
+      valor: number;
+    }>
+  > {
+    if (retenciones.length === 0) return [];
+
+    const resueltas = [];
+    for (const r of retenciones) {
+      const calculada = await this.retenciones.calcular(
+        ctx,
+        {
+          conceptoId: r.conceptoId,
+          base: r.base,
+          fecha,
+          // La tarifa que el cliente nos aplica depende de si NOSOTROS
+          // declaramos renta, no de él. Una empresa que factura declara: si
+          // algún día hace falta el caso contrario, sale de la configuración.
+          declaranteRenta: true,
+        },
+        t,
+      );
+      if (calculada === null) continue;
+      resueltas.push({
+        tipo: calculada.tipo,
+        concepto: calculada.concepto,
+        cuentaId: calculada.cuentaId,
+        base: calculada.base,
+        tarifa: calculada.tarifa,
+        valor: calculada.valor,
+      });
+    }
+
+    const retenido = resueltas.reduce((acc, r) => acc + r.valor, 0);
+    if (retenido > total) {
+      throw new BadRequestException(
+        'Lo retenido no puede superar el total de la factura.',
+      );
+    }
+    return resueltas;
   }
 }

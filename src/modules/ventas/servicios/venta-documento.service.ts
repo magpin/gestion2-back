@@ -66,7 +66,13 @@ export interface VentaDocumentoResumen {
    */
   saldo_efectivo: string;
   /**
-   * Lo que falta por cobrar: `saldo_efectivo - monto_pagado`, nunca negativo.
+   * Lo que el cliente nos retuvo. No baja el valor de la factura: baja lo que
+   * nos van a pagar. Es un anticipo de nuestro impuesto, no un menor ingreso.
+   */
+  total_retenido: string;
+  /**
+   * Lo que falta por cobrar: `saldo_efectivo - total_retenido - monto_pagado`,
+   * nunca negativo.
    * Cuando se cobró de más, esto es `0` y la diferencia está en
    * `saldo_a_favor` — un pendiente en rojo sería un número que nadie sabe
    * leer y que ninguna pantalla debería sumar a la cartera.
@@ -138,8 +144,20 @@ const AJUSTE_NOTAS = `(SELECT coalesce(sum(CASE WHEN n.tipo = 'NOTA_CREDITO' THE
  * viajar también con el documento recién insertado.
  */
 const SALDO_EFECTIVO = `(total + ${AJUSTE_NOTAS})`;
-const PENDIENTE = `greatest(${SALDO_EFECTIVO} - monto_pagado, 0)`;
-const SALDO_A_FAVOR = `greatest(monto_pagado - ${SALDO_EFECTIVO}, 0)`;
+
+/**
+ * Lo que el cliente nos retuvo. **No baja lo que la factura vale** —el saldo
+ * efectivo no lo mira— sino lo que nos van a pagar: es impuesto nuestro que el
+ * cliente le entrega a la DIAN en nuestro nombre, y cobrárselo además sería
+ * cobrarlo dos veces.
+ */
+const RETENIDO = `(SELECT coalesce(sum(r.valor), 0)
+                     FROM venta_retencion r
+                    WHERE r.venta_documento_id = venta_documento.id)`;
+
+const POR_COBRAR = `(${SALDO_EFECTIVO} - ${RETENIDO})`;
+const PENDIENTE = `greatest(${POR_COBRAR} - monto_pagado, 0)`;
+const SALDO_A_FAVOR = `greatest(monto_pagado - ${POR_COBRAR}, 0)`;
 
 /**
  * El documento y su número, armados en la consulta.
@@ -173,6 +191,7 @@ export const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, estado, prefijo, c
                            ${IDENTIFICACION_TERCERO} AS tercero_identificacion,
                            ${AJUSTE_NOTAS} AS ajuste_notas,
                            ${SALDO_EFECTIVO} AS saldo_efectivo,
+                           ${RETENIDO} AS total_retenido,
                            ${PENDIENTE} AS pendiente,
                            ${SALDO_A_FAVOR} AS saldo_a_favor`;
 
@@ -695,11 +714,11 @@ export class VentaDocumentoService {
         consecutivo: number;
         total: string;
         monto_pagado: string;
-        saldo_efectivo: string;
+        por_cobrar: string;
       }>(
         await t.query(
           `SELECT tipo, tercero_id, estado, prefijo, consecutivo, total, monto_pagado,
-                  ${SALDO_EFECTIVO} AS saldo_efectivo
+                  ${POR_COBRAR} AS por_cobrar
              FROM venta_documento
             WHERE id = $1
             FOR UPDATE`,
@@ -722,11 +741,11 @@ export class VentaDocumentoService {
       // caben y juntos se pasan.
       const valorTotal = sumarPagos(dto.pagos.map((p) => p.valor));
 
-      // Contra el saldo efectivo, no contra el total: una factura de un
-      // millón con una nota crédito de doscientos mil debe ochocientos mil, y
-      // cobrarle el millón sería cobrar de más.
+      // Contra lo que queda por cobrar: el total, menos lo que las notas le
+      // movieron, menos lo que el cliente nos retuvo. Cobrarle el total a una
+      // factura con retención sería cobrar dos veces el mismo impuesto.
       const resultado = calcularCobro(
-        Number(documento.saldo_efectivo),
+        Number(documento.por_cobrar),
         Number(documento.monto_pagado),
         valorTotal,
       );

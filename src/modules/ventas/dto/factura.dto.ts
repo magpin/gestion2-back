@@ -20,6 +20,26 @@ export class LineaFacturaDto {
   cantidad!: number;
 }
 
+/**
+ * Una retención que el cliente nos practica sobre esta factura.
+ *
+ * **No baja el valor de la factura**: baja lo que nos van a pagar. Lo retenido
+ * es un anticipo de nuestro impuesto, o sea un activo nuestro (grupo `1355`),
+ * no un menor ingreso — si se registrara como menor ingreso, el estado de
+ * resultados diría que vendimos menos de lo que vendimos.
+ *
+ * El valor lo calcula el sistema con la tarifa y la base mínima del catálogo:
+ * acá solo va qué concepto y sobre qué base.
+ */
+export class RetencionVentaDto {
+  @IsUUID()
+  conceptoId!: string;
+
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  base!: number;
+}
+
 export class CrearFacturaDto {
   @IsUUID()
   terceroId!: string;
@@ -53,4 +73,13 @@ export class CrearFacturaDto {
   @IsOptional()
   @IsBoolean()
   confirmaPrecioBajoCosto?: boolean;
+
+  /**
+   * Lo que el cliente nos retiene sobre esta factura, si es agente retenedor.
+   * El valor lo calcula el sistema contra el catálogo del año.
+   */
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => RetencionVentaDto)
+  retenciones?: RetencionVentaDto[];
 }

@@ -256,7 +256,14 @@ export class CompraService {
         entradas.push({
           cantidad: l.cantidad,
           costoUnitario: l.costoUnitario,
-          ivaTarifa: proveedor.responsableIva ? Number(producto.iva_tarifa) : 0,
+          // Tres condiciones y no dos: el proveedor, el producto, y lo que la
+          // factura efectivamente dice. `sinIva` solo baja a cero —poner IVA
+          // donde el proveedor no lo cobró sería inventar un descontable que
+          // nadie pagó—.
+          ivaTarifa:
+            proveedor.responsableIva && l.sinIva !== true
+              ? Number(producto.iva_tarifa)
+              : 0,
           ivaDescontable: responsableIva,
         });
       }

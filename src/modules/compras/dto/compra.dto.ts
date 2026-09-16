@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
+  IsBoolean,
   IsIn,
   IsNumber,
   IsOptional,
@@ -42,6 +43,23 @@ export class LineaCompraDto {
   @IsNumber({ maxDecimalPlaces: 6 })
   @Min(0)
   costoUnitario!: number;
+
+  /**
+   * "Esta compra no llevó IVA, aunque el proveedor sea responsable y el
+   * producto tenga tarifa."
+   *
+   * La tarifa normal sale de dos condiciones —si el proveedor es responsable y
+   * cuánto liquida el producto— y eso cubre el caso corriente. Pero la factura
+   * manda: una compra a un régimen simple, una exportación o un producto
+   * excluido llegan sin IVA aunque las dos condiciones digan que sí, y el
+   * sistema tiene que poder registrar lo que el papel dice.
+   *
+   * Solo baja a cero, nunca sube: poner IVA donde el proveedor no lo cobró
+   * sería inventar un impuesto descontable que nadie pagó.
+   */
+  @IsOptional()
+  @IsBoolean()
+  sinIva?: boolean;
 }
 
 /**

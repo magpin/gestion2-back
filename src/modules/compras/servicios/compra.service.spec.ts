@@ -282,6 +282,32 @@ describe('CompraService.crear', () => {
     ]);
   });
 
+  it('sinIva baja la tarifa a cero aunque el proveedor sea responsable', async () => {
+    const { tx } = txFalso();
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      // Proveedor responsable y empresa responsable: por configuración, esta
+      // línea liquidaría 19%.
+      nucleoFalso().fake,
+      inventarioFalso().fake,
+      contabilidadFalso().fake,
+      {} as never,
+    );
+
+    const compra = await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: '2026-09-08',
+      numeroFacturaProveedor: 'FP-900',
+      lineas: [
+        { productoId: 'p-1', cantidad: 1, costoUnitario: 100000, sinIva: true },
+      ],
+    });
+
+    // Manda lo que dice la factura del proveedor, no lo que dicen las dos
+    // condiciones.
+    expect(compra.total_iva).toBe('0');
+  });
+
   it('sin IVA (proveedor no responsable, tarifa forzada a 0)', async () => {
     const { tx } = txFalso();
     const { fake: nucleo } = nucleoFalso({

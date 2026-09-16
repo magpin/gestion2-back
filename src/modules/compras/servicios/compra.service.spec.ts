@@ -195,6 +195,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidad,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     const compra = await servicio.crear(ctx, {
@@ -255,6 +257,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidad,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     const compra = await servicio.crear(ctx, {
@@ -292,6 +296,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never,
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     const compra = await servicio.crear(ctx, {
@@ -319,6 +325,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     const compra = await servicio.crear(ctx, {
@@ -342,6 +350,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidad,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     const compra = await servicio.crear(ctx, {
@@ -402,6 +412,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(
@@ -423,6 +435,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(
@@ -450,6 +464,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(
@@ -471,6 +487,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(
@@ -495,6 +513,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(
@@ -515,6 +535,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso({ periodoAbierto: false }).fake,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(
@@ -535,6 +557,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(
@@ -556,6 +580,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(
@@ -576,6 +602,8 @@ describe('CompraService.crear', () => {
       inventarioFalso({ producto: null }).fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(
@@ -596,6 +624,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(
@@ -617,6 +647,8 @@ describe('CompraService.crear', () => {
       inventario,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await servicio.crear(ctx, {
@@ -667,6 +699,8 @@ describe('CompraService.listar', () => {
       {} as never,
       {} as never,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     const pagina = await servicio.listar(ctx, {
@@ -737,6 +771,8 @@ describe('CompraService.porId', () => {
       {} as never,
       {} as never,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     const detalle = await servicio.porId(ctx, 'c-1');
@@ -776,6 +812,8 @@ describe('CompraService.porId', () => {
         {} as never,
         {} as never,
         {} as never,
+        // RetencionesApi: estos casos no calculan ninguna retención.
+        {} as never,
       );
 
     const nota = await servicioCon('cn-1').porId(ctx, 'cn-1');
@@ -796,6 +834,8 @@ describe('CompraService.porId', () => {
       {} as never,
       {} as never,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(servicio.porId(ctx, 'inexistente')).rejects.toThrow(
@@ -882,6 +922,8 @@ describe('CompraService.anular', () => {
       inventario,
       contabilidad,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await servicio.anular(ctx, 'c-1', 'Factura duplicada por error');
@@ -918,6 +960,8 @@ describe('CompraService.anular', () => {
       inventario,
       contabilidad,
       {} as never,
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(servicio.anular(ctx, 'c-1', 'Motivo')).rejects.toThrow(
@@ -940,6 +984,8 @@ describe('CompraService.anular', () => {
       inventarioAnularFalso(5).fake,
       contabilidadAnularFalso().fake,
       {} as never,
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(servicio.anular(ctx, 'c-1', 'Motivo')).rejects.toThrow(
@@ -958,6 +1004,8 @@ describe('CompraService.anular', () => {
       {} as never,
       contabilidadAnularFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(
@@ -973,6 +1021,8 @@ describe('CompraService.anular', () => {
       {} as never,
       contabilidadAnularFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(
@@ -1076,6 +1126,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreria,
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     const actualizado = await servicio.pagar(ctx, 'compra-1', DTO);
@@ -1107,6 +1159,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreria,
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await servicio.pagar(ctx, 'compra-1', {
@@ -1139,6 +1193,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreriaFalso().fake,
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(servicio.pagar(ctx, 'compra-1', DTO)).rejects.toThrow(
@@ -1158,6 +1214,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreria,
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(
@@ -1178,6 +1236,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreria,
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(
@@ -1194,6 +1254,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreria2,
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
     await servicio2.pagar(ctx, 'compra-1', porValor(80000));
     expect(registrar2).toHaveBeenCalledTimes(1);
@@ -1208,6 +1270,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreria,
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     const actualizado = await servicio.pagar(ctx, 'compra-1', {
@@ -1252,6 +1316,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreria,
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(servicio.pagar(ctx, 'compra-1', DTO)).rejects.toThrow(
@@ -1268,6 +1334,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreriaFalso().fake,
+      // RetencionesApi: estos casos no calculan ninguna retención.
+      {} as never,
     );
 
     await expect(servicio.pagar(ctx, 'inexistente', DTO)).rejects.toThrow(

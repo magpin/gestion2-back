@@ -15,6 +15,7 @@ import type { LineaAsientoDto } from '../../contabilidad/dto/asiento.dto';
 import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import { InventarioApi } from '../../inventario/inventario.api';
 import { NucleoApi } from '../../nucleo/nucleo.api';
+import { RetencionesApi } from '../../retenciones/retenciones.api';
 import { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import type {
   CrearCompraDto,
@@ -186,6 +187,7 @@ export class CompraService {
     private readonly inventario: InventarioApi,
     private readonly contabilidad: ContabilidadApi,
     private readonly tesoreria: TesoreriaApi,
+    private readonly retenciones: RetencionesApi,
   ) {}
 
   async crear(
@@ -304,9 +306,12 @@ export class CompraService {
         retenciones,
         totales.total,
         dto.fecha,
+        proveedor.declaranteRenta,
         t,
       );
-      const retenido = totalRetenciones(retenciones);
+      // Sobre lo resuelto y no sobre lo que llegó: con el catálogo, el valor
+      // recién se conoce después de calcularlo.
+      const retenido = totalRetenciones(retencionesResueltas);
       const neto = netoAPagar(totales.total, retenido);
 
       const comprobante = await this.contabilidad.tipoComprobantePorCodigo(
@@ -896,6 +901,8 @@ export class CompraService {
     retenciones: RetencionCompraDto[],
     total: number,
     fecha: string,
+    /** Del proveedor: decide la tarifa en los conceptos que tienen dos. */
+    proveedorDeclarante: boolean,
     t: Tx,
   ): Promise<
     Array<{ concepto: string; cuentaId: string; base: number; valor: number }>
@@ -913,20 +920,47 @@ export class CompraService {
       );
     }
 
-    const sumaRetenida = totalRetenciones(retenciones);
-    if (sumaRetenida > total) {
-      throw new BadRequestException(
-        'Lo retenido no puede superar el total de la factura.',
-      );
-    }
-
     const resueltas: Array<{
       concepto: string;
       cuentaId: string;
       base: number;
       valor: number;
     }> = [];
+
     for (const r of retenciones) {
+      // Con `conceptoId` manda el catálogo: el valor lo calcula el sistema con
+      // la tarifa y la base mínima del año del documento, y lo que el cliente
+      // haya mandado se ignora. El agente retenedor responde ante la DIAN por
+      // lo que DEBIÓ retener, no por lo que alguien escribió.
+      if (r.conceptoId !== undefined) {
+        const calculada = await this.retenciones.calcular(
+          ctx,
+          {
+            conceptoId: r.conceptoId,
+            base: r.base,
+            fecha,
+            declaranteRenta: proveedorDeclarante,
+          },
+          t,
+        );
+        // `null` no es un error: la base no llegó al mínimo en UVT y por eso
+        // no corresponde retener. Se omite y la compra sigue.
+        if (calculada === null) continue;
+        resueltas.push({
+          concepto: calculada.concepto,
+          cuentaId: calculada.cuentaId,
+          base: calculada.base,
+          valor: calculada.valor,
+        });
+        continue;
+      }
+
+      // El camino viejo: concepto de las seis constantes y valor digitado.
+      if (r.concepto === undefined || r.valor === undefined) {
+        throw new BadRequestException(
+          'Una retención necesita el concepto del catálogo, o el concepto viejo con su valor.',
+        );
+      }
       const sufijo = SUFIJO_CONCEPTO_RETENCION[r.concepto];
       const codigo = `2365${sufijo}`;
       const cuenta = await this.nucleo.cuenta(ctx, codigo, t);
@@ -942,6 +976,16 @@ export class CompraService {
         valor: r.valor,
       });
     }
+
+    // Se verifica al final y sobre lo resuelto, no sobre lo que llegó: con el
+    // catálogo, el valor recién se conoce acá.
+    const sumaRetenida = totalRetenciones(resueltas);
+    if (sumaRetenida > total) {
+      throw new BadRequestException(
+        'Lo retenido no puede superar el total de la factura.',
+      );
+    }
+
     return resueltas;
   }
 

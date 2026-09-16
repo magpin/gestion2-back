@@ -68,16 +68,33 @@ export class LineaCompraDto {
  * mínimas en UVT: ver "Qué NO entra" del plan.
  */
 export class RetencionCompraDto {
+  /**
+   * El concepto del catálogo (`retencion_concepto`), con su tarifa y su base
+   * mínima del año. Cuando viene, **el valor lo calcula el sistema** y el que
+   * mande el cliente se ignora: el agente retenedor responde ante la DIAN por
+   * lo que debió retener, no por lo que alguien escribió.
+   */
+  @IsOptional()
+  @IsUUID()
+  conceptoId?: string;
+
+  /**
+   * El concepto viejo, de las seis constantes. Sigue aceptándose para no
+   * romper lo que ya factura, y desaparece cuando el catálogo esté cargado.
+   */
+  @IsOptional()
   @IsIn(CONCEPTOS_RETENCION)
-  concepto!: ConceptoRetencion;
+  concepto?: ConceptoRetencion;
 
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
   base!: number;
 
+  /** Obligatorio solo en el camino viejo: con `conceptoId` se calcula. */
+  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
-  valor!: number;
+  valor?: number;
 }
 
 export class CrearCompraDto {

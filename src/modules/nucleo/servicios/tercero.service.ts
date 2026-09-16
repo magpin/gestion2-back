@@ -20,6 +20,8 @@ export interface TerceroResumen {
   esCliente: boolean;
   esProveedor: boolean;
   responsableIva: boolean;
+  /** Si declara renta. Decide la tarifa de retefuente en los conceptos que tienen dos. */
+  declaranteRenta: boolean;
   activo: boolean;
 }
 
@@ -32,10 +34,7 @@ export class TerceroService {
    * quien crea un tercero desde la digitación de una venta lo necesita para
    * dejarlo seleccionado, y la fila cruda no trae el `nombre` ya armado.
    */
-  async crear(
-    ctx: CtxEmpresa,
-    dto: CrearTerceroDto,
-  ): Promise<TerceroResumen> {
+  async crear(ctx: CtxEmpresa, dto: CrearTerceroDto): Promise<TerceroResumen> {
     return this.tx.enContexto(ctx, async (t) => {
       await exigirTipoDocumento(t, dto.tipoDocumento);
 
@@ -274,7 +273,7 @@ export class TerceroService {
         const [fila] = await t.query<Array<Record<string, unknown>>>(
           `SELECT id, tipo_documento, numero_documento, dv, razon_social,
                   primer_nombre, segundo_nombre, primer_apellido, segundo_apellido,
-                  es_cliente, es_proveedor, responsable_iva, activo
+                  es_cliente, es_proveedor, responsable_iva, declarante_renta, activo
              FROM tercero WHERE id = $1`,
           [id],
         );
@@ -331,6 +330,10 @@ export class TerceroService {
       esCliente: f.es_cliente as boolean,
       esProveedor: f.es_proveedor as boolean,
       responsableIva: f.responsable_iva as boolean,
+      // `true` cuando la consulta no lo trae: los listados no lo piden, y
+      // asumir "declarante" retiene de menos —que se corrige— en vez de
+      // retener de más, que hay que devolver.
+      declaranteRenta: (f.declarante_renta as boolean | undefined) ?? true,
       activo: f.activo as boolean,
     };
   }

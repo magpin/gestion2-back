@@ -31,6 +31,16 @@ export interface ProductoResumen {
   saldo_costo_promedio: string;
   /** `saldo_cantidad × saldo_costo_promedio`: cuánta plata hay parada en este producto. */
   saldo_valor: string;
+  /**
+   * A cuánto se compró la última vez. **No es el costo promedio**: el promedio
+   * es con lo que sale la mercancía y mezcla todas las entradas; esto es lo
+   * que dijo la última factura del proveedor, que es lo que se mira para
+   * decidir a cuánto vender ahora. `null` si el producto nunca se compró —los
+   * que entraron por saldo inicial no tienen ninguna—.
+   */
+  ultimo_costo_compra: string | null;
+  /** Cuándo fue esa compra. `null` por el mismo motivo. */
+  ultima_compra_fecha: string | null;
 }
 
 /**
@@ -52,11 +62,26 @@ const ultimoSaldo = (columna: string) =>
         ORDER BY m.secuencia DESC
         LIMIT 1), 0))`;
 
+/**
+ * Lo que dijo la última factura del proveedor. Mismo índice que `ultimoSaldo`,
+ * filtrando por el tipo: un ajuste de inventario o un saldo inicial no son una
+ * compra, y tomarlos como tal haría que "a cuánto lo compré" dependa de quien
+ * corrigió el kardex.
+ */
+const ultimaCompra = (columna: string) =>
+  `(SELECT m.${columna} FROM producto_movimiento m
+     WHERE m.producto_id = producto.id
+       AND m.tipo = 'ENTRADA_COMPRA'
+     ORDER BY m.secuencia DESC
+     LIMIT 1)`;
+
 const CAMPOS = `id, codigo, nombre, unidad_medida, iva_tarifa, cuenta_inventario_id,
                 cuenta_costo_venta_id, cuenta_ingreso_id, activo,
                 ${ultimoSaldo('saldo_cantidad')} AS saldo_cantidad,
                 ${ultimoSaldo('saldo_costo_promedio')} AS saldo_costo_promedio,
-                ${ultimoSaldo('saldo_valor')} AS saldo_valor`;
+                ${ultimoSaldo('saldo_valor')} AS saldo_valor,
+                ${ultimaCompra('costo_unitario')} AS ultimo_costo_compra,
+                ${ultimaCompra('fecha')} AS ultima_compra_fecha`;
 
 /**
  * El maestro de productos. Sin kardex todavía — eso es `KardexService`, que

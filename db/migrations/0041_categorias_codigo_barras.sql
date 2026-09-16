@@ -28,6 +28,10 @@ CREATE UNIQUE INDEX uq_categoria_nombre
 
 -- Mismo aislamiento que el resto: `app_empresa_id()`, no un `current_setting`
 -- escrito a mano en cada tabla.
+-- La aplicación se conecta como `gestion_app`: sin esto, la tabla existe y
+-- nadie puede leerla. Nunca `DELETE`: acá nada se borra, se archiva.
+GRANT SELECT, INSERT, UPDATE ON producto_categoria TO gestion_app, gestion_provision;
+
 ALTER TABLE producto_categoria ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p_producto_categoria_aislado ON producto_categoria
   USING (empresa_id = app_empresa_id())

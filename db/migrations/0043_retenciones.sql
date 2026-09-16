@@ -23,6 +23,8 @@ CREATE TABLE uvt (
   creado_en  timestamptz NOT NULL DEFAULT now()
 );
 
+GRANT SELECT, INSERT, UPDATE ON uvt TO gestion_app, gestion_provision;
+
 COMMENT ON TABLE uvt IS
   'El valor de la UVT que la DIAN fija cada año por resolución. Lo carga un contador; el sistema no lo inventa.';
 
@@ -66,6 +68,8 @@ CREATE TABLE retencion_concepto (
 
 CREATE INDEX ix_retencion_concepto_anio
   ON retencion_concepto (empresa_id, anio, tipo) WHERE activo;
+
+GRANT SELECT, INSERT, UPDATE ON retencion_concepto TO gestion_app, gestion_provision;
 
 ALTER TABLE retencion_concepto ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p_retencion_concepto_aislado ON retencion_concepto
@@ -113,6 +117,8 @@ CREATE TABLE venta_retencion (
 );
 
 CREATE INDEX ix_venta_retencion_documento ON venta_retencion (venta_documento_id);
+
+GRANT SELECT, INSERT, UPDATE ON venta_retencion TO gestion_app, gestion_provision;
 
 ALTER TABLE venta_retencion ENABLE ROW LEVEL SECURITY;
 CREATE POLICY p_venta_retencion_aislado ON venta_retencion

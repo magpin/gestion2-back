@@ -127,6 +127,55 @@ export class TesoreriaApi {
   }
 
   /**
+   * Devuelve parte de un cobro: sale plata del medio elegido y vuelve a
+   * `cuentaClientesId` —el cliente vuelve a quedar como acreedor de eso—.
+   * Es el asiento del cobro al revés, y por eso reusa la misma fachada con
+   * la dirección invertida en vez de abrir un camino propio.
+   *
+   * Por caja puede fallar: `calcularEgreso` rechaza dejar el cajón en
+   * negativo y lo dice con su propio mensaje. Por banco pasa igual que
+   * cualquier salida —el sobregiro está admitido, decisión de
+   * `caja-bancos-fase2.md`—.
+   */
+  async registrarDevolucionCobro(
+    ctx: CtxEmpresa,
+    datos: DatosCobro,
+    t?: Tx,
+  ): Promise<ResultadoTesoreria> {
+    const movimiento = await this.moverMedio(
+      ctx,
+      datos,
+      'SALIDA',
+      { documentoTipo: 'FACTURA_VENTA', documentoId: datos.facturaVentaId },
+      datos.cuentaClientesId,
+      t,
+    );
+    return this.exigirAsiento(movimiento);
+  }
+
+  /**
+   * El proveedor nos devuelve parte de lo pagado: entra plata al medio
+   * elegido y vuelve a `cuentaProveedoresId`. Espejo de
+   * `registrarDevolucionCobro`; acá no hay saldo que se quede corto, porque
+   * es una entrada.
+   */
+  async registrarDevolucionPago(
+    ctx: CtxEmpresa,
+    datos: DatosPago,
+    t?: Tx,
+  ): Promise<ResultadoTesoreria> {
+    const movimiento = await this.moverMedio(
+      ctx,
+      datos,
+      'ENTRADA',
+      { documentoTipo: 'COMPRA', documentoId: datos.compraId },
+      datos.cuentaProveedoresId,
+      t,
+    );
+    return this.exigirAsiento(movimiento);
+  }
+
+  /**
    * Despacha a `CajaMovimientoService` o `BancoMovimientoService` según
    * `medio` — el resto (documento, tercero, contracuenta) es idéntico
    * para los dos, solo cambia el `tipo` que cada servicio entiende

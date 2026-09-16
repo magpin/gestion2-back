@@ -91,3 +91,25 @@ export class CobrarDto {
   @ArrayMinSize(1, { message: 'Un cobro necesita al menos un medio de pago' })
   pagos!: MedioPagoDto[];
 }
+
+/**
+ * Devuelve parte —o todo— de lo que ya se cobró de una factura. Misma forma
+ * que `CobrarDto` porque es el mismo acto al revés: una fecha y un renglón
+ * por caja o cuenta de donde sale la plata.
+ *
+ * Se declara aparte y no se reusa `CobrarDto` porque son dos cosas distintas
+ * —cobrar baja lo que el cliente debe, devolver le entrega plata—, y el día
+ * que una pida un campo que la otra no, compartir la clase obligaría a
+ * partirla con las dos rutas ya en uso.
+ */
+export class DevolverCobroDto {
+  @EsFechaCalendario()
+  fecha!: string;
+
+  @ValidateNested({ each: true })
+  @Type(() => MedioPagoDto)
+  @ArrayMinSize(1, {
+    message: 'Una devolución necesita al menos un medio de salida',
+  })
+  pagos!: MedioPagoDto[];
+}

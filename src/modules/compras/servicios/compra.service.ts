@@ -18,11 +18,13 @@ import { NucleoApi } from '../../nucleo/nucleo.api';
 import { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import type {
   CrearCompraDto,
+  DevolverPagoDto,
   ListarComprasDto,
   PagarDto,
   RetencionCompraDto,
 } from '../dto/compra.dto';
 import {
+  calcularDevolucionPago,
   calcularLineasCompra,
   calcularPago,
   netoAPagar,
@@ -776,6 +778,101 @@ export class CompraService {
       );
       if (actualizado === undefined) {
         throw new BadRequestException('No se pudo registrar el pago.');
+      }
+      return actualizado;
+    });
+  }
+
+  /**
+   * El proveedor nos devuelve parte de lo que le pagamos. Espejo de
+   * `VentaDocumentoService.devolverCobro`, y allá está escrito por qué esto
+   * no es una nota crédito.
+   *
+   * Acá la plata entra, así que no hay saldo de caja que se quede corto: el
+   * caso que puede fallar es el del lado de ventas.
+   */
+  async devolverPago(
+    ctx: CtxEmpresa,
+    id: string,
+    dto: DevolverPagoDto,
+  ): Promise<CompraDocumentoResumen> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const documento = fila<{
+        tercero_id: string;
+        estado: string;
+        numero_factura_proveedor: string;
+        monto_pagado: string;
+      }>(
+        await t.query(
+          `SELECT tercero_id, estado, numero_factura_proveedor, monto_pagado
+             FROM compra_documento
+            WHERE id = $1
+            FOR UPDATE`,
+          [id],
+        ),
+      );
+      if (documento === undefined) {
+        throw new NotFoundException('Compra no encontrada');
+      }
+      if (documento.estado !== 'EMITIDA') {
+        throw new BadRequestException('Esta compra no está vigente.');
+      }
+
+      const valorTotal = sumarPagos(dto.pagos.map((p) => p.valor));
+      const resultado = calcularDevolucionPago(
+        Number(documento.monto_pagado),
+        valorTotal,
+      );
+      if (!resultado.ok) {
+        throw new BadRequestException(resultado.motivo);
+      }
+
+      const cuentaProveedores = await this.nucleo.cuenta(
+        ctx,
+        CODIGO_CUENTA_PROVEEDORES,
+        t,
+      );
+      if (cuentaProveedores === null) {
+        throw new BadRequestException(
+          `No existe o está inactiva la cuenta de proveedores (${CODIGO_CUENTA_PROVEEDORES}). Actívala en el plan de cuentas.`,
+        );
+      }
+
+      for (const [i, pago] of dto.pagos.entries()) {
+        const medio =
+          pago.medio === 'CAJA'
+            ? ({ medio: 'CAJA', cajaId: pago.cajaId! } as const)
+            : ({
+                medio: 'BANCO',
+                cuentaBancariaId: pago.cuentaBancariaId!,
+              } as const);
+        const reparto =
+          dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
+        await this.tesoreria.registrarDevolucionPago(
+          ctx,
+          {
+            ...medio,
+            fecha: dto.fecha,
+            valor: pago.valor,
+            concepto: `Devolución de pago de la compra ${documento.numero_factura_proveedor}${reparto}`,
+            cuentaProveedoresId: cuentaProveedores.id,
+            terceroId: documento.tercero_id,
+            compraId: id,
+          },
+          t,
+        );
+      }
+
+      const actualizado = fila<CompraDocumentoResumen>(
+        await t.query(
+          `UPDATE compra_documento SET monto_pagado = $2
+            WHERE id = $1
+          RETURNING ${CAMPOS_DOCUMENTO}`,
+          [id, resultado.montoPagado],
+        ),
+      );
+      if (actualizado === undefined) {
+        throw new BadRequestException('No se pudo registrar la devolución.');
       }
       return actualizado;
     });

@@ -156,6 +156,38 @@ export function sumarPagos(valores: readonly number[]): number {
 }
 
 /**
+ * Cuánto queda cobrado tras devolverle plata al cliente.
+ *
+ * Distinto de la nota crédito: allá la factura pasa a valer menos, acá vale
+ * igual y lo que cambia es cuánto se cobró. No se puede devolver más de lo
+ * que entró —eso no sería una devolución, sería un préstamo—.
+ */
+export type ResultadoDevolucionCobro =
+  { ok: true; montoPagado: number } | { ok: false; motivo: string };
+
+export function calcularDevolucionCobro(
+  montoPagadoActual: number,
+  valor: number,
+): ResultadoDevolucionCobro {
+  const cobradoCentavos = aCentavos(montoPagadoActual);
+
+  if (cobradoCentavos === 0) {
+    return {
+      ok: false,
+      motivo: 'De esta factura no se ha cobrado nada; no hay qué devolver.',
+    };
+  }
+  if (aCentavos(valor) > cobradoCentavos) {
+    return {
+      ok: false,
+      motivo: `De esta factura solo se cobraron ${montoPagadoActual}; no se pueden devolver ${valor}.`,
+    };
+  }
+
+  return { ok: true, montoPagado: aPesos(cobradoCentavos - aCentavos(valor)) };
+}
+
+/**
  * Cuánto de una línea de factura se puede devolver todavía.
  *
  * Hasta el paso 8 la nota crédito era todo o nada: copiaba la factura entera

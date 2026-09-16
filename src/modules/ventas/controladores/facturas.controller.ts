@@ -18,7 +18,12 @@ import {
 import type { CtxEmpresa } from '../../../common/ctx';
 import { ConvertirCotizacionDto } from '../dto/cotizacion.dto';
 import { CrearFacturaDto } from '../dto/factura.dto';
-import { AnularVentaDto, CobrarDto, ListarVentasDto } from '../dto/venta.dto';
+import {
+  AnularVentaDto,
+  CobrarDto,
+  DevolverCobroDto,
+  ListarVentasDto,
+} from '../dto/venta.dto';
 import { FacturaService } from '../servicios/factura.service';
 import { VentaDocumentoService } from '../servicios/venta-documento.service';
 
@@ -97,5 +102,20 @@ export class FacturasController {
     @Body() dto: CobrarDto,
   ) {
     return this.ventas.cobrar(ctx, id, dto);
+  }
+
+  /**
+   * Devolverle plata al cliente sobre una factura que sigue valiendo lo
+   * mismo. Mismos roles que cobrar: sale de la caja o del banco, y quien
+   * decide eso es quien maneja la plata, no quien vende.
+   */
+  @Roles('CAJA', 'DIRECTOR')
+  @Post(':id/devolver-cobro')
+  devolverCobro(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DevolverCobroDto,
+  ) {
+    return this.ventas.devolverCobro(ctx, id, dto);
   }
 }

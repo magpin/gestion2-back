@@ -13,9 +13,14 @@ import { InventarioApi } from '../../inventario/inventario.api';
 import { NucleoApi } from '../../nucleo/nucleo.api';
 import { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import type { CrearCotizacionDto } from '../dto/cotizacion.dto';
-import type { CobrarDto, ListarVentasDto } from '../dto/venta.dto';
+import type {
+  CobrarDto,
+  DevolverCobroDto,
+  ListarVentasDto,
+} from '../dto/venta.dto';
 import {
   calcularCobro,
+  calcularDevolucionCobro,
   calcularLineas,
   sumarPagos,
   type LineaVentaEntrada,
@@ -785,6 +790,121 @@ export class VentaDocumentoService {
       );
       if (actualizado === undefined) {
         throw new BadRequestException('No se pudo registrar el cobro.');
+      }
+      return actualizado;
+    });
+  }
+
+  /**
+   * Devuelve parte —o todo— de lo que ya se cobró de una factura.
+   *
+   * **No es una nota crédito.** La nota crédito baja lo que la factura vale;
+   * esto la deja valiendo igual y le devuelve plata al cliente. Las dos
+   * existen porque son cosas distintas: un producto que vuelve cambia el
+   * documento, y un cobro de más solo cambia la caja.
+   *
+   * Es también la salida del caso borde que dejó el paso 11: una factura
+   * cobrada entera que después recibe una nota crédito queda con
+   * `saldo_a_favor`, y esto es lo que lo salda.
+   *
+   * Mismo reparto que `cobrar` —puede salir de caja, de banco o de las dos—,
+   * mismo candado `FOR UPDATE`, misma transacción para los movimientos y el
+   * `UPDATE`. **El egreso de caja puede fallar por saldo** y lo dice
+   * `calcularEgreso` con su propio mensaje: un cajón no queda en rojo. Banco
+   * sí admite sobregiro.
+   */
+  async devolverCobro(
+    ctx: CtxEmpresa,
+    id: string,
+    dto: DevolverCobroDto,
+  ): Promise<VentaDocumentoResumen> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const documento = fila<{
+        tipo: string;
+        tercero_id: string;
+        estado: string;
+        prefijo: string | null;
+        consecutivo: number;
+        monto_pagado: string;
+      }>(
+        await t.query(
+          `SELECT tipo, tercero_id, estado, prefijo, consecutivo, monto_pagado
+             FROM venta_documento
+            WHERE id = $1
+            FOR UPDATE`,
+          [id],
+        ),
+      );
+      if (documento === undefined) {
+        throw new NotFoundException('Documento no encontrado');
+      }
+      if (documento.tipo !== 'FACTURA') {
+        throw new BadRequestException(
+          'Solo se puede devolver el cobro de una factura.',
+        );
+      }
+      if (documento.estado !== 'EMITIDA') {
+        throw new BadRequestException('Esta factura no está vigente.');
+      }
+
+      // Contra lo cobrado, no contra el saldo: lo que se devuelve es plata
+      // que entró, y cuánto vale hoy la factura no cambia esa cuenta.
+      const valorTotal = sumarPagos(dto.pagos.map((p) => p.valor));
+      const resultado = calcularDevolucionCobro(
+        Number(documento.monto_pagado),
+        valorTotal,
+      );
+      if (!resultado.ok) {
+        throw new BadRequestException(resultado.motivo);
+      }
+
+      const cuentaCartera = await this.nucleo.cuenta(
+        ctx,
+        CODIGO_CUENTA_CARTERA,
+        t,
+      );
+      if (cuentaCartera === null) {
+        throw new BadRequestException(
+          `No existe o está inactiva la cuenta de cartera (${CODIGO_CUENTA_CARTERA}). Actívala en el plan de cuentas.`,
+        );
+      }
+
+      const numero = `${documento.prefijo}-${String(documento.consecutivo).padStart(6, '0')}`;
+      for (const [i, pago] of dto.pagos.entries()) {
+        const medio =
+          pago.medio === 'CAJA'
+            ? ({ medio: 'CAJA', cajaId: pago.cajaId! } as const)
+            : ({
+                medio: 'BANCO',
+                cuentaBancariaId: pago.cuentaBancariaId!,
+              } as const);
+        const reparto =
+          dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
+        await this.tesoreria.registrarDevolucionCobro(
+          ctx,
+          {
+            ...medio,
+            fecha: dto.fecha,
+            valor: pago.valor,
+            concepto: `Devolución de cobro de la factura ${numero}${reparto}`,
+            cuentaClientesId: cuentaCartera.id,
+            terceroId: documento.tercero_id,
+            facturaVentaId: id,
+          },
+          t,
+        );
+      }
+
+      const actualizado = fila<VentaDocumentoResumen>(
+        await t.query(
+          `UPDATE venta_documento SET monto_pagado = $2
+            WHERE id = $1
+          RETURNING ${CAMPOS_DOCUMENTO}`,
+          [id, resultado.montoPagado],
+        ),
+      );
+      if (actualizado === undefined) {
+        throw new BadRequestException('No se pudo registrar la devolución.');
       }
       return actualizado;
     });

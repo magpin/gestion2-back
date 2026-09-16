@@ -164,6 +164,37 @@ export function sumarPagos(valores: readonly number[]): number {
 }
 
 /**
+ * Cuánto queda pagado tras que el proveedor nos devuelva plata.
+ *
+ * Espejo de `calcularDevolucionCobro` de ventas: la compra vale igual, lo que
+ * cambia es cuánto se le pagó. No puede devolver más de lo que recibió.
+ */
+export type ResultadoDevolucionPago =
+  { ok: true; montoPagado: number } | { ok: false; motivo: string };
+
+export function calcularDevolucionPago(
+  montoPagadoActual: number,
+  valor: number,
+): ResultadoDevolucionPago {
+  const cobradoCentavos = aCentavos(montoPagadoActual);
+
+  if (cobradoCentavos === 0) {
+    return {
+      ok: false,
+      motivo: 'A esta compra no se le ha pagado nada; no hay qué devolver.',
+    };
+  }
+  if (aCentavos(valor) > cobradoCentavos) {
+    return {
+      ok: false,
+      motivo: `A esta compra solo se le pagaron ${montoPagadoActual}; no se pueden devolver ${valor}.`,
+    };
+  }
+
+  return { ok: true, montoPagado: aPesos(cobradoCentavos - aCentavos(valor)) };
+}
+
+/**
  * Cuánto queda pagado tras un pago. Rechaza si el valor supera lo que
  * falta por pagar — anticipa `ck_compra_monto_pagado` de la base, mismo
  * motivo que `calcularCobro` de `venta.reglas.ts`.

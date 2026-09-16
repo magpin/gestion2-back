@@ -177,6 +177,88 @@ function txFalso(
   return { tx, lineasInsertadas };
 }
 
+// Los ayudantes del cobro viven acá y no dentro de su `describe` porque
+// `devolverCobro` usa los mismos: la misma factura bloqueada, la misma
+// `TesoreriaApi` falsa y el mismo `UPDATE` de `monto_pagado`.
+function nucleoCarteraFalso(
+  cuenta: { id: string } | null = { id: 'cta-cartera' },
+) {
+  return {
+    cuenta: jest.fn(() => Promise.resolve(cuenta)),
+  } as unknown as ConstructorParameters<typeof VentaDocumentoService>[1];
+}
+
+function tesoreriaFalso() {
+  const registrarCobro = jest.fn(() =>
+    Promise.resolve({ movimientoId: 'mov-1', asientoId: 'asiento-1' }),
+  );
+  const registrarDevolucionCobro = jest.fn(() =>
+    Promise.resolve({ movimientoId: 'mov-2', asientoId: 'asiento-2' }),
+  );
+  const fake = {
+    registrarCobro,
+    registrarDevolucionCobro,
+  } as unknown as ConstructorParameters<typeof VentaDocumentoService>[4];
+  return { fake, registrarCobro, registrarDevolucionCobro };
+}
+
+function txCobrarFalso(
+  documento:
+    | {
+        tipo: string;
+        tercero_id: string;
+        estado: string;
+        prefijo: string | null;
+        consecutivo: number;
+        total: string;
+        monto_pagado: string;
+        ajuste_notas: string;
+      }
+    | undefined,
+) {
+  const actualizaciones: unknown[][] = [];
+  // El `saldo_efectivo` lo calcula la consulta, no el servicio: acá se
+  // replica esa suma para que el caso se siga escribiendo en los términos
+  // en que se piensa —"esta factura tiene una nota crédito de 19.000"—.
+  const saldoEfectivo =
+    documento === undefined
+      ? undefined
+      : String(Number(documento.total) + Number(documento.ajuste_notas));
+  const tx = {
+    query: jest.fn((sql: string, params?: unknown[]) => {
+      if (sql.includes('FOR UPDATE')) {
+        return documento === undefined
+          ? []
+          : [{ ...documento, saldo_efectivo: saldoEfectivo }];
+      }
+      if (sql.includes('UPDATE venta_documento')) {
+        actualizaciones.push(params ?? []);
+        const [, montoPagado] = params as unknown[];
+        return [
+          {
+            id: 'fv-1',
+            tipo: 'FACTURA',
+            tercero_id: documento?.tercero_id,
+            fecha: '2026-09-01',
+            estado: 'EMITIDA',
+            prefijo: documento?.prefijo,
+            consecutivo: documento?.consecutivo,
+            resolucion_id: null,
+            documento_origen_id: null,
+            subtotal: '0',
+            total_iva: '0',
+            total: documento?.total,
+            monto_pagado: String(montoPagado),
+            asiento_id: null,
+          },
+        ];
+      }
+      throw new Error(`Query inesperada en el test: ${sql}`);
+    }),
+  } as unknown as Tx;
+  return { tx, actualizaciones };
+}
+
 describe('VentaDocumentoService.crearCotizacion', () => {
   it('crea la cotización con el precio vigente del catálogo y numera con su propio contador', async () => {
     const { tx } = txFalso();
@@ -730,81 +812,6 @@ describe('VentaDocumentoService.cobrar', () => {
     pagos: [{ ...DTO.pagos[0], valor }],
   });
 
-  function nucleoCarteraFalso(
-    cuenta: { id: string } | null = { id: 'cta-cartera' },
-  ) {
-    return {
-      cuenta: jest.fn(() => Promise.resolve(cuenta)),
-    } as unknown as ConstructorParameters<typeof VentaDocumentoService>[1];
-  }
-
-  function tesoreriaFalso() {
-    const registrarCobro = jest.fn(() =>
-      Promise.resolve({ movimientoId: 'mov-1', asientoId: 'asiento-1' }),
-    );
-    const fake = {
-      registrarCobro,
-    } as unknown as ConstructorParameters<typeof VentaDocumentoService>[4];
-    return { fake, registrarCobro };
-  }
-
-  function txCobrarFalso(
-    documento:
-      | {
-          tipo: string;
-          tercero_id: string;
-          estado: string;
-          prefijo: string | null;
-          consecutivo: number;
-          total: string;
-          monto_pagado: string;
-          ajuste_notas: string;
-        }
-      | undefined,
-  ) {
-    const actualizaciones: unknown[][] = [];
-    // El `saldo_efectivo` lo calcula la consulta, no el servicio: acá se
-    // replica esa suma para que el caso se siga escribiendo en los términos
-    // en que se piensa —"esta factura tiene una nota crédito de 19.000"—.
-    const saldoEfectivo =
-      documento === undefined
-        ? undefined
-        : String(Number(documento.total) + Number(documento.ajuste_notas));
-    const tx = {
-      query: jest.fn((sql: string, params?: unknown[]) => {
-        if (sql.includes('FOR UPDATE')) {
-          return documento === undefined
-            ? []
-            : [{ ...documento, saldo_efectivo: saldoEfectivo }];
-        }
-        if (sql.includes('UPDATE venta_documento')) {
-          actualizaciones.push(params ?? []);
-          const [, montoPagado] = params as unknown[];
-          return [
-            {
-              id: 'fv-1',
-              tipo: 'FACTURA',
-              tercero_id: documento?.tercero_id,
-              fecha: '2026-09-01',
-              estado: 'EMITIDA',
-              prefijo: documento?.prefijo,
-              consecutivo: documento?.consecutivo,
-              resolucion_id: null,
-              documento_origen_id: null,
-              subtotal: '0',
-              total_iva: '0',
-              total: documento?.total,
-              monto_pagado: String(montoPagado),
-              asiento_id: null,
-            },
-          ];
-        }
-        throw new Error(`Query inesperada en el test: ${sql}`);
-      }),
-    } as unknown as Tx;
-    return { tx, actualizaciones };
-  }
-
   const FACTURA_BASE = {
     tipo: 'FACTURA',
     tercero_id: 'ter-1',
@@ -1075,5 +1082,98 @@ describe('VentaDocumentoService.cobrar', () => {
     await expect(servicio.cobrar(ctx, 'inexistente', DTO)).rejects.toThrow(
       NotFoundException,
     );
+  });
+});
+
+describe('VentaDocumentoService.devolverCobro', () => {
+  const FACTURA_COBRADA = {
+    tipo: 'FACTURA',
+    tercero_id: 'ter-1',
+    estado: 'EMITIDA',
+    prefijo: 'SETP',
+    consecutivo: 5,
+    total: '119000',
+    monto_pagado: '119000',
+    ajuste_notas: '0',
+  };
+
+  it('devuelve una parte: un egreso y el monto_pagado baja', async () => {
+    const { tx, actualizaciones } = txCobrarFalso(FACTURA_COBRADA);
+    const { fake: tesoreria, registrarDevolucionCobro } = tesoreriaFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoCarteraFalso(),
+      inventarioFalso(),
+      {} as never,
+      tesoreria,
+    );
+
+    const actualizado = await servicio.devolverCobro(ctx, 'fv-1', {
+      fecha: '2026-09-16',
+      pagos: [{ medio: 'CAJA', cajaId: 'c-1', valor: 19000 }],
+    });
+
+    expect(registrarDevolucionCobro).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({
+        medio: 'CAJA',
+        cajaId: 'c-1',
+        valor: 19000,
+        concepto: 'Devolución de cobro de la factura SETP-000005',
+        cuentaClientesId: 'cta-cartera',
+        facturaVentaId: 'fv-1',
+      }),
+      expect.anything(),
+    );
+    expect(actualizaciones).toHaveLength(1);
+    expect(actualizado.monto_pagado).toBe('100000');
+  });
+
+  it('rechaza devolver más de lo cobrado, sin tocar nada', async () => {
+    const { tx, actualizaciones } = txCobrarFalso({
+      ...FACTURA_COBRADA,
+      monto_pagado: '50000',
+    });
+    const { fake: tesoreria, registrarDevolucionCobro } = tesoreriaFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoCarteraFalso(),
+      inventarioFalso(),
+      {} as never,
+      tesoreria,
+    );
+
+    await expect(
+      servicio.devolverCobro(ctx, 'fv-1', {
+        fecha: '2026-09-16',
+        pagos: [{ medio: 'CAJA', cajaId: 'c-1', valor: 60000 }],
+      }),
+    ).rejects.toThrow(/solo se cobraron 50000/);
+    expect(registrarDevolucionCobro).not.toHaveBeenCalled();
+    expect(actualizaciones).toHaveLength(0);
+  });
+
+  it('reparte la devolución entre caja y banco', async () => {
+    const { tx, actualizaciones } = txCobrarFalso(FACTURA_COBRADA);
+    const { fake: tesoreria, registrarDevolucionCobro } = tesoreriaFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoCarteraFalso(),
+      inventarioFalso(),
+      {} as never,
+      tesoreria,
+    );
+
+    const actualizado = await servicio.devolverCobro(ctx, 'fv-1', {
+      fecha: '2026-09-16',
+      pagos: [
+        { medio: 'CAJA', cajaId: 'c-1', valor: 19000 },
+        { medio: 'BANCO', cuentaBancariaId: 'cb-1', valor: 100000 },
+      ],
+    });
+
+    expect(registrarDevolucionCobro).toHaveBeenCalledTimes(2);
+    expect(actualizaciones).toHaveLength(1);
+    expect(actualizado.monto_pagado).toBe('0');
   });
 });

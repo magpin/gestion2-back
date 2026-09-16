@@ -1,5 +1,6 @@
 import {
   calcularCobro,
+  calcularDevolucionCobro,
   calcularDevolucionPorLinea,
   calcularLinea,
   calcularLineas,
@@ -196,5 +197,34 @@ describe('sumarPagos', () => {
 
   it('un solo renglón es ese mismo valor', () => {
     expect(sumarPagos([50000])).toBe(50000);
+  });
+});
+
+describe('calcularDevolucionCobro', () => {
+  it('devuelve una parte y deja el resto cobrado', () => {
+    expect(calcularDevolucionCobro(119000, 19000)).toEqual({
+      ok: true,
+      montoPagado: 100000,
+    });
+  });
+
+  it('devolver todo lo cobrado deja la factura sin cobrar', () => {
+    expect(calcularDevolucionCobro(119000, 119000)).toEqual({
+      ok: true,
+      montoPagado: 0,
+    });
+  });
+
+  it('rechaza devolver más de lo que entró', () => {
+    expect(calcularDevolucionCobro(50000, 60000)).toEqual({
+      ok: false,
+      motivo:
+        'De esta factura solo se cobraron 50000; no se pueden devolver 60000.',
+    });
+  });
+
+  it('rechaza si no se cobró nada', () => {
+    const r = calcularDevolucionCobro(0, 1000);
+    expect(r.ok).toBe(false);
   });
 });

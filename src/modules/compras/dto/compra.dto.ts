@@ -142,3 +142,19 @@ export class PagarDto {
   @ArrayMinSize(1, { message: 'Un pago necesita al menos un medio' })
   pagos!: MedioPagoDto[];
 }
+
+/**
+ * El proveedor nos devuelve parte de lo que le pagamos. Espejo de
+ * `DevolverCobroDto` de ventas, declarado aparte por el mismo motivo.
+ */
+export class DevolverPagoDto {
+  @EsFechaCalendario()
+  fecha!: string;
+
+  @ValidateNested({ each: true })
+  @Type(() => MedioPagoDto)
+  @ArrayMinSize(1, {
+    message: 'Una devolución necesita al menos un medio de entrada',
+  })
+  pagos!: MedioPagoDto[];
+}

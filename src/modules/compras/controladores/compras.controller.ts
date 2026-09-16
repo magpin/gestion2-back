@@ -19,6 +19,7 @@ import type { CtxEmpresa } from '../../../common/ctx';
 import {
   AnularCompraDto,
   CrearCompraDto,
+  DevolverPagoDto,
   ListarComprasDto,
   PagarDto,
 } from '../dto/compra.dto';
@@ -76,5 +77,16 @@ export class ComprasController {
     @Body() dto: PagarDto,
   ) {
     return this.compras.pagar(ctx, id, dto);
+  }
+
+  /** El proveedor nos devuelve plata. Mismos roles que pagar. */
+  @Roles('CAJA', 'DIRECTOR')
+  @Post(':id/devolver-pago')
+  devolverPago(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DevolverPagoDto,
+  ) {
+    return this.compras.devolverPago(ctx, id, dto);
   }
 }

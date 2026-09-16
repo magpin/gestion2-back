@@ -44,4 +44,13 @@ export class CrearFacturaDto {
   @IsOptional()
   @IsBoolean()
   confirmaSinExistencia?: boolean;
+
+  /**
+   * "Sé que esta venta pierde plata y la emito igual". Como
+   * `confirmaSinExistencia`, no alcanza sola: solo un DIRECTOR puede
+   * autorizarla, y queda registrado en la línea quién lo hizo.
+   */
+  @IsOptional()
+  @IsBoolean()
+  confirmaPrecioBajoCosto?: boolean;
 }

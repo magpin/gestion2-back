@@ -181,6 +181,7 @@ function ventasFalso(cotizacion: VentaDocumentoDetalle = cotizacionEmitida) {
 function txFalso(opciones: { estadoCotizacion?: string | null } = {}) {
   const { estadoCotizacion } = opciones;
   const faltantesInsertados: unknown[][] = [];
+  const lineasInsertadas: unknown[][] = [];
   const tx = {
     query: jest.fn((sql: string, params?: unknown[]) => {
       if (sql.includes("WHERE id = $1 AND tipo = 'COTIZACION'")) {
@@ -229,6 +230,7 @@ function txFalso(opciones: { estadoCotizacion?: string | null } = {}) {
         ];
       }
       if (sql.includes('INSERT INTO venta_documento_linea')) {
+        lineasInsertadas.push(params ?? []);
         const [
           ,
           ventaDocumentoId,
@@ -261,7 +263,7 @@ function txFalso(opciones: { estadoCotizacion?: string | null } = {}) {
       throw new Error(`Query inesperada en el test: ${sql}`);
     }),
   } as unknown as Tx;
-  return { tx, faltantesInsertados };
+  return { tx, faltantesInsertados, lineasInsertadas };
 }
 
 describe('FacturaService.crear', () => {
@@ -414,6 +416,80 @@ describe('FacturaService.crear', () => {
     expect(productoId).toBe('p-1');
     expect(cantidadFaltante).toBe(1.5);
     expect(costoReferencia).toBe(200000);
+  });
+
+  it('rechaza vender por debajo del costo, y lo dice con los dos números', async () => {
+    const { tx } = txFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      // Precio de lista 100.000 contra un costo promedio de 200.000.
+      inventarioFalso({
+        precio: 100000,
+        costeo: { costoUnitario: 200000, valorTotal: 400000, faltante: 0 },
+      }),
+      contabilidadFalso().fake,
+      {} as never,
+    );
+
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        lineas: [{ productoId: 'p-1', cantidad: 2 }],
+      }),
+    ).rejects.toThrow(/por debajo de su costo.*200000.*100000/s);
+  });
+
+  it('confirmar no alcanza si quien factura no es DIRECTOR', async () => {
+    const { tx } = txFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso({
+        precio: 100000,
+        costeo: { costoUnitario: 200000, valorTotal: 400000, faltante: 0 },
+      }),
+      contabilidadFalso().fake,
+      {} as never,
+    );
+
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        lineas: [{ productoId: 'p-1', cantidad: 2 }],
+        confirmaPrecioBajoCosto: true,
+      }),
+    ).rejects.toThrow(/autorizar un DIRECTOR/);
+  });
+
+  it('un DIRECTOR la emite, y la línea queda con quién la autorizó', async () => {
+    const { tx, lineasInsertadas } = txFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso({
+        precio: 100000,
+        costeo: { costoUnitario: 200000, valorTotal: 400000, faltante: 0 },
+      }),
+      contabilidadFalso().fake,
+      {} as never,
+    );
+
+    await servicio.crear(
+      { ...ctx, roles: ['DIRECTOR'] },
+      {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        lineas: [{ productoId: 'p-1', cantidad: 2 }],
+        confirmaPrecioBajoCosto: true,
+      },
+    );
+
+    // El último parámetro del INSERT de la línea es quién autorizó.
+    const linea = lineasInsertadas[0];
+    expect(linea[linea.length - 1]).toBe('u-1');
   });
 
   it('no anota nada cuando había existencia', async () => {

@@ -70,4 +70,9 @@ export class ConvertirCotizacionDto {
   @IsOptional()
   @IsBoolean()
   confirmaSinExistencia?: boolean;
+
+  /** Ver `CrearFacturaDto.confirmaPrecioBajoCosto`. */
+  @IsOptional()
+  @IsBoolean()
+  confirmaPrecioBajoCosto?: boolean;
 }

@@ -156,6 +156,37 @@ export function sumarPagos(valores: readonly number[]): number {
 }
 
 /**
+ * Si esta línea se está vendiendo por debajo de lo que costó.
+ *
+ * Se compara contra el **costo promedio** —con el que la mercancía sale del
+ * kardex— y no contra la última compra: el promedio es la pérdida contable
+ * real de esta venta, la última compra es a cuánto habría que reponerla, que
+ * es un aviso distinto y no bloquea nada.
+ *
+ * Vender con pérdida a veces hace falta —liquidar mercancía vieja, cerrar un
+ * negocio grande—, así que esto no dice "no se puede": dice "esto pierde
+ * tanto", y quién decide es el servicio.
+ */
+export type ResultadoMargen =
+  | { bajoCosto: false }
+  | { bajoCosto: true; perdidaUnitaria: number; perdidaTotal: number };
+
+export function evaluarMargen(
+  precioUnitario: number,
+  costoUnitario: number,
+  cantidad: number,
+): ResultadoMargen {
+  const perdidaCentavos = aCentavos(costoUnitario) - aCentavos(precioUnitario);
+  if (perdidaCentavos <= 0) return { bajoCosto: false };
+
+  return {
+    bajoCosto: true,
+    perdidaUnitaria: aPesos(perdidaCentavos),
+    perdidaTotal: aPesos(Math.round(perdidaCentavos * cantidad)),
+  };
+}
+
+/**
  * Cuánto queda cobrado tras devolverle plata al cliente.
  *
  * Distinto de la nota crédito: allá la factura pasa a valer menos, acá vale

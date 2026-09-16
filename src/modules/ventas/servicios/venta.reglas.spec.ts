@@ -2,6 +2,7 @@ import {
   calcularCobro,
   calcularDevolucionCobro,
   calcularDevolucionPorLinea,
+  evaluarMargen,
   calcularLinea,
   calcularLineas,
   sumarPagos,
@@ -226,5 +227,23 @@ describe('calcularDevolucionCobro', () => {
   it('rechaza si no se cobró nada', () => {
     const r = calcularDevolucionCobro(0, 1000);
     expect(r.ok).toBe(false);
+  });
+});
+
+describe('evaluarMargen', () => {
+  it('por encima del costo no dice nada', () => {
+    expect(evaluarMargen(50000, 17961.8, 3)).toEqual({ bajoCosto: false });
+  });
+
+  it('al costo exacto tampoco: no se pierde', () => {
+    expect(evaluarMargen(17961.8, 17961.8, 1)).toEqual({ bajoCosto: false });
+  });
+
+  it('por debajo, dice cuánto se pierde por unidad y en total', () => {
+    expect(evaluarMargen(10000, 17961.8, 3)).toEqual({
+      bajoCosto: true,
+      perdidaUnitaria: 7961.8,
+      perdidaTotal: 23885.4,
+    });
   });
 });

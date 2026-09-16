@@ -22,7 +22,11 @@ import {
   type VentaDocumentoLineaResumen,
   type VentaDocumentoResumen,
 } from './venta-documento.service';
-import { calcularLineas, type LineaVentaEntrada } from './venta.reglas';
+import {
+  calcularLineas,
+  evaluarMargen,
+  type LineaVentaEntrada,
+} from './venta.reglas';
 
 const CAMPOS_LINEA = `id, venta_documento_id, orden, producto_id, cantidad, precio_unitario,
                        iva_tarifa, subtotal, iva_valor, total, costo_unitario`;
@@ -202,6 +206,8 @@ export class FacturaService {
     const cuentaIngresoDe: string[] = [];
     const cuentaCostoDe: string[] = [];
     const cuentaInventarioDe: string[] = [];
+    /** Por línea: quién autorizó venderla bajo costo, o `null`. */
+    const autorizoBajoCosto: Array<string | null> = [];
     const costeos: Array<{
       costoUnitario: number;
       valorTotal: number;
@@ -252,6 +258,31 @@ export class FacturaService {
         t,
         dto.confirmaSinExistencia ?? false,
       );
+
+      // Vender por debajo del costo promedio es una pérdida contable en el
+      // momento de emitir, no un problema que aparezca al cierre. Se bloquea, y
+      // solo un DIRECTOR puede levantarlo —quien vende no se autoriza a sí
+      // mismo un descuento con pérdida—; la línea guarda quién lo hizo.
+      const margen = evaluarMargen(
+        precioVigente,
+        costeo.costoUnitario,
+        l.cantidad,
+      );
+      if (margen.bajoCosto) {
+        if (dto.confirmaPrecioBajoCosto !== true) {
+          throw new BadRequestException(
+            `El producto ${producto.codigo} se vendería por debajo de su costo: cuesta ${costeo.costoUnitario} y el precio de lista es ${precioVigente}. La venta perdería ${margen.perdidaTotal}.`,
+          );
+        }
+        if (!ctx.roles.includes('DIRECTOR')) {
+          throw new BadRequestException(
+            `Vender ${producto.codigo} por debajo de su costo lo tiene que autorizar un DIRECTOR.`,
+          );
+        }
+        autorizoBajoCosto.push(ctx.usuarioId);
+      } else {
+        autorizoBajoCosto.push(null);
+      }
 
       cuentaIngresoDe.push(producto.cuenta_ingreso_id);
       cuentaCostoDe.push(producto.cuenta_costo_venta_id);
@@ -407,8 +438,9 @@ export class FacturaService {
         await t.query(
           `INSERT INTO venta_documento_linea
                (empresa_id, venta_documento_id, orden, producto_id, cantidad,
-                precio_unitario, iva_tarifa, subtotal, iva_valor, total, costo_unitario)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                precio_unitario, iva_tarifa, subtotal, iva_valor, total, costo_unitario,
+                precio_bajo_costo_autorizado_por)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
              RETURNING ${CAMPOS_LINEA}`,
           [
             ctx.empresaId,
@@ -422,6 +454,7 @@ export class FacturaService {
             l.ivaValor,
             l.total,
             costeos[i].costoUnitario,
+            autorizoBajoCosto[i],
           ],
         ),
       );

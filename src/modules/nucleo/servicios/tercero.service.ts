@@ -136,7 +136,7 @@ export class TerceroService {
       const filas = await t.query<Array<Record<string, unknown>>>(
         `SELECT id, tipo_documento, numero_documento, dv, razon_social,
                 primer_nombre, segundo_nombre, primer_apellido, segundo_apellido,
-                es_cliente, es_proveedor, responsable_iva, activo
+                es_cliente, es_proveedor, responsable_iva, declarante_renta, activo
            FROM tercero ${where}
           ORDER BY coalesce(razon_social, primer_apellido || ' ' || primer_nombre)
           LIMIT $${params.length - 1} OFFSET $${params.length}`,

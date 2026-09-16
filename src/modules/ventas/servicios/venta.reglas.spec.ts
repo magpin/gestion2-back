@@ -3,6 +3,7 @@ import {
   calcularDevolucionPorLinea,
   calcularLinea,
   calcularLineas,
+  sumarPagos,
 } from './venta.reglas';
 
 describe('calcularLinea', () => {
@@ -181,5 +182,19 @@ describe('calcularDevolucionPorLinea', () => {
   it('rechaza cantidad cero o negativa', () => {
     expect(calcularDevolucionPorLinea(10, 0, 0).ok).toBe(false);
     expect(calcularDevolucionPorLinea(10, 0, -1).ok).toBe(false);
+  });
+});
+
+describe('sumarPagos', () => {
+  it('suma los renglones de un reparto', () => {
+    expect(sumarPagos([19000, 100000])).toBe(119000);
+  });
+
+  it('no arrastra el flotante: 0.1 + 0.2 da 0.3, no 0.30000000000000004', () => {
+    expect(sumarPagos([0.1, 0.2])).toBe(0.3);
+  });
+
+  it('un solo renglón es ese mismo valor', () => {
+    expect(sumarPagos([50000])).toBe(50000);
   });
 });

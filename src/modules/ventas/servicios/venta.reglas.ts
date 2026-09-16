@@ -146,6 +146,16 @@ export function calcularCobro(
 }
 
 /**
+ * La suma de los renglones de un cobro. Se suma en centavos enteros por lo
+ * mismo que el resto del archivo: `0.1 + 0.2` no da `0.3`, y un reparto de
+ * tres renglones podría no cuadrar contra el saldo por una diferencia que no
+ * existe.
+ */
+export function sumarPagos(valores: readonly number[]): number {
+  return aPesos(valores.reduce((total, v) => total + aCentavos(v), 0));
+}
+
+/**
  * Cuánto de una línea de factura se puede devolver todavía.
  *
  * Hasta el paso 8 la nota crédito era todo o nada: copiaba la factura entera

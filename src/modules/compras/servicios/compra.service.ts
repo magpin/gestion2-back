@@ -26,6 +26,7 @@ import {
   calcularLineasCompra,
   calcularPago,
   netoAPagar,
+  sumarPagos,
   totalRetenciones,
 } from './compra.reglas';
 import type { LineaCompraEntrada } from './compra.reglas';
@@ -712,12 +713,16 @@ export class CompraService {
         throw new BadRequestException('Esta compra no está vigente.');
       }
 
+      // La suma de los renglones se valida UNA vez: ver el mismo criterio en
+      // `VentaDocumentoService.cobrar`.
+      const valorTotal = sumarPagos(dto.pagos.map((p) => p.valor));
+
       // Contra el neto efectivo: la nota crédito del proveedor baja lo que
       // se le debe, y la nota débito lo sube.
       const resultado = calcularPago(
         Number(documento.neto_efectivo),
         Number(documento.monto_pagado),
-        dto.valor,
+        valorTotal,
       );
       if (!resultado.ok) {
         throw new BadRequestException(resultado.motivo);
@@ -734,26 +739,32 @@ export class CompraService {
         );
       }
 
-      const medio =
-        dto.medio === 'CAJA'
-          ? ({ medio: 'CAJA', cajaId: dto.cajaId! } as const)
-          : ({
-              medio: 'BANCO',
-              cuentaBancariaId: dto.cuentaBancariaId!,
-            } as const);
-      await this.tesoreria.registrarPago(
-        ctx,
-        {
-          ...medio,
-          fecha: dto.fecha,
-          valor: dto.valor,
-          concepto: `Pago de la compra ${documento.numero_factura_proveedor}`,
-          cuentaProveedoresId: cuentaProveedores.id,
-          terceroId: documento.tercero_id,
-          compraId: id,
-        },
-        t,
-      );
+      // Un movimiento por renglón, en la misma transacción — espejo de
+      // `cobrar`, y el `concepto` numera el reparto solo si hay más de uno.
+      for (const [i, pago] of dto.pagos.entries()) {
+        const medio =
+          pago.medio === 'CAJA'
+            ? ({ medio: 'CAJA', cajaId: pago.cajaId! } as const)
+            : ({
+                medio: 'BANCO',
+                cuentaBancariaId: pago.cuentaBancariaId!,
+              } as const);
+        const reparto =
+          dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
+        await this.tesoreria.registrarPago(
+          ctx,
+          {
+            ...medio,
+            fecha: dto.fecha,
+            valor: pago.valor,
+            concepto: `Pago de la compra ${documento.numero_factura_proveedor}${reparto}`,
+            cuentaProveedoresId: cuentaProveedores.id,
+            terceroId: documento.tercero_id,
+            compraId: id,
+          },
+          t,
+        );
+      }
 
       const actualizado = fila<CompraDocumentoResumen>(
         await t.query(

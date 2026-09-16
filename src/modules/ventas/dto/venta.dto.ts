@@ -1,4 +1,6 @@
+import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
   IsIn,
   IsNumber,
   IsOptional,
@@ -7,6 +9,7 @@ import {
   Length,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 
 import { PaginacionDto } from '../../../common/dto/paginacion.dto';
@@ -45,28 +48,46 @@ export const MEDIOS_PAGO = ['CAJA', 'BANCO'] as const;
 export type MedioPago = (typeof MEDIOS_PAGO)[number];
 
 /**
- * Cobra una factura, total o parcialmente, por caja o por banco —
- * `cajaId`/`cuentaBancariaId` son mutuamente excluyentes, discriminados
- * por `medio` (mismo criterio que `Medio` en `tesoreria.api.ts`). El
- * concepto del movimiento lo arma el servicio con el número de la
- * factura, no se pide acá.
+ * Un renglón del cobro: de dónde entra la plata y cuánta.
+ * `cajaId`/`cuentaBancariaId` son mutuamente excluyentes, discriminados por
+ * `medio` (mismo criterio que `Medio` en `tesoreria.api.ts`).
  */
-export class CobrarDto {
+export class MedioPagoDto {
   @IsIn(MEDIOS_PAGO)
   medio!: MedioPago;
 
-  @ValidateIf((o: CobrarDto) => o.medio === 'CAJA')
+  @ValidateIf((o: MedioPagoDto) => o.medio === 'CAJA')
   @IsUUID()
   cajaId?: string;
 
-  @ValidateIf((o: CobrarDto) => o.medio === 'BANCO')
+  @ValidateIf((o: MedioPagoDto) => o.medio === 'BANCO')
   @IsUUID()
   cuentaBancariaId?: string;
-
-  @EsFechaCalendario()
-  fecha!: string;
 
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
   valor!: number;
+}
+
+/**
+ * Cobra una factura, total o parcialmente, **repartida entre uno o varios
+ * medios**: el cliente que paga la mitad en efectivo y la mitad por
+ * transferencia es un solo cobro, no dos.
+ *
+ * Hasta el paso 12 esto era un solo medio y un solo valor, y ese caso
+ * obligaba a cobrar dos veces —dos actos, dos asientos, dos fechas posibles—
+ * para algo que pasó una sola vez. Ahora la fecha es una, la validación
+ * contra el saldo es una, y cada renglón produce su movimiento.
+ *
+ * El concepto de cada movimiento lo arma el servicio con el número de la
+ * factura, no se pide acá.
+ */
+export class CobrarDto {
+  @EsFechaCalendario()
+  fecha!: string;
+
+  @ValidateNested({ each: true })
+  @Type(() => MedioPagoDto)
+  @ArrayMinSize(1, { message: 'Un cobro necesita al menos un medio de pago' })
+  pagos!: MedioPagoDto[];
 }

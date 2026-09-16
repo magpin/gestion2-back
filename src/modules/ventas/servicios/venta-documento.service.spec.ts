@@ -720,11 +720,15 @@ describe('VentaDocumentoService.anular', () => {
 
 describe('VentaDocumentoService.cobrar', () => {
   const DTO: CobrarDto = {
-    medio: 'CAJA',
-    cajaId: 'c-1',
     fecha: '2026-09-12',
-    valor: 50000,
+    pagos: [{ medio: 'CAJA', cajaId: 'c-1', valor: 50000 }],
   };
+
+  /** El mismo cobro por caja, por otro valor. */
+  const porValor = (valor: number): CobrarDto => ({
+    ...DTO,
+    pagos: [{ ...DTO.pagos[0], valor }],
+  });
 
   function nucleoCarteraFalso(
     cuenta: { id: string } | null = { id: 'cta-cartera' },
@@ -856,10 +860,8 @@ describe('VentaDocumentoService.cobrar', () => {
     );
 
     await servicio.cobrar(ctx, 'fv-1', {
-      medio: 'BANCO',
-      cuentaBancariaId: 'cb-1',
       fecha: '2026-09-12',
-      valor: 50000,
+      pagos: [{ medio: 'BANCO', cuentaBancariaId: 'cb-1', valor: 50000 }],
     });
 
     expect(actualizaciones).toHaveLength(1);
@@ -923,9 +925,9 @@ describe('VentaDocumentoService.cobrar', () => {
       tesoreria,
     );
 
-    await expect(
-      servicio.cobrar(ctx, 'fv-1', { ...DTO, valor: 30000 }),
-    ).rejects.toThrow(BadRequestException);
+    await expect(servicio.cobrar(ctx, 'fv-1', porValor(30000))).rejects.toThrow(
+      BadRequestException,
+    );
     expect(registrarCobro).not.toHaveBeenCalled();
     expect(actualizaciones).toHaveLength(0);
   });
@@ -946,7 +948,7 @@ describe('VentaDocumentoService.cobrar', () => {
     );
 
     await expect(
-      servicio.cobrar(ctx, 'fv-1', { ...DTO, valor: 110000 }),
+      servicio.cobrar(ctx, 'fv-1', porValor(110000)),
     ).rejects.toThrow(/Solo faltan 100000 por cobrar/);
     expect(registrarCobro).not.toHaveBeenCalled();
 
@@ -963,8 +965,84 @@ describe('VentaDocumentoService.cobrar', () => {
       {} as never,
       tesoreria2,
     );
-    await servicio2.cobrar(ctx, 'fv-1', { ...DTO, valor: 100000 });
+    await servicio2.cobrar(ctx, 'fv-1', porValor(100000));
     expect(registrar2).toHaveBeenCalledTimes(1);
+  });
+
+  it('reparte un cobro entre caja y banco: dos movimientos, un solo monto_pagado', async () => {
+    const { tx, actualizaciones } = txCobrarFalso(FACTURA_BASE);
+    const { fake: tesoreria, registrarCobro } = tesoreriaFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoCarteraFalso(),
+      inventarioFalso(),
+      {} as never,
+      tesoreria,
+    );
+
+    const actualizado = await servicio.cobrar(ctx, 'fv-1', {
+      fecha: '2026-09-12',
+      pagos: [
+        { medio: 'CAJA', cajaId: 'c-1', valor: 19000 },
+        { medio: 'BANCO', cuentaBancariaId: 'cb-1', valor: 100000 },
+      ],
+    });
+
+    // Dos movimientos, uno por renglón, y el concepto los numera para que el
+    // libro de caja no muestre dos líneas indistinguibles.
+    expect(registrarCobro).toHaveBeenCalledTimes(2);
+    expect(registrarCobro).toHaveBeenNthCalledWith(
+      1,
+      ctx,
+      expect.objectContaining({
+        medio: 'CAJA',
+        cajaId: 'c-1',
+        valor: 19000,
+        concepto: 'Cobro de la factura SETP-000005 (1 de 2)',
+      }),
+      expect.anything(),
+    );
+    expect(registrarCobro).toHaveBeenNthCalledWith(
+      2,
+      ctx,
+      expect.objectContaining({
+        medio: 'BANCO',
+        cuentaBancariaId: 'cb-1',
+        valor: 100000,
+        concepto: 'Cobro de la factura SETP-000005 (2 de 2)',
+      }),
+      expect.anything(),
+    );
+
+    // Y un solo UPDATE por la suma: es un cobro, no dos.
+    expect(actualizaciones).toHaveLength(1);
+    expect(actualizado.monto_pagado).toBe('119000');
+  });
+
+  it('rechaza el reparto cuya SUMA se pasa, aunque cada renglón quepa', async () => {
+    const { tx, actualizaciones } = txCobrarFalso(FACTURA_BASE);
+    const { fake: tesoreria, registrarCobro } = tesoreriaFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoCarteraFalso(),
+      inventarioFalso(),
+      {} as never,
+      tesoreria,
+    );
+
+    // 70.000 + 70.000 sobre una factura de 119.000: por separado cada uno
+    // cabe, juntos no. Validar renglón por renglón dejaría pasar esto.
+    await expect(
+      servicio.cobrar(ctx, 'fv-1', {
+        fecha: '2026-09-12',
+        pagos: [
+          { medio: 'CAJA', cajaId: 'c-1', valor: 70000 },
+          { medio: 'BANCO', cuentaBancariaId: 'cb-1', valor: 70000 },
+        ],
+      }),
+    ).rejects.toThrow(/Solo faltan 119000 por cobrar/);
+    expect(registrarCobro).not.toHaveBeenCalled();
+    expect(actualizaciones).toHaveLength(0);
   });
 
   it('rechaza sin llamar a TesoreriaApi si no existe la cuenta de cartera', async () => {

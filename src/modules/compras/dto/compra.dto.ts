@@ -107,28 +107,38 @@ export const MEDIOS_PAGO = ['CAJA', 'BANCO'] as const;
 export type MedioPago = (typeof MEDIOS_PAGO)[number];
 
 /**
- * Paga una compra, total o parcialmente, por caja o por banco —
- * `cajaId`/`cuentaBancariaId` son mutuamente excluyentes, discriminados
- * por `medio` (mismo criterio que `Medio` en `tesoreria.api.ts`). El
- * concepto del movimiento lo arma el servicio con el número de factura
- * del proveedor, no se pide acá.
+ * Un renglón del pago: de dónde sale la plata y cuánta. Espejo de
+ * `MedioPagoDto` de ventas, duplicado por el mismo motivo que `MEDIOS_PAGO`.
  */
-export class PagarDto {
+export class MedioPagoDto {
   @IsIn(MEDIOS_PAGO)
   medio!: MedioPago;
 
-  @ValidateIf((o: PagarDto) => o.medio === 'CAJA')
+  @ValidateIf((o: MedioPagoDto) => o.medio === 'CAJA')
   @IsUUID()
   cajaId?: string;
 
-  @ValidateIf((o: PagarDto) => o.medio === 'BANCO')
+  @ValidateIf((o: MedioPagoDto) => o.medio === 'BANCO')
   @IsUUID()
   cuentaBancariaId?: string;
-
-  @EsFechaCalendario()
-  fecha!: string;
 
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
   valor!: number;
+}
+
+/**
+ * Paga una compra, total o parcialmente, **repartida entre uno o varios
+ * medios** — ver `CobrarDto` de ventas, que explica el porqué. El concepto de
+ * cada movimiento lo arma el servicio con el número de factura del proveedor,
+ * no se pide acá.
+ */
+export class PagarDto {
+  @EsFechaCalendario()
+  fecha!: string;
+
+  @ValidateNested({ each: true })
+  @Type(() => MedioPagoDto)
+  @ArrayMinSize(1, { message: 'Un pago necesita al menos un medio' })
+  pagos!: MedioPagoDto[];
 }

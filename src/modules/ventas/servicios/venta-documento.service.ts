@@ -17,6 +17,7 @@ import type { CobrarDto, ListarVentasDto } from '../dto/venta.dto';
 import {
   calcularCobro,
   calcularLineas,
+  sumarPagos,
   type LineaVentaEntrada,
 } from './venta.reglas';
 
@@ -710,13 +711,19 @@ export class VentaDocumentoService {
         throw new BadRequestException('Esta factura no está vigente.');
       }
 
+      // La suma de los renglones se valida UNA vez contra el saldo: repartir
+      // un cobro entre caja y banco no cambia cuánto se debe, solo de dónde
+      // entra. Validar renglón por renglón dejaría pasar dos que por separado
+      // caben y juntos se pasan.
+      const valorTotal = sumarPagos(dto.pagos.map((p) => p.valor));
+
       // Contra el saldo efectivo, no contra el total: una factura de un
       // millón con una nota crédito de doscientos mil debe ochocientos mil, y
       // cobrarle el millón sería cobrar de más.
       const resultado = calcularCobro(
         Number(documento.saldo_efectivo),
         Number(documento.monto_pagado),
-        dto.valor,
+        valorTotal,
       );
       if (!resultado.ok) {
         throw new BadRequestException(resultado.motivo);
@@ -734,26 +741,39 @@ export class VentaDocumentoService {
       }
 
       const numero = `${documento.prefijo}-${String(documento.consecutivo).padStart(6, '0')}`;
-      const medio =
-        dto.medio === 'CAJA'
-          ? ({ medio: 'CAJA', cajaId: dto.cajaId! } as const)
-          : ({
-              medio: 'BANCO',
-              cuentaBancariaId: dto.cuentaBancariaId!,
-            } as const);
-      await this.tesoreria.registrarCobro(
-        ctx,
-        {
-          ...medio,
-          fecha: dto.fecha,
-          valor: dto.valor,
-          concepto: `Cobro de la factura ${numero}`,
-          cuentaClientesId: cuentaCartera.id,
-          terceroId: documento.tercero_id,
-          facturaVentaId: id,
-        },
-        t,
-      );
+
+      // Un movimiento por renglón, todos en la MISMA transacción que ya está
+      // abierta —`TesoreriaApi` acepta la `tx` externa desde el paso 12.1 de
+      // `caja-cartera.md`—: la plata que entra por caja y la que entra por
+      // banco se confirman juntas o no entra ninguna.
+      //
+      // El `concepto` numera el renglón solo cuando hay más de uno: con un
+      // solo pago el movimiento sale idéntico a como salía antes, y con
+      // varios el libro de caja no muestra dos líneas indistinguibles.
+      for (const [i, pago] of dto.pagos.entries()) {
+        const medio =
+          pago.medio === 'CAJA'
+            ? ({ medio: 'CAJA', cajaId: pago.cajaId! } as const)
+            : ({
+                medio: 'BANCO',
+                cuentaBancariaId: pago.cuentaBancariaId!,
+              } as const);
+        const reparto =
+          dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
+        await this.tesoreria.registrarCobro(
+          ctx,
+          {
+            ...medio,
+            fecha: dto.fecha,
+            valor: pago.valor,
+            concepto: `Cobro de la factura ${numero}${reparto}`,
+            cuentaClientesId: cuentaCartera.id,
+            terceroId: documento.tercero_id,
+            facturaVentaId: id,
+          },
+          t,
+        );
+      }
 
       const actualizado = fila<VentaDocumentoResumen>(
         await t.query(

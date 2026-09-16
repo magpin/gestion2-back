@@ -154,6 +154,16 @@ export function netoAPagar(total: number, retenido: number): number {
 }
 
 /**
+ * La suma de los renglones de un pago. Se suma en centavos enteros por lo
+ * mismo que el resto del archivo: `0.1 + 0.2` no da `0.3`, y un reparto de
+ * tres renglones podría no cuadrar contra el saldo por una diferencia que no
+ * existe.
+ */
+export function sumarPagos(valores: readonly number[]): number {
+  return aPesos(valores.reduce((total, v) => total + aCentavos(v), 0));
+}
+
+/**
  * Cuánto queda pagado tras un pago. Rechaza si el valor supera lo que
  * falta por pagar — anticipa `ck_compra_monto_pagado` de la base, mismo
  * motivo que `calcularCobro` de `venta.reglas.ts`.

@@ -957,11 +957,15 @@ describe('CompraService.anular', () => {
 
 describe('CompraService.pagar', () => {
   const DTO: PagarDto = {
-    medio: 'CAJA',
-    cajaId: 'c-1',
     fecha: '2026-09-12',
-    valor: 40000,
+    pagos: [{ medio: 'CAJA', cajaId: 'c-1', valor: 40000 }],
   };
+
+  /** El mismo pago por caja, por otro valor. */
+  const porValor = (valor: number): PagarDto => ({
+    ...DTO,
+    pagos: [{ ...DTO.pagos[0], valor }],
+  });
 
   function tesoreriaFalso() {
     const registrarPago = jest.fn(() =>
@@ -1080,10 +1084,8 @@ describe('CompraService.pagar', () => {
     );
 
     await servicio.pagar(ctx, 'compra-1', {
-      medio: 'BANCO',
-      cuentaBancariaId: 'cb-1',
       fecha: '2026-09-12',
-      valor: 40000,
+      pagos: [{ medio: 'BANCO', cuentaBancariaId: 'cb-1', valor: 40000 }],
     });
 
     expect(actualizaciones).toHaveLength(1);
@@ -1133,7 +1135,7 @@ describe('CompraService.pagar', () => {
     );
 
     await expect(
-      servicio.pagar(ctx, 'compra-1', { ...DTO, valor: 20000 }),
+      servicio.pagar(ctx, 'compra-1', porValor(20000)),
     ).rejects.toThrow(BadRequestException);
     expect(registrarPago).not.toHaveBeenCalled();
     expect(actualizaciones).toHaveLength(0);
@@ -1153,7 +1155,7 @@ describe('CompraService.pagar', () => {
     );
 
     await expect(
-      servicio.pagar(ctx, 'compra-1', { ...DTO, valor: 94000 }),
+      servicio.pagar(ctx, 'compra-1', porValor(94000)),
     ).rejects.toThrow(/Solo faltan 80000 por pagar/);
     expect(registrarPago).not.toHaveBeenCalled();
 
@@ -1167,8 +1169,52 @@ describe('CompraService.pagar', () => {
       {} as never,
       tesoreria2,
     );
-    await servicio2.pagar(ctx, 'compra-1', { ...DTO, valor: 80000 });
+    await servicio2.pagar(ctx, 'compra-1', porValor(80000));
     expect(registrar2).toHaveBeenCalledTimes(1);
+  });
+
+  it('reparte un pago entre caja y banco: dos movimientos, un solo monto_pagado', async () => {
+    const { tx, actualizaciones } = txPagarFalso(COMPRA_BASE);
+    const { fake: tesoreria, registrarPago } = tesoreriaFalso();
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      nucleoFalso({ cuentas: { '220505': { id: 'cta-proveedores' } } }).fake,
+      inventarioFalso().fake,
+      {} as never,
+      tesoreria,
+    );
+
+    const actualizado = await servicio.pagar(ctx, 'compra-1', {
+      fecha: '2026-09-12',
+      pagos: [
+        { medio: 'CAJA', cajaId: 'c-1', valor: 14000 },
+        { medio: 'BANCO', cuentaBancariaId: 'cb-1', valor: 80000 },
+      ],
+    });
+
+    expect(registrarPago).toHaveBeenCalledTimes(2);
+    expect(registrarPago).toHaveBeenNthCalledWith(
+      1,
+      ctx,
+      expect.objectContaining({
+        medio: 'CAJA',
+        valor: 14000,
+        concepto: 'Pago de la compra FP-001 (1 de 2)',
+      }),
+      expect.anything(),
+    );
+    expect(registrarPago).toHaveBeenNthCalledWith(
+      2,
+      ctx,
+      expect.objectContaining({
+        medio: 'BANCO',
+        valor: 80000,
+        concepto: 'Pago de la compra FP-001 (2 de 2)',
+      }),
+      expect.anything(),
+    );
+    expect(actualizaciones).toHaveLength(1);
+    expect(actualizado.monto_pagado).toBe('94000');
   });
 
   it('rechaza sin llamar a TesoreriaApi si no existe la cuenta de proveedores', async () => {

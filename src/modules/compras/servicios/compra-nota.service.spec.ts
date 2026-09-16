@@ -33,6 +33,10 @@ const compraVigente: CompraDocumentoDetalle = {
   total_retenciones: '29750',
   neto_a_pagar: '1160250',
   monto_pagado: '0',
+  ajuste_notas: '0',
+  neto_efectivo: '1160250',
+  pendiente: '1160250',
+  saldo_a_favor: '0',
   asiento_id: 'asiento-compra',
   lineas: [
     {

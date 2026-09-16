@@ -45,6 +45,35 @@ export interface VentaDocumentoResumen {
   total: string;
   /** Cuánto se ha cobrado. Siempre `0` en COTIZACION/NOTA_CREDITO — nadie cobra esas. */
   monto_pagado: string;
+  /**
+   * Lo que las notas no anuladas le sumaron o restaron a este documento:
+   * negativo por cada nota crédito, positivo por cada nota débito. En una
+   * factura, `total + ajuste_notas` es lo que el cliente realmente debe —el
+   * `total` a secas dejó de ser esa respuesta cuando aparecieron las notas
+   * parciales—. Siempre `0` en una cotización o en una nota.
+   */
+  ajuste_notas: string;
+  /**
+   * `total + ajuste_notas`: lo que el documento vale hoy, después de sus
+   * notas. Viaja calculado para que ninguna pantalla tenga que rehacer la
+   * suma y para que todas la hagan igual.
+   */
+  saldo_efectivo: string;
+  /**
+   * Lo que falta por cobrar: `saldo_efectivo - monto_pagado`, nunca negativo.
+   * Cuando se cobró de más, esto es `0` y la diferencia está en
+   * `saldo_a_favor` — un pendiente en rojo sería un número que nadie sabe
+   * leer y que ninguna pantalla debería sumar a la cartera.
+   */
+  pendiente: string;
+  /**
+   * Lo cobrado por encima del saldo efectivo: la plata que hay que
+   * devolverle al cliente. Aparece cuando una factura ya cobrada entera
+   * recibe después una nota crédito. No es un error de datos —la devolución
+   * la hace el paso 13— y por eso se expone aparte y no como pendiente
+   * negativo.
+   */
+  saldo_a_favor: string;
   asiento_id: string | null;
 }
 
@@ -65,8 +94,46 @@ export interface VentaDocumentoLineaResumen {
 }
 
 export interface VentaDocumentoDetalle extends VentaDocumentoResumen {
+  /**
+   * En una nota: la factura que corrige. En una factura convertida de una
+   * cotización: esa cotización. `null` cuando no hay ninguno.
+   */
+  documento_origen?: VentaDocumentoResumen | null;
+  /**
+   * En una factura: sus notas crédito y débito, anuladas incluidas —una nota
+   * anulada explica por qué el saldo volvió a subir—.
+   */
+  notas?: VentaDocumentoResumen[];
   lineas: VentaDocumentoLineaResumen[];
 }
+
+/**
+ * Lo que las notas le movieron al documento. Se deriva y no se guarda: una
+ * columna denormalizada habría que mantenerla al día en cada anulación de
+ * nota, y el `CHECK ck_venta_monto_pagado (monto_pagado <= total)` seguiría
+ * comparando contra el total viejo. Va como subconsulta —y no como JOIN— por
+ * lo mismo que el nombre del tercero: así sirve también en los `RETURNING`.
+ */
+const AJUSTE_NOTAS = `(SELECT coalesce(sum(CASE WHEN n.tipo = 'NOTA_CREDITO' THEN -n.total ELSE n.total END), 0)
+                         FROM venta_documento n
+                        WHERE n.documento_origen_id = venta_documento.id
+                          AND n.tipo IN ('NOTA_CREDITO', 'NOTA_DEBITO')
+                          AND n.estado <> 'ANULADA')`;
+
+/**
+ * El saldo efectivo y sus dos lados. `greatest(..., 0)` en los dos: la resta
+ * que sobra por un lado es exactamente la que falta por el otro, y partirla
+ * en dos columnas no negativas evita que una pantalla sume un pendiente en
+ * rojo a la cartera y la deje mintiendo.
+ *
+ * Se paga el costo de repetir la subconsulta de `AJUSTE_NOTAS` tres veces en
+ * la misma fila. Es a propósito: la alternativa —un `LATERAL` que la calcule
+ * una sola vez— no existe en un `RETURNING`, y estas columnas tienen que
+ * viajar también con el documento recién insertado.
+ */
+const SALDO_EFECTIVO = `(total + ${AJUSTE_NOTAS})`;
+const PENDIENTE = `greatest(${SALDO_EFECTIVO} - monto_pagado, 0)`;
+const SALDO_A_FAVOR = `greatest(monto_pagado - ${SALDO_EFECTIVO}, 0)`;
 
 /**
  * El documento y su número, armados en la consulta.
@@ -85,12 +152,23 @@ const IDENTIFICACION_TERCERO = `(SELECT concat_ws(' ', x.tipo_documento,
 // facturas que muestre ids obliga al frontend a traerse el maestro entero —con
 // miles de terceros, no cabe en una página—. Subconsultas y no JOIN, para que
 // las mismas columnas sirvan en los RETURNING de los INSERT/UPDATE.
-const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, estado, prefijo, consecutivo,
+//
+// Se exporta porque `FacturaService`, `NotaCreditoService` y
+// `NotaDebitoService` devuelven el mismo `VentaDocumentoResumen` desde sus
+// `RETURNING`: cada uno tenía su propia copia de esta lista, y las copias se
+// quedaron atrás —el `POST /facturas` respondía sin el nombre ni el NIT del
+// cliente, y habría respondido sin el saldo—. Una sola lista, un solo lugar
+// donde agregarle una columna.
+export const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, estado, prefijo, consecutivo,
                            resolucion_id, documento_origen_id, subtotal, total_iva, total,
                            monto_pagado, asiento_id,
                            (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
                               FROM tercero x WHERE x.id = tercero_id) AS tercero_nombre,
-                           ${IDENTIFICACION_TERCERO} AS tercero_identificacion`;
+                           ${IDENTIFICACION_TERCERO} AS tercero_identificacion,
+                           ${AJUSTE_NOTAS} AS ajuste_notas,
+                           ${SALDO_EFECTIVO} AS saldo_efectivo,
+                           ${PENDIENTE} AS pendiente,
+                           ${SALDO_A_FAVOR} AS saldo_a_favor`;
 
 const CAMPOS_LINEA = `id, venta_documento_id, orden, producto_id, cantidad, precio_unitario,
                        iva_tarifa, subtotal, iva_valor, total, costo_unitario,
@@ -493,7 +571,35 @@ export class VentaDocumentoService {
           ),
         );
 
-        return { ...documento, lineas };
+        // Las dos direcciones del enlace: desde la nota, su factura; desde la
+        // factura, sus notas. Sin esto, quien mira una nota crédito ve un
+        // UUID donde tendría que ver "factura SETP-991".
+        const documentoOrigen =
+          documento.documento_origen_id === null
+            ? null
+            : (fila<VentaDocumentoResumen>(
+                await t.query(
+                  `SELECT ${CAMPOS_DOCUMENTO} FROM venta_documento WHERE id = $1`,
+                  [documento.documento_origen_id],
+                ),
+              ) ?? null);
+
+        const notas = filas<VentaDocumentoResumen>(
+          await t.query(
+            `SELECT ${CAMPOS_DOCUMENTO} FROM venta_documento
+              WHERE documento_origen_id = $1
+                AND tipo IN ('NOTA_CREDITO', 'NOTA_DEBITO')
+              ORDER BY fecha, consecutivo`,
+            [id],
+          ),
+        );
+
+        return {
+          ...documento,
+          lineas,
+          documento_origen: documentoOrigen,
+          notas,
+        };
       },
       tx,
     );
@@ -583,9 +689,11 @@ export class VentaDocumentoService {
         consecutivo: number;
         total: string;
         monto_pagado: string;
+        saldo_efectivo: string;
       }>(
         await t.query(
-          `SELECT tipo, tercero_id, estado, prefijo, consecutivo, total, monto_pagado
+          `SELECT tipo, tercero_id, estado, prefijo, consecutivo, total, monto_pagado,
+                  ${SALDO_EFECTIVO} AS saldo_efectivo
              FROM venta_documento
             WHERE id = $1
             FOR UPDATE`,
@@ -602,8 +710,11 @@ export class VentaDocumentoService {
         throw new BadRequestException('Esta factura no está vigente.');
       }
 
+      // Contra el saldo efectivo, no contra el total: una factura de un
+      // millón con una nota crédito de doscientos mil debe ochocientos mil, y
+      // cobrarle el millón sería cobrar de más.
       const resultado = calcularCobro(
-        Number(documento.total),
+        Number(documento.saldo_efectivo),
         Number(documento.monto_pagado),
         dto.valor,
       );

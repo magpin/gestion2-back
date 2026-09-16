@@ -16,17 +16,12 @@ import type {
 } from '../dto/nota-compra.dto';
 import { calcularLineasCompra, netoAPagar } from './compra.reglas';
 import {
+  CAMPOS_DOCUMENTO,
   CompraService,
   type CompraDocumentoDetalle,
   type CompraDocumentoLineaResumen,
   type CompraDocumentoResumen,
 } from './compra.service';
-
-const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, numero_factura_proveedor, estado,
-                           subtotal, total_iva, total, total_retenciones, neto_a_pagar,
-                           monto_pagado, documento_origen_id, asiento_id,
-                           (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
-                              FROM tercero x WHERE x.id = tercero_id) AS tercero_nombre`;
 
 const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cantidad,
                        costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable,

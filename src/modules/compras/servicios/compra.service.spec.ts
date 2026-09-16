@@ -658,6 +658,8 @@ describe('CompraService.listar', () => {
 describe('CompraService.porId', () => {
   const documentoFila = {
     id: 'c-1',
+    tipo: 'FACTURA',
+    documento_origen_id: null,
     tercero_id: 'ter-1',
     fecha: '2026-09-08',
     numero_factura_proveedor: 'FP-001',
@@ -694,6 +696,9 @@ describe('CompraService.porId', () => {
   it('devuelve la compra con sus líneas y retenciones', async () => {
     const tx = {
       query: jest.fn((sql: string) => {
+        // La de las notas primero: también sale de `compra_documento`, y es
+        // la que distingue "esta compra" de "las notas que le apuntan".
+        if (sql.includes('documento_origen_id = $1')) return [];
         if (sql.includes('FROM compra_documento WHERE')) return [documentoFila];
         if (sql.includes('FROM compra_documento_linea')) return [lineaFila];
         if (sql.includes('FROM compra_retencion')) return [retencionFila];
@@ -712,6 +717,49 @@ describe('CompraService.porId', () => {
     expect(detalle.neto_a_pagar).toBe('116500');
     expect(detalle.lineas).toHaveLength(1);
     expect(detalle.retenciones).toHaveLength(1);
+  });
+
+  it('la nota del proveedor trae su factura, y la factura sus notas', async () => {
+    const notaFila = {
+      ...documentoFila,
+      id: 'cn-1',
+      tipo: 'NOTA_CREDITO',
+      documento_origen_id: 'c-1',
+      numero_factura_proveedor: 'NCP-7',
+      neto_a_pagar: '20000',
+    };
+    // Las dos consultas a `compra_documento` son idénticas en texto —el
+    // documento pedido y su origen—: lo que las separa es el id que llevan.
+    const consulta = (pedidoId: string) =>
+      jest.fn((sql: string, params?: unknown[]) => {
+        if (sql.includes('documento_origen_id = $1')) {
+          return pedidoId === 'c-1' ? [notaFila] : [];
+        }
+        if (sql.includes('FROM compra_documento WHERE')) {
+          const [buscado] = params as unknown[];
+          return [buscado === 'cn-1' ? notaFila : documentoFila];
+        }
+        if (sql.includes('FROM compra_documento_linea')) return [];
+        if (sql.includes('FROM compra_retencion')) return [];
+        throw new Error(`Query inesperada: ${sql}`);
+      });
+    const servicioCon = (pedidoId: string) =>
+      new CompraService(
+        txServiceFalso({ query: consulta(pedidoId) } as unknown as Tx),
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+
+    const nota = await servicioCon('cn-1').porId(ctx, 'cn-1');
+    expect(nota.documento_origen?.numero_factura_proveedor).toBe('FP-001');
+    expect(nota.notas).toEqual([]);
+
+    const compra = await servicioCon('c-1').porId(ctx, 'c-1');
+    expect(compra.documento_origen).toBeNull();
+    expect(compra.notas).toHaveLength(1);
+    expect(compra.notas?.[0].tipo).toBe('NOTA_CREDITO');
   });
 
   it('lanza NotFoundException si no existe', async () => {
@@ -933,14 +981,26 @@ describe('CompraService.pagar', () => {
           numero_factura_proveedor: string;
           neto_a_pagar: string;
           monto_pagado: string;
+          ajuste_notas: string;
         }
       | undefined,
   ) {
     const actualizaciones: unknown[][] = [];
+    // Igual que en ventas: el `neto_efectivo` sale de la consulta, y acá se
+    // replica para poder escribir el caso como "esta compra tiene una nota
+    // crédito del proveedor por 19.000".
+    const netoEfectivo =
+      documento === undefined
+        ? undefined
+        : String(
+            Number(documento.neto_a_pagar) + Number(documento.ajuste_notas),
+          );
     const tx = {
       query: jest.fn((sql: string, params?: unknown[]) => {
         if (sql.includes('FOR UPDATE')) {
-          return documento === undefined ? [] : [documento];
+          return documento === undefined
+            ? []
+            : [{ ...documento, neto_efectivo: netoEfectivo }];
         }
         if (sql.includes('UPDATE compra_documento')) {
           actualizaciones.push(params ?? []);
@@ -974,6 +1034,7 @@ describe('CompraService.pagar', () => {
     numero_factura_proveedor: 'FP-001',
     neto_a_pagar: '94000',
     monto_pagado: '0',
+    ajuste_notas: '0',
   };
 
   it('paga parcialmente y deja monto_pagado corrido, con el concepto y la cuenta correctos', async () => {
@@ -1076,6 +1137,38 @@ describe('CompraService.pagar', () => {
     ).rejects.toThrow(BadRequestException);
     expect(registrarPago).not.toHaveBeenCalled();
     expect(actualizaciones).toHaveLength(0);
+  });
+
+  it('paga contra el neto efectivo: una nota crédito del proveedor baja el tope', async () => {
+    // Neto de 94.000 con una nota crédito de 14.000: se le deben 80.000.
+    const conNota = { ...COMPRA_BASE, ajuste_notas: '-14000' };
+    const { tx } = txPagarFalso(conNota);
+    const { fake: tesoreria, registrarPago } = tesoreriaFalso();
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      nucleoFalso({ cuentas: { '220505': { id: 'cta-proveedores' } } }).fake,
+      inventarioFalso().fake,
+      {} as never,
+      tesoreria,
+    );
+
+    await expect(
+      servicio.pagar(ctx, 'compra-1', { ...DTO, valor: 94000 }),
+    ).rejects.toThrow(/Solo faltan 80000 por pagar/);
+    expect(registrarPago).not.toHaveBeenCalled();
+
+    // Y hasta el neto efectivo, sí paga.
+    const { tx: tx2 } = txPagarFalso(conNota);
+    const { fake: tesoreria2, registrarPago: registrar2 } = tesoreriaFalso();
+    const servicio2 = new CompraService(
+      txServiceFalso(tx2),
+      nucleoFalso({ cuentas: { '220505': { id: 'cta-proveedores' } } }).fake,
+      inventarioFalso().fake,
+      {} as never,
+      tesoreria2,
+    );
+    await servicio2.pagar(ctx, 'compra-1', { ...DTO, valor: 80000 });
+    expect(registrar2).toHaveBeenCalledTimes(1);
   });
 
   it('rechaza sin llamar a TesoreriaApi si no existe la cuenta de proveedores', async () => {

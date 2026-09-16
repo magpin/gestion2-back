@@ -513,6 +513,9 @@ describe('VentaDocumentoService.porId', () => {
   it('devuelve la cotización con sus líneas', async () => {
     const tx = {
       query: jest.fn((sql: string) => {
+        // La de las notas primero: sale de la misma tabla, y lo que la
+        // distingue es a quién le apunta.
+        if (sql.includes('documento_origen_id = $1')) return [];
         if (sql.includes('FROM venta_documento\n')) return [documentoFila];
         if (sql.includes('FROM venta_documento_linea')) return [lineaFila];
         throw new Error(`Query inesperada: ${sql}`);
@@ -529,6 +532,65 @@ describe('VentaDocumentoService.porId', () => {
     const detalle = await servicio.porId(ctx, 'COTIZACION', 'doc-1');
     expect(detalle.consecutivo).toBe(7);
     expect(detalle.lineas).toHaveLength(1);
+  });
+
+  it('la nota trae su factura, y la factura sus notas', async () => {
+    // Las dos direcciones del enlace: quien mira una nota crédito tiene que
+    // ver "factura SETP-991", no un UUID, y quien mira la factura tiene que
+    // ver qué se le colgó encima.
+    const facturaFila = {
+      ...documentoFila,
+      id: 'fv-1',
+      tipo: 'FACTURA',
+      prefijo: 'SETP',
+      consecutivo: 991,
+      documento_origen_id: null,
+    };
+    const notaFila = {
+      ...documentoFila,
+      id: 'nc-1',
+      tipo: 'NOTA_CREDITO',
+      prefijo: 'NC',
+      consecutivo: 3,
+      documento_origen_id: 'fv-1',
+      total: '119000',
+    };
+    const consulta = (pedido: 'FACTURA' | 'NOTA_CREDITO') =>
+      jest.fn((sql: string) => {
+        // El orden importa: las tres salen de `venta_documento` y solo el
+        // `WHERE` las distingue. La del documento pedido lleva `tipo`, la de
+        // las notas apunta al origen, y la que queda es la del origen mismo.
+        if (sql.includes('AND tipo = $2')) {
+          return [pedido === 'FACTURA' ? facturaFila : notaFila];
+        }
+        if (sql.includes('documento_origen_id = $1')) {
+          return pedido === 'FACTURA' ? [notaFila] : [];
+        }
+        if (sql.includes('FROM venta_documento_linea')) return [];
+        if (sql.includes('WHERE id = $1')) return [facturaFila];
+        throw new Error(`Query inesperada: ${sql}`);
+      });
+    const servicioCon = (pedido: 'FACTURA' | 'NOTA_CREDITO') =>
+      new VentaDocumentoService(
+        txServiceFalso({ query: consulta(pedido) } as unknown as Tx),
+        nucleoFalso(),
+        inventarioFalso(),
+        {} as never,
+        {} as never,
+      );
+
+    const nota = await servicioCon('NOTA_CREDITO').porId(
+      ctx,
+      'NOTA_CREDITO',
+      'nc-1',
+    );
+    expect(nota.documento_origen?.consecutivo).toBe(991);
+    expect(nota.notas).toEqual([]);
+
+    const factura = await servicioCon('FACTURA').porId(ctx, 'FACTURA', 'fv-1');
+    expect(factura.documento_origen).toBeNull();
+    expect(factura.notas).toHaveLength(1);
+    expect(factura.notas?.[0].tipo).toBe('NOTA_CREDITO');
   });
 
   it('lanza NotFoundException si no existe', async () => {
@@ -692,14 +754,24 @@ describe('VentaDocumentoService.cobrar', () => {
           consecutivo: number;
           total: string;
           monto_pagado: string;
+          ajuste_notas: string;
         }
       | undefined,
   ) {
     const actualizaciones: unknown[][] = [];
+    // El `saldo_efectivo` lo calcula la consulta, no el servicio: acá se
+    // replica esa suma para que el caso se siga escribiendo en los términos
+    // en que se piensa —"esta factura tiene una nota crédito de 19.000"—.
+    const saldoEfectivo =
+      documento === undefined
+        ? undefined
+        : String(Number(documento.total) + Number(documento.ajuste_notas));
     const tx = {
       query: jest.fn((sql: string, params?: unknown[]) => {
         if (sql.includes('FOR UPDATE')) {
-          return documento === undefined ? [] : [documento];
+          return documento === undefined
+            ? []
+            : [{ ...documento, saldo_efectivo: saldoEfectivo }];
         }
         if (sql.includes('UPDATE venta_documento')) {
           actualizaciones.push(params ?? []);
@@ -737,6 +809,8 @@ describe('VentaDocumentoService.cobrar', () => {
     consecutivo: 5,
     total: '119000',
     monto_pagado: '0',
+    /** Sin notas encima: el saldo efectivo es el total. */
+    ajuste_notas: '0',
   };
 
   it('cobra parcialmente y deja monto_pagado corrido, con el concepto y la cuenta correctos', async () => {
@@ -854,6 +928,43 @@ describe('VentaDocumentoService.cobrar', () => {
     ).rejects.toThrow(BadRequestException);
     expect(registrarCobro).not.toHaveBeenCalled();
     expect(actualizaciones).toHaveLength(0);
+  });
+
+  it('cobra contra el saldo efectivo: una nota crédito encima baja el tope', async () => {
+    // Factura de 119.000 con una nota crédito de 19.000: debe 100.000.
+    const { tx } = txCobrarFalso({
+      ...FACTURA_BASE,
+      ajuste_notas: '-19000',
+    });
+    const { fake: tesoreria, registrarCobro } = tesoreriaFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoCarteraFalso(),
+      inventarioFalso(),
+      {} as never,
+      tesoreria,
+    );
+
+    await expect(
+      servicio.cobrar(ctx, 'fv-1', { ...DTO, valor: 110000 }),
+    ).rejects.toThrow(/Solo faltan 100000 por cobrar/);
+    expect(registrarCobro).not.toHaveBeenCalled();
+
+    // Y hasta el saldo efectivo, sí cobra.
+    const { tx: tx2 } = txCobrarFalso({
+      ...FACTURA_BASE,
+      ajuste_notas: '-19000',
+    });
+    const { fake: tesoreria2, registrarCobro: registrar2 } = tesoreriaFalso();
+    const servicio2 = new VentaDocumentoService(
+      txServiceFalso(tx2),
+      nucleoCarteraFalso(),
+      inventarioFalso(),
+      {} as never,
+      tesoreria2,
+    );
+    await servicio2.cobrar(ctx, 'fv-1', { ...DTO, valor: 100000 });
+    expect(registrar2).toHaveBeenCalledTimes(1);
   });
 
   it('rechaza sin llamar a TesoreriaApi si no existe la cuenta de cartera', async () => {

@@ -162,22 +162,34 @@ export type ResultadoPago =
   { ok: true; montoPagado: number } | { ok: false; motivo: string };
 
 export function calcularPago(
-  netoAPagarDocumento: number,
+  netoEfectivo: number,
   montoPagadoActual: number,
   valor: number,
 ): ResultadoPago {
-  const nuevoMontoPagadoCentavos =
-    aCentavos(montoPagadoActual) + aCentavos(valor);
+  const faltaCentavos = aCentavos(netoEfectivo) - aCentavos(montoPagadoActual);
 
-  if (nuevoMontoPagadoCentavos > aCentavos(netoAPagarDocumento)) {
-    const saldoPendiente = aPesos(
-      aCentavos(netoAPagarDocumento) - aCentavos(montoPagadoActual),
-    );
+  // Espejo de `calcularCobro`: desde el paso 11 llega el neto efectivo —el
+  // neto a pagar menos las notas crédito del proveedor y más las débito—, y
+  // puede quedar por debajo de lo ya pagado. Esa diferencia se la devuelve el
+  // proveedor, no se le paga.
+  if (faltaCentavos < 0) {
     return {
       ok: false,
-      motivo: `Solo faltan ${saldoPendiente} por pagar de esta compra; no se puede pagar ${valor}.`,
+      motivo: `Esta compra tiene ${aPesos(-faltaCentavos)} a favor nuestro; eso lo devuelve el proveedor, no se le paga.`,
+    };
+  }
+  if (faltaCentavos === 0) {
+    return { ok: false, motivo: 'Esta compra ya está pagada por completo.' };
+  }
+  if (aCentavos(valor) > faltaCentavos) {
+    return {
+      ok: false,
+      motivo: `Solo faltan ${aPesos(faltaCentavos)} por pagar de esta compra; no se puede pagar ${valor}.`,
     };
   }
 
-  return { ok: true, montoPagado: aPesos(nuevoMontoPagadoCentavos) };
+  return {
+    ok: true,
+    montoPagado: aPesos(aCentavos(montoPagadoActual) + aCentavos(valor)),
+  };
 }

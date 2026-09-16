@@ -112,24 +112,37 @@ export type ResultadoCobro =
   { ok: true; montoPagado: number } | { ok: false; motivo: string };
 
 export function calcularCobro(
-  total: number,
+  saldoEfectivo: number,
   montoPagadoActual: number,
   valor: number,
 ): ResultadoCobro {
-  const nuevoMontoPagadoCentavos =
-    aCentavos(montoPagadoActual) + aCentavos(valor);
+  const faltaCentavos = aCentavos(saldoEfectivo) - aCentavos(montoPagadoActual);
 
-  if (nuevoMontoPagadoCentavos > aCentavos(total)) {
-    const saldoPendiente = aPesos(
-      aCentavos(total) - aCentavos(montoPagadoActual),
-    );
+  // Desde el paso 11 lo que llega acá es el saldo efectivo —el total menos
+  // las notas crédito y más las débito—, y puede quedar por debajo de lo ya
+  // cobrado: la factura se cobró entera y después le llegó una nota crédito.
+  // Eso no es un pendiente en rojo, es plata del cliente que hay que
+  // devolverle, y devolverla es otra operación (paso 13).
+  if (faltaCentavos < 0) {
     return {
       ok: false,
-      motivo: `Solo faltan ${saldoPendiente} por cobrar de esta factura; no se puede cobrar ${valor}.`,
+      motivo: `Esta factura tiene ${aPesos(-faltaCentavos)} a favor del cliente; eso se devuelve, no se cobra.`,
+    };
+  }
+  if (faltaCentavos === 0) {
+    return { ok: false, motivo: 'Esta factura ya está cobrada por completo.' };
+  }
+  if (aCentavos(valor) > faltaCentavos) {
+    return {
+      ok: false,
+      motivo: `Solo faltan ${aPesos(faltaCentavos)} por cobrar de esta factura; no se puede cobrar ${valor}.`,
     };
   }
 
-  return { ok: true, montoPagado: aPesos(nuevoMontoPagadoCentavos) };
+  return {
+    ok: true,
+    montoPagado: aPesos(aCentavos(montoPagadoActual) + aCentavos(valor)),
+  };
 }
 
 /**

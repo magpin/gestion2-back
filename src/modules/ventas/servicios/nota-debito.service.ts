@@ -13,15 +13,12 @@ import { NucleoApi } from '../../nucleo/nucleo.api';
 import type { CrearNotaDebitoDto } from '../dto/nota-debito.dto';
 import { calcularLineas } from './venta.reglas';
 import {
+  CAMPOS_DOCUMENTO,
   VentaDocumentoService,
   type VentaDocumentoDetalle,
   type VentaDocumentoLineaResumen,
   type VentaDocumentoResumen,
 } from './venta-documento.service';
-
-const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, estado, prefijo, consecutivo,
-                           resolucion_id, documento_origen_id, subtotal, total_iva, total,
-                           monto_pagado, asiento_id`;
 
 const CAMPOS_LINEA = `id, venta_documento_id, orden, producto_id, cantidad, precio_unitario,
                        iva_tarifa, subtotal, iva_valor, total, costo_unitario`;

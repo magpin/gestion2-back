@@ -201,4 +201,14 @@ describe('calcularPago', () => {
 
     expect(resultado.ok).toBe(false);
   });
+
+  it('pagada entera y con nota crédito del proveedor después: saldo a favor nuestro', () => {
+    const resultado = calcularPago(80000, 94000, 1000);
+
+    expect(resultado).toEqual({
+      ok: false,
+      motivo:
+        'Esta compra tiene 14000 a favor nuestro; eso lo devuelve el proveedor, no se le paga.',
+    });
+  });
 });

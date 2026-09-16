@@ -137,6 +137,18 @@ describe('calcularCobro', () => {
 
     expect(resultado.ok).toBe(false);
   });
+
+  it('cobrada entera y con nota crédito después: no hay pendiente, hay saldo a favor', () => {
+    // 119.000 cobrados, y después una nota crédito de 19.000 deja el saldo
+    // efectivo en 100.000. Los 19.000 de diferencia se devuelven (paso 13).
+    const resultado = calcularCobro(100000, 119000, 1000);
+
+    expect(resultado).toEqual({
+      ok: false,
+      motivo:
+        'Esta factura tiene 19000 a favor del cliente; eso se devuelve, no se cobra.',
+    });
+  });
 });
 
 describe('calcularDevolucionPorLinea', () => {

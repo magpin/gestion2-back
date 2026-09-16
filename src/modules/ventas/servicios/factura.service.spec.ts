@@ -143,6 +143,10 @@ const cotizacionEmitida: VentaDocumentoDetalle = {
   total_iva: '55081',
   total: '344981',
   monto_pagado: '0',
+  ajuste_notas: '0',
+  saldo_efectivo: '344981',
+  pendiente: '344981',
+  saldo_a_favor: '0',
   asiento_id: null,
   lineas: [
     {

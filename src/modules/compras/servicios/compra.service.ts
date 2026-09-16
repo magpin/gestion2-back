@@ -50,6 +50,22 @@ export interface CompraDocumentoResumen {
   neto_a_pagar: string;
   /** Cuánto se le ha pagado al proveedor. */
   monto_pagado: string;
+  /**
+   * Lo que las notas no anuladas le sumaron o restaron: negativo por cada
+   * nota crédito, positivo por cada nota débito. `neto_a_pagar +
+   * ajuste_notas` es lo que realmente se le debe al proveedor.
+   */
+  ajuste_notas: string;
+  /** `neto_a_pagar + ajuste_notas`: lo que hoy se le debe al proveedor. */
+  neto_efectivo: string;
+  /** Lo que falta por pagarle: `neto_efectivo - monto_pagado`, nunca negativo. */
+  pendiente: string;
+  /**
+   * Lo pagado de más, cuando una compra ya pagada recibe después una nota
+   * crédito del proveedor: plata que él tiene que devolver. Ver
+   * `saldo_a_favor` en ventas, que es el mismo caso del otro lado.
+   */
+  saldo_a_favor: string;
   asiento_id: string;
 }
 
@@ -79,9 +95,24 @@ export interface CompraRetencionResumen {
 }
 
 export interface CompraDocumentoDetalle extends CompraDocumentoResumen {
+  /** En una nota: la factura del proveedor que corrige. */
+  documento_origen?: CompraDocumentoResumen | null;
+  /** En una factura: las notas del proveedor que le apuntan. */
+  notas?: CompraDocumentoResumen[];
   lineas: CompraDocumentoLineaResumen[];
   retenciones: CompraRetencionResumen[];
 }
+
+/** Lo que las notas del proveedor le movieron. Ver `AJUSTE_NOTAS` en ventas. */
+const AJUSTE_NOTAS = `(SELECT coalesce(sum(CASE WHEN n.tipo = 'NOTA_CREDITO' THEN -n.neto_a_pagar ELSE n.neto_a_pagar END), 0)
+                         FROM compra_documento n
+                        WHERE n.documento_origen_id = compra_documento.id
+                          AND n.estado <> 'ANULADA')`;
+
+/** Los dos lados del neto efectivo. Ver `SALDO_EFECTIVO` en ventas. */
+const NETO_EFECTIVO = `(neto_a_pagar + ${AJUSTE_NOTAS})`;
+const PENDIENTE = `greatest(${NETO_EFECTIVO} - monto_pagado, 0)`;
+const SALDO_A_FAVOR = `greatest(monto_pagado - ${NETO_EFECTIVO}, 0)`;
 
 // Mismo criterio que `VentaDocumentoService`: el nombre y la identificación
 // viajan con el documento, y el porqué está escrito allá.
@@ -89,13 +120,19 @@ const IDENTIFICACION_TERCERO = `(SELECT concat_ws(' ', x.tipo_documento,
                                         x.numero_documento || coalesce('-' || x.dv, ''))
                                    FROM tercero x WHERE x.id = tercero_id)`;
 
-const CAMPOS_DOCUMENTO = `id, tipo, documento_origen_id,
+// Se exporta por lo mismo que en ventas: `CompraNotaService` devuelve este
+// mismo resumen desde su `RETURNING` y tenía su propia copia de la lista.
+export const CAMPOS_DOCUMENTO = `id, tipo, documento_origen_id,
                            tercero_id, fecha, numero_factura_proveedor, estado,
                            subtotal, total_iva, total, total_retenciones, neto_a_pagar,
                            monto_pagado, asiento_id,
                            (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
                               FROM tercero x WHERE x.id = tercero_id) AS tercero_nombre,
-                           ${IDENTIFICACION_TERCERO} AS tercero_identificacion`;
+                           ${IDENTIFICACION_TERCERO} AS tercero_identificacion,
+                           ${AJUSTE_NOTAS} AS ajuste_notas,
+                           ${NETO_EFECTIVO} AS neto_efectivo,
+                           ${PENDIENTE} AS pendiente,
+                           ${SALDO_A_FAVOR} AS saldo_a_favor`;
 
 const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cantidad,
                        costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable,
@@ -510,6 +547,25 @@ export class CompraService {
           ),
         );
 
+        const documentoOrigen =
+          documento.documento_origen_id === null
+            ? null
+            : (fila<CompraDocumentoResumen>(
+                await t.query(
+                  `SELECT ${CAMPOS_DOCUMENTO} FROM compra_documento WHERE id = $1`,
+                  [documento.documento_origen_id],
+                ),
+              ) ?? null);
+
+        const notas = filas<CompraDocumentoResumen>(
+          await t.query(
+            `SELECT ${CAMPOS_DOCUMENTO} FROM compra_documento
+              WHERE documento_origen_id = $1
+              ORDER BY fecha, creado_en`,
+            [id],
+          ),
+        );
+
         const retenciones = filas<CompraRetencionResumen>(
           await t.query(
             `SELECT ${CAMPOS_RETENCION} FROM compra_retencion
@@ -519,7 +575,13 @@ export class CompraService {
           ),
         );
 
-        return { ...documento, lineas, retenciones };
+        return {
+          ...documento,
+          lineas,
+          retenciones,
+          documento_origen: documentoOrigen,
+          notas,
+        };
       },
       tx,
     );
@@ -632,9 +694,11 @@ export class CompraService {
         numero_factura_proveedor: string;
         neto_a_pagar: string;
         monto_pagado: string;
+        neto_efectivo: string;
       }>(
         await t.query(
-          `SELECT tercero_id, estado, numero_factura_proveedor, neto_a_pagar, monto_pagado
+          `SELECT tercero_id, estado, numero_factura_proveedor, neto_a_pagar, monto_pagado,
+                  ${NETO_EFECTIVO} AS neto_efectivo
              FROM compra_documento
             WHERE id = $1
             FOR UPDATE`,
@@ -648,8 +712,10 @@ export class CompraService {
         throw new BadRequestException('Esta compra no está vigente.');
       }
 
+      // Contra el neto efectivo: la nota crédito del proveedor baja lo que
+      // se le debe, y la nota débito lo sube.
       const resultado = calcularPago(
-        Number(documento.neto_a_pagar),
+        Number(documento.neto_efectivo),
         Number(documento.monto_pagado),
         dto.valor,
       );

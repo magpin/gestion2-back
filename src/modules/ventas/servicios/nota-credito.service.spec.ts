@@ -47,6 +47,10 @@ const facturaVigente: VentaDocumentoDetalle = {
   total_iva: '110162',
   total: '689962',
   monto_pagado: '0',
+  ajuste_notas: '0',
+  saldo_efectivo: '689962',
+  pendiente: '689962',
+  saldo_a_favor: '0',
   asiento_id: 'asiento-original',
   lineas: [
     {

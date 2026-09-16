@@ -5,6 +5,7 @@ import { AuthModule } from './common/auth/auth.module';
 import { JwtGuard } from './common/auth/jwt.guard';
 import { RolesGuard } from './common/auth/roles.guard';
 import { DbModule } from './common/db/db.module';
+import { AlmacenamientoModule } from './modules/almacenamiento/almacenamiento.module';
 import { ErrorPostgresFilter } from './common/db/error-postgres.filter';
 import { SaludController } from './health/salud.controller';
 import { ComprasModule } from './modules/compras/compras.module';
@@ -34,6 +35,7 @@ import { VentasModule } from './modules/ventas/ventas.module';
 @Module({
   imports: [
     DbModule,
+    AlmacenamientoModule,
     AuthModule,
     NucleoModule,
     ContabilidadModule,

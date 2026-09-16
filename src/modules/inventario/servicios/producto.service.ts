@@ -12,6 +12,7 @@ import {
   type PaginacionDto,
 } from '../../../common/dto/paginacion.dto';
 import { TxService, type Tx } from '../../../common/db/tx.service';
+import { AlmacenamientoApi } from '../../almacenamiento/almacenamiento.api';
 import type { CrearProductoDto, EditarProductoDto } from '../dto/producto.dto';
 
 export interface ProductoResumen {
@@ -47,6 +48,13 @@ export interface ProductoResumen {
   categoria_nombre: string | null;
   /** Lo que trae el empaque. `null` en los 1.634 importados. */
   codigo_barras: string | null;
+  /** La llave del objeto en el bucket. La URL se firma al leer, no se guarda. */
+  imagen_clave: string | null;
+  /**
+   * La URL firmada con la que el navegador ve la imagen. Caduca en una hora y
+   * se firma en cada respuesta: no es un enlace público ni se puede guardar.
+   */
+  imagen_url?: string | null;
 }
 
 /**
@@ -83,7 +91,7 @@ const ultimaCompra = (columna: string) =>
 
 const CAMPOS = `id, codigo, nombre, unidad_medida, iva_tarifa, cuenta_inventario_id,
                 cuenta_costo_venta_id, cuenta_ingreso_id, activo,
-                categoria_id, codigo_barras,
+                categoria_id, codigo_barras, imagen_clave,
                 (SELECT c.nombre FROM producto_categoria c WHERE c.id = producto.categoria_id) AS categoria_nombre,
                 ${ultimoSaldo('saldo_cantidad')} AS saldo_cantidad,
                 ${ultimoSaldo('saldo_costo_promedio')} AS saldo_costo_promedio,
@@ -97,7 +105,72 @@ const CAMPOS = `id, codigo, nombre, unidad_medida, iva_tarifa, cuenta_inventario
  */
 @Injectable()
 export class ProductoService {
-  constructor(private readonly tx: TxService) {}
+  constructor(
+    private readonly tx: TxService,
+    private readonly almacenamiento: AlmacenamientoApi,
+  ) {}
+
+  /**
+   * Le pega la URL firmada a lo que tenga imagen. Firmar es HMAC local —sin
+   * viaje de red—, así que hacerlo para los cincuenta de una página cuesta
+   * microsegundos y evita que cada fila tenga que pedirla por su cuenta.
+   */
+  private async conImagen<T extends { imagen_clave: string | null }>(
+    filas: T[],
+  ): Promise<T[]> {
+    if (!this.almacenamiento.disponible) return filas;
+    return Promise.all(
+      filas.map(async (f) =>
+        f.imagen_clave === null
+          ? f
+          : {
+              ...f,
+              imagen_url: await this.almacenamiento.firmarLectura(
+                f.imagen_clave,
+              ),
+            },
+      ),
+    );
+  }
+
+  /**
+   * Guarda la llave de la imagen recién subida y borra la anterior. El objeto
+   * se borra después de que la columna ya no lo referencia: si el borrado
+   * falla, queda un archivo huérfano —barato— y no una fila apuntando a algo
+   * que no está.
+   */
+  async fijarImagen(
+    ctx: CtxEmpresa,
+    id: string,
+    clave: string | null,
+  ): Promise<ProductoResumen> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const anterior = fila<{ imagen_clave: string | null }>(
+        await t.query('SELECT imagen_clave FROM producto WHERE id = $1', [id]),
+      );
+      if (anterior === undefined) {
+        throw new NotFoundException('Producto no encontrado');
+      }
+
+      const actualizado = fila<ProductoResumen>(
+        await t.query(
+          `UPDATE producto SET imagen_clave = $2 WHERE id = $1
+          RETURNING ${CAMPOS}`,
+          [id, clave],
+        ),
+      );
+      if (actualizado === undefined) {
+        throw new NotFoundException('Producto no encontrado');
+      }
+
+      if (anterior.imagen_clave !== null && anterior.imagen_clave !== clave) {
+        await this.almacenamiento.borrar(anterior.imagen_clave);
+      }
+
+      const [conUrl] = await this.conImagen([actualizado]);
+      return conUrl;
+    });
+  }
 
   /**
    * Inserta el producto y su primer precio en una sola transacción: un
@@ -244,7 +317,11 @@ export class ProductoService {
         ),
       );
 
-      return armarPagina(datos, Number(conteo?.total ?? 0), p);
+      return armarPagina(
+        await this.conImagen(datos),
+        Number(conteo?.total ?? 0),
+        p,
+      );
     });
   }
 
@@ -256,7 +333,8 @@ export class ProductoService {
       if (encontrado === undefined) {
         throw new NotFoundException('Producto no encontrado');
       }
-      return encontrado;
+      const [conUrl] = await this.conImagen([encontrado]);
+      return conUrl;
     });
   }
 

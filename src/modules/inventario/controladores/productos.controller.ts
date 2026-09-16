@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -8,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 
@@ -23,6 +25,8 @@ import {
   EditarProductoDto,
   ListarProductosDto,
 } from '../dto/producto.dto';
+import { AlmacenamientoApi } from '../../almacenamiento/almacenamiento.api';
+import { CargarImagenDto, FijarImagenDto } from '../dto/imagen.dto';
 import { PrecioService } from '../servicios/precio.service';
 import { ProductoService } from '../servicios/producto.service';
 
@@ -38,6 +42,7 @@ export class ProductosController {
   constructor(
     private readonly productos: ProductoService,
     private readonly precios: PrecioService,
+    private readonly almacenamiento: AlmacenamientoApi,
   ) {}
 
   /**
@@ -52,6 +57,44 @@ export class ProductosController {
     @Query() q: ListarPreciosDto,
   ) {
     return this.precios.listarTodos(ctx, q);
+  }
+
+  /**
+   * La URL a la que el navegador le hace `PUT` con la imagen, y la llave con
+   * la que después la confirma.
+   *
+   * El archivo **no pasa por la API**: se sube directo al bucket. La llave la
+   * decide el servidor —si la eligiera el cliente podría pisar la imagen de
+   * otro producto— y la URL caduca en cinco minutos.
+   */
+  @Roles('INVENTARIO', 'DIRECTOR')
+  @Post(':id/imagen/carga')
+  async urlDeCarga(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CargarImagenDto,
+  ) {
+    return this.almacenamiento.firmarSubida(`productos/${id}`, dto.tipoMime);
+  }
+
+  /** Confirma la subida: guarda la llave y borra la imagen anterior. */
+  @Roles('INVENTARIO', 'DIRECTOR')
+  @Put(':id/imagen')
+  fijarImagen(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: FijarImagenDto,
+  ) {
+    return this.productos.fijarImagen(ctx, id, dto.clave);
+  }
+
+  /** Quita la imagen. El objeto se borra del bucket después de la columna. */
+  @Roles('INVENTARIO', 'DIRECTOR')
+  @Delete(':id/imagen')
+  quitarImagen(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.productos.fijarImagen(ctx, id, null);
   }
 
   /** Va antes de `:id`, por lo mismo que `precios`. */

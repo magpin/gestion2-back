@@ -64,7 +64,11 @@ const movimientoFila = {
 };
 
 describe('InventarioApi', () => {
-  const productos = new ProductoService(txServiceFalso());
+  const productos = new ProductoService(
+    txServiceFalso(),
+    // AlmacenamientoApi: `ultimoSaldo` no firma ninguna URL.
+    { disponible: false } as never,
+  );
   const kardex = new KardexService(
     txServiceFalso(),
     {} as never, // NucleoApi: ultimoSaldo no lo toca

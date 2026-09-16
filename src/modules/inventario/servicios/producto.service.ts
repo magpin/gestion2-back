@@ -41,6 +41,12 @@ export interface ProductoResumen {
   ultimo_costo_compra: string | null;
   /** Cuándo fue esa compra. `null` por el mismo motivo. */
   ultima_compra_fecha: string | null;
+  /** A qué categoría pertenece, o `null` si nadie lo clasificó. */
+  categoria_id: string | null;
+  /** El nombre, que es lo que la pantalla muestra. Viaja con el producto por lo mismo que el del tercero. */
+  categoria_nombre: string | null;
+  /** Lo que trae el empaque. `null` en los 1.634 importados. */
+  codigo_barras: string | null;
 }
 
 /**
@@ -77,6 +83,8 @@ const ultimaCompra = (columna: string) =>
 
 const CAMPOS = `id, codigo, nombre, unidad_medida, iva_tarifa, cuenta_inventario_id,
                 cuenta_costo_venta_id, cuenta_ingreso_id, activo,
+                categoria_id, codigo_barras,
+                (SELECT c.nombre FROM producto_categoria c WHERE c.id = producto.categoria_id) AS categoria_nombre,
                 ${ultimoSaldo('saldo_cantidad')} AS saldo_cantidad,
                 ${ultimoSaldo('saldo_costo_promedio')} AS saldo_costo_promedio,
                 ${ultimoSaldo('saldo_valor')} AS saldo_valor,
@@ -107,8 +115,8 @@ export class ProductoService {
         await t.query(
           `INSERT INTO producto
              (empresa_id, codigo, nombre, unidad_medida, iva_tarifa, cuenta_inventario_id,
-              cuenta_costo_venta_id, cuenta_ingreso_id, creado_por)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+              cuenta_costo_venta_id, cuenta_ingreso_id, categoria_id, codigo_barras, creado_por)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            RETURNING ${CAMPOS}`,
           [
             ctx.empresaId,
@@ -119,6 +127,8 @@ export class ProductoService {
             dto.cuentaInventarioId,
             dto.cuentaCostoVentaId ?? null,
             dto.cuentaIngresoId ?? null,
+            dto.categoriaId ?? null,
+            dto.codigoBarras?.trim() ?? null,
             ctx.usuarioId,
           ],
         ),
@@ -178,7 +188,7 @@ export class ProductoService {
   /** Búsqueda por código o nombre, sin tildes ni mayúsculas. */
   async listar(
     ctx: CtxEmpresa,
-    p: PaginacionDto,
+    p: PaginacionDto & { categoriaId?: string },
     filtro: {
       incluirInactivos?: 'true' | 'false';
       soloInactivos?: 'true' | 'false';
@@ -193,10 +203,22 @@ export class ProductoService {
       } else if (filtro.incluirInactivos !== 'true') {
         condiciones.push('activo');
       }
+      if (p.categoriaId !== undefined && p.categoriaId !== '') {
+        // `sin` es una categoría de verdad para quien busca: "los que nadie
+        // clasificó" es la lista con la que se empieza a clasificar.
+        if (p.categoriaId === 'sin') {
+          condiciones.push('categoria_id IS NULL');
+        } else {
+          params.push(p.categoriaId);
+          condiciones.push(`categoria_id = $${params.length}`);
+        }
+      }
       if (p.q !== undefined && p.q.trim() !== '') {
         params.push(`%${p.q.trim()}%`);
+        // El código de barras entra a la misma búsqueda: quien pasa el lector
+        // escribe en el mismo campo en el que otro escribe "taladro".
         condiciones.push(
-          `(codigo ILIKE $${params.length} OR fn_normalizar(nombre) LIKE fn_normalizar($${params.length}))`,
+          `(codigo ILIKE $${params.length} OR codigo_barras ILIKE $${params.length} OR fn_normalizar(nombre) LIKE fn_normalizar($${params.length}))`,
         );
       }
 
@@ -275,7 +297,9 @@ export class ProductoService {
                   unidad_medida = COALESCE($3, unidad_medida),
                   iva_tarifa = COALESCE($4, iva_tarifa),
                   cuenta_costo_venta_id = COALESCE($5, cuenta_costo_venta_id),
-                  cuenta_ingreso_id = COALESCE($6, cuenta_ingreso_id)
+                  cuenta_ingreso_id = COALESCE($6, cuenta_ingreso_id),
+                  categoria_id = COALESCE($7, categoria_id),
+                  codigo_barras = COALESCE($8, codigo_barras)
             WHERE id = $1
           RETURNING ${CAMPOS}`,
           [
@@ -285,6 +309,8 @@ export class ProductoService {
             dto.ivaTarifa ?? null,
             dto.cuentaCostoVentaId ?? null,
             dto.cuentaIngresoId ?? null,
+            dto.categoriaId ?? null,
+            dto.codigoBarras?.trim() ?? null,
           ],
         ),
       );

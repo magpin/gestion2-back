@@ -4,11 +4,13 @@ import { ContabilidadModule } from '../contabilidad/contabilidad.module';
 import { NucleoModule } from '../nucleo/nucleo.module';
 import { ConfiguracionController } from './controladores/configuracion.controller';
 import { MovimientosController } from './controladores/movimientos.controller';
+import { CategoriasController } from './controladores/categorias.controller';
 import { ProductosController } from './controladores/productos.controller';
 import { InventarioApi } from './inventario.api';
 import { ConfiguracionService } from './servicios/configuracion.service';
 import { KardexService } from './servicios/kardex.service';
 import { PrecioService } from './servicios/precio.service';
+import { CategoriaService } from './servicios/categoria.service';
 import { ProductoService } from './servicios/producto.service';
 
 /**
@@ -25,11 +27,13 @@ import { ProductoService } from './servicios/producto.service';
 @Module({
   imports: [NucleoModule, ContabilidadModule],
   controllers: [
+    CategoriasController,
     ProductosController,
     MovimientosController,
     ConfiguracionController,
   ],
   providers: [
+    CategoriaService,
     ProductoService,
     PrecioService,
     KardexService,

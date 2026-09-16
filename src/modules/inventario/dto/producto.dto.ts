@@ -77,6 +77,25 @@ export class CrearProductoDto {
   @IsUUID()
   cuentaIngresoId?: string;
 
+  /**
+   * A qué categoría pertenece. Opcional: los 1.634 productos importados no
+   * traen ninguna, y no se puede exigir lo que no existe.
+   */
+  @IsOptional()
+  @IsUUID()
+  categoriaId?: string;
+
+  /**
+   * Lo que trae el empaque: EAN-13, UPC, Code128. Se guarda tal cual —
+   * normalizarlo rompería el cruce con lo que lee el lector—. Único por
+   * empresa cuando existe: dos productos con el mismo harían que el lector
+   * eligiera al azar.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(6, 48)
+  codigoBarras?: string;
+
   /** El precio con el que arranca. Cambiarlo después es `POST /productos/:id/precio`. */
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
@@ -112,6 +131,16 @@ export class EditarProductoDto {
   @IsOptional()
   @IsUUID()
   cuentaIngresoId?: string;
+
+  /** Se puede reclasificar cuando se quiera: no ancla ningún movimiento. */
+  @IsOptional()
+  @IsUUID()
+  categoriaId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(6, 48)
+  codigoBarras?: string;
 }
 
 export class ListarProductosDto extends PaginacionDto {
@@ -122,4 +151,9 @@ export class ListarProductosDto extends PaginacionDto {
   @IsOptional()
   @IsIn(['true', 'false'])
   soloInactivos?: 'true' | 'false';
+
+  /** Filtra por categoría. `sin` trae los que no tienen ninguna. */
+  @IsOptional()
+  @IsString()
+  categoriaId?: string;
 }

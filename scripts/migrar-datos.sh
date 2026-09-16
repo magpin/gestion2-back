@@ -62,6 +62,16 @@ PGPASSWORD="$ORIGEN_PASS" pg_dump \
 
 echo "   $(wc -l < "$VOLCADO") líneas, $(du -h "$VOLCADO" | cut -f1)"
 
+# Los permisos por omisión (`ALTER DEFAULT PRIVILEGES`) quedan a nombre del rol
+# que los creó, y `pg_dump` los emite como `FOR ROLE postgres`. En el destino
+# ese rol no existe —en Neon el dueño es `neondb_owner`— y la carga entera se
+# cae en la última línea del archivo. Se reescriben al dueño de allá, que es lo
+# que esa cláusula quiere decir: "lo que cree el dueño del esquema".
+if grep -q 'FOR ROLE' "$VOLCADO"; then
+  sed -i "s/ALTER DEFAULT PRIVILEGES FOR ROLE $ORIGEN_USER /ALTER DEFAULT PRIVILEGES FOR ROLE $DESTINO_USER /g" "$VOLCADO"
+  echo "   permisos por omisión reasignados a $DESTINO_USER"
+fi
+
 echo "→ Cargando en $DESTINO_DB…"
 PGPASSWORD="$DESTINO_PASS" psql \
   "host=$DESTINO_HOST port=${DESTINO_PUERTO:-5432} user=$DESTINO_USER dbname=$DESTINO_DB sslmode=require" \

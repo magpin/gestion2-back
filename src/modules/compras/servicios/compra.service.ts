@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -31,6 +32,7 @@ import {
   netoAPagar,
   sumarPagos,
   totalRetenciones,
+  validarFormaPago,
 } from './compra.reglas';
 import type { LineaCompraEntrada } from './compra.reglas';
 
@@ -206,6 +208,19 @@ export class CompraService {
       );
     }
 
+    // Pagar de contado es sacar plata de una caja o un banco: lo hace quien
+    // maneja la plata. A diferencia de la factura de venta —donde quien vende
+    // recibe la plata en el mostrador—, cargar la factura de un proveedor no
+    // lleva consigo el permiso de pagarla.
+    if (
+      dto.formaPago === 'CONTADO' &&
+      !ctx.roles.some((r) => r === 'CAJA' || r === 'DIRECTOR')
+    ) {
+      throw new ForbiddenException(
+        'Pagar una compra de contado lo hace alguien con rol CAJA o DIRECTOR. Regístrala a crédito y que caja la pague.',
+      );
+    }
+
     const retenciones = dto.retenciones ?? [];
     const conceptos = retenciones.map((r) => r.concepto);
     if (new Set(conceptos).size !== conceptos.length) {
@@ -313,6 +328,21 @@ export class CompraService {
       // recién se conoce después de calcularlo.
       const retenido = totalRetenciones(retencionesResueltas);
       const neto = netoAPagar(totales.total, retenido);
+
+      // Con el neto ya conocido y antes de asentar: de contado se paga lo que
+      // efectivamente sale, que es el total menos lo que retenemos.
+      const formaPago = validarFormaPago(
+        dto.formaPago,
+        dto.pagos?.map((p) => p.valor),
+        neto,
+      );
+      if (!formaPago.ok) {
+        throw new BadRequestException(formaPago.motivo);
+      }
+      const pagos = (dto.pagos ?? []).map((p, i) => ({
+        ...p,
+        valor: formaPago.valores[i],
+      }));
 
       const comprobante = await this.contabilidad.tipoComprobantePorCodigo(
         ctx,
@@ -477,8 +507,21 @@ export class CompraService {
         );
       }
 
+      // De contado, el pago entra en esta misma transacción y por el mismo
+      // camino que un pago posterior: si la caja no alcanza o está cerrada, la
+      // compra no queda registrada a medias.
+      const resumen =
+        dto.formaPago === 'CONTADO'
+          ? await this.pagarEnTx(
+              ctx,
+              documento.id,
+              { fecha: dto.fecha, pagos },
+              t,
+            )
+          : documento;
+
       return {
-        ...documento,
+        ...resumen,
         lineas: lineasInsertadas,
         retenciones: retencionesInsertadas,
       };
@@ -702,97 +745,108 @@ export class CompraService {
     id: string,
     dto: PagarDto,
   ): Promise<CompraDocumentoResumen> {
-    return this.tx.enContexto(ctx, async (t) => {
-      const documento = fila<{
-        tercero_id: string;
-        estado: string;
-        numero_factura_proveedor: string;
-        neto_a_pagar: string;
-        monto_pagado: string;
-        neto_efectivo: string;
-      }>(
-        await t.query(
-          `SELECT tercero_id, estado, numero_factura_proveedor, neto_a_pagar, monto_pagado,
-                  ${NETO_EFECTIVO} AS neto_efectivo
-             FROM compra_documento
-            WHERE id = $1
-            FOR UPDATE`,
-          [id],
-        ),
+    return this.tx.enContexto(ctx, (t) => this.pagarEnTx(ctx, id, dto, t));
+  }
+
+  /**
+   * El cuerpo de `pagar`, sobre una transacción ya abierta. Lo usa también
+   * `crear` para la compra de contado — ver `VentaDocumentoService.cobrarEnTx`.
+   */
+  async pagarEnTx(
+    ctx: CtxEmpresa,
+    id: string,
+    dto: PagarDto,
+    t: Tx,
+  ): Promise<CompraDocumentoResumen> {
+    const documento = fila<{
+      tercero_id: string;
+      estado: string;
+      numero_factura_proveedor: string;
+      neto_a_pagar: string;
+      monto_pagado: string;
+      neto_efectivo: string;
+    }>(
+      await t.query(
+        `SELECT tercero_id, estado, numero_factura_proveedor, neto_a_pagar, monto_pagado,
+                ${NETO_EFECTIVO} AS neto_efectivo
+           FROM compra_documento
+          WHERE id = $1
+          FOR UPDATE`,
+        [id],
+      ),
+    );
+    if (documento === undefined) {
+      throw new NotFoundException('Compra no encontrada');
+    }
+    if (documento.estado !== 'EMITIDA') {
+      throw new BadRequestException('Esta compra no está vigente.');
+    }
+
+    // La suma de los renglones se valida UNA vez: ver el mismo criterio en
+    // `VentaDocumentoService.cobrar`.
+    const valorTotal = sumarPagos(dto.pagos.map((p) => p.valor));
+
+    // Contra el neto efectivo: la nota crédito del proveedor baja lo que
+    // se le debe, y la nota débito lo sube.
+    const resultado = calcularPago(
+      Number(documento.neto_efectivo),
+      Number(documento.monto_pagado),
+      valorTotal,
+    );
+    if (!resultado.ok) {
+      throw new BadRequestException(resultado.motivo);
+    }
+
+    const cuentaProveedores = await this.nucleo.cuenta(
+      ctx,
+      CODIGO_CUENTA_PROVEEDORES,
+      t,
+    );
+    if (cuentaProveedores === null) {
+      throw new BadRequestException(
+        `No existe o está inactiva la cuenta de proveedores (${CODIGO_CUENTA_PROVEEDORES}). Actívala en el plan de cuentas.`,
       );
-      if (documento === undefined) {
-        throw new NotFoundException('Compra no encontrada');
-      }
-      if (documento.estado !== 'EMITIDA') {
-        throw new BadRequestException('Esta compra no está vigente.');
-      }
+    }
 
-      // La suma de los renglones se valida UNA vez: ver el mismo criterio en
-      // `VentaDocumentoService.cobrar`.
-      const valorTotal = sumarPagos(dto.pagos.map((p) => p.valor));
-
-      // Contra el neto efectivo: la nota crédito del proveedor baja lo que
-      // se le debe, y la nota débito lo sube.
-      const resultado = calcularPago(
-        Number(documento.neto_efectivo),
-        Number(documento.monto_pagado),
-        valorTotal,
-      );
-      if (!resultado.ok) {
-        throw new BadRequestException(resultado.motivo);
-      }
-
-      const cuentaProveedores = await this.nucleo.cuenta(
+    // Un movimiento por renglón, en la misma transacción — espejo de
+    // `cobrar`, y el `concepto` numera el reparto solo si hay más de uno.
+    for (const [i, pago] of dto.pagos.entries()) {
+      const medio =
+        pago.medio === 'CAJA'
+          ? ({ medio: 'CAJA', cajaId: pago.cajaId! } as const)
+          : ({
+              medio: 'BANCO',
+              cuentaBancariaId: pago.cuentaBancariaId!,
+            } as const);
+      const reparto =
+        dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
+      await this.tesoreria.registrarPago(
         ctx,
-        CODIGO_CUENTA_PROVEEDORES,
+        {
+          ...medio,
+          fecha: dto.fecha,
+          valor: pago.valor,
+          concepto: `Pago de la compra ${documento.numero_factura_proveedor}${reparto}`,
+          cuentaProveedoresId: cuentaProveedores.id,
+          terceroId: documento.tercero_id,
+          compraId: id,
+        },
         t,
       );
-      if (cuentaProveedores === null) {
-        throw new BadRequestException(
-          `No existe o está inactiva la cuenta de proveedores (${CODIGO_CUENTA_PROVEEDORES}). Actívala en el plan de cuentas.`,
-        );
-      }
+    }
 
-      // Un movimiento por renglón, en la misma transacción — espejo de
-      // `cobrar`, y el `concepto` numera el reparto solo si hay más de uno.
-      for (const [i, pago] of dto.pagos.entries()) {
-        const medio =
-          pago.medio === 'CAJA'
-            ? ({ medio: 'CAJA', cajaId: pago.cajaId! } as const)
-            : ({
-                medio: 'BANCO',
-                cuentaBancariaId: pago.cuentaBancariaId!,
-              } as const);
-        const reparto =
-          dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
-        await this.tesoreria.registrarPago(
-          ctx,
-          {
-            ...medio,
-            fecha: dto.fecha,
-            valor: pago.valor,
-            concepto: `Pago de la compra ${documento.numero_factura_proveedor}${reparto}`,
-            cuentaProveedoresId: cuentaProveedores.id,
-            terceroId: documento.tercero_id,
-            compraId: id,
-          },
-          t,
-        );
-      }
-
-      const actualizado = fila<CompraDocumentoResumen>(
-        await t.query(
-          `UPDATE compra_documento SET monto_pagado = $2
-            WHERE id = $1
-          RETURNING ${CAMPOS_DOCUMENTO}`,
-          [id, resultado.montoPagado],
-        ),
-      );
-      if (actualizado === undefined) {
-        throw new BadRequestException('No se pudo registrar el pago.');
-      }
-      return actualizado;
-    });
+    const actualizado = fila<CompraDocumentoResumen>(
+      await t.query(
+        `UPDATE compra_documento SET monto_pagado = $2
+          WHERE id = $1
+        RETURNING ${CAMPOS_DOCUMENTO}`,
+        [id, resultado.montoPagado],
+      ),
+    );
+    if (actualizado === undefined) {
+      throw new BadRequestException('No se pudo registrar el pago.');
+    }
+    return actualizado;
   }
 
   /**

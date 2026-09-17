@@ -29,7 +29,8 @@ import { CuentaBancariaService } from '../servicios/cuenta-bancaria.service';
 export class CuentasBancariasController {
   constructor(private readonly cuentas: CuentaBancariaService) {}
 
-  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'CONSULTA')
+  // VENTAS las lee para elegir dónde entra la plata de una factura de contado.
+  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'CONSULTA', 'VENTAS')
   @Get()
   listar(
     @ActorEmpresa() ctx: CtxEmpresa,
@@ -38,7 +39,7 @@ export class CuentasBancariasController {
     return this.cuentas.listar(ctx, { incluirInactivas });
   }
 
-  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'CONSULTA')
+  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'CONSULTA', 'VENTAS')
   @Get(':id')
   porId(
     @ActorEmpresa() ctx: CtxEmpresa,

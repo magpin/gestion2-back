@@ -705,113 +705,126 @@ export class VentaDocumentoService {
     id: string,
     dto: CobrarDto,
   ): Promise<VentaDocumentoResumen> {
-    return this.tx.enContexto(ctx, async (t) => {
-      const documento = fila<{
-        tipo: string;
-        tercero_id: string;
-        estado: string;
-        prefijo: string | null;
-        consecutivo: number;
-        total: string;
-        monto_pagado: string;
-        por_cobrar: string;
-      }>(
-        await t.query(
-          `SELECT tipo, tercero_id, estado, prefijo, consecutivo, total, monto_pagado,
-                  ${POR_COBRAR} AS por_cobrar
-             FROM venta_documento
-            WHERE id = $1
-            FOR UPDATE`,
-          [id],
-        ),
+    return this.tx.enContexto(ctx, (t) => this.cobrarEnTx(ctx, id, dto, t));
+  }
+
+  /**
+   * El cuerpo de `cobrar`, sobre una transacción ya abierta. Lo usa también
+   * `FacturaService` para la factura de contado: emitirla y cobrarla es un
+   * solo acto, y si el cobro falla —una caja cerrada, una cuenta inactiva—
+   * la factura tampoco queda.
+   */
+  async cobrarEnTx(
+    ctx: CtxEmpresa,
+    id: string,
+    dto: CobrarDto,
+    t: Tx,
+  ): Promise<VentaDocumentoResumen> {
+    const documento = fila<{
+      tipo: string;
+      tercero_id: string;
+      estado: string;
+      prefijo: string | null;
+      consecutivo: number;
+      total: string;
+      monto_pagado: string;
+      por_cobrar: string;
+    }>(
+      await t.query(
+        `SELECT tipo, tercero_id, estado, prefijo, consecutivo, total, monto_pagado,
+                ${POR_COBRAR} AS por_cobrar
+           FROM venta_documento
+          WHERE id = $1
+          FOR UPDATE`,
+        [id],
+      ),
+    );
+    if (documento === undefined) {
+      throw new NotFoundException('Documento no encontrado');
+    }
+    if (documento.tipo !== 'FACTURA') {
+      throw new BadRequestException('Solo se puede cobrar una factura.');
+    }
+    if (documento.estado !== 'EMITIDA') {
+      throw new BadRequestException('Esta factura no está vigente.');
+    }
+
+    // La suma de los renglones se valida UNA vez contra el saldo: repartir
+    // un cobro entre caja y banco no cambia cuánto se debe, solo de dónde
+    // entra. Validar renglón por renglón dejaría pasar dos que por separado
+    // caben y juntos se pasan.
+    const valorTotal = sumarPagos(dto.pagos.map((p) => p.valor));
+
+    // Contra lo que queda por cobrar: el total, menos lo que las notas le
+    // movieron, menos lo que el cliente nos retuvo. Cobrarle el total a una
+    // factura con retención sería cobrar dos veces el mismo impuesto.
+    const resultado = calcularCobro(
+      Number(documento.por_cobrar),
+      Number(documento.monto_pagado),
+      valorTotal,
+    );
+    if (!resultado.ok) {
+      throw new BadRequestException(resultado.motivo);
+    }
+
+    const cuentaCartera = await this.nucleo.cuenta(
+      ctx,
+      CODIGO_CUENTA_CARTERA,
+      t,
+    );
+    if (cuentaCartera === null) {
+      throw new BadRequestException(
+        `No existe o está inactiva la cuenta de cartera (${CODIGO_CUENTA_CARTERA}). Actívala en el plan de cuentas.`,
       );
-      if (documento === undefined) {
-        throw new NotFoundException('Documento no encontrado');
-      }
-      if (documento.tipo !== 'FACTURA') {
-        throw new BadRequestException('Solo se puede cobrar una factura.');
-      }
-      if (documento.estado !== 'EMITIDA') {
-        throw new BadRequestException('Esta factura no está vigente.');
-      }
+    }
 
-      // La suma de los renglones se valida UNA vez contra el saldo: repartir
-      // un cobro entre caja y banco no cambia cuánto se debe, solo de dónde
-      // entra. Validar renglón por renglón dejaría pasar dos que por separado
-      // caben y juntos se pasan.
-      const valorTotal = sumarPagos(dto.pagos.map((p) => p.valor));
+    const numero = `${documento.prefijo}-${String(documento.consecutivo).padStart(6, '0')}`;
 
-      // Contra lo que queda por cobrar: el total, menos lo que las notas le
-      // movieron, menos lo que el cliente nos retuvo. Cobrarle el total a una
-      // factura con retención sería cobrar dos veces el mismo impuesto.
-      const resultado = calcularCobro(
-        Number(documento.por_cobrar),
-        Number(documento.monto_pagado),
-        valorTotal,
-      );
-      if (!resultado.ok) {
-        throw new BadRequestException(resultado.motivo);
-      }
-
-      const cuentaCartera = await this.nucleo.cuenta(
+    // Un movimiento por renglón, todos en la MISMA transacción que ya está
+    // abierta —`TesoreriaApi` acepta la `tx` externa desde el paso 12.1 de
+    // `caja-cartera.md`—: la plata que entra por caja y la que entra por
+    // banco se confirman juntas o no entra ninguna.
+    //
+    // El `concepto` numera el renglón solo cuando hay más de uno: con un
+    // solo pago el movimiento sale idéntico a como salía antes, y con
+    // varios el libro de caja no muestra dos líneas indistinguibles.
+    for (const [i, pago] of dto.pagos.entries()) {
+      const medio =
+        pago.medio === 'CAJA'
+          ? ({ medio: 'CAJA', cajaId: pago.cajaId! } as const)
+          : ({
+              medio: 'BANCO',
+              cuentaBancariaId: pago.cuentaBancariaId!,
+            } as const);
+      const reparto =
+        dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
+      await this.tesoreria.registrarCobro(
         ctx,
-        CODIGO_CUENTA_CARTERA,
+        {
+          ...medio,
+          fecha: dto.fecha,
+          valor: pago.valor,
+          concepto: `Cobro de la factura ${numero}${reparto}`,
+          cuentaClientesId: cuentaCartera.id,
+          terceroId: documento.tercero_id,
+          facturaVentaId: id,
+        },
         t,
       );
-      if (cuentaCartera === null) {
-        throw new BadRequestException(
-          `No existe o está inactiva la cuenta de cartera (${CODIGO_CUENTA_CARTERA}). Actívala en el plan de cuentas.`,
-        );
-      }
+    }
 
-      const numero = `${documento.prefijo}-${String(documento.consecutivo).padStart(6, '0')}`;
-
-      // Un movimiento por renglón, todos en la MISMA transacción que ya está
-      // abierta —`TesoreriaApi` acepta la `tx` externa desde el paso 12.1 de
-      // `caja-cartera.md`—: la plata que entra por caja y la que entra por
-      // banco se confirman juntas o no entra ninguna.
-      //
-      // El `concepto` numera el renglón solo cuando hay más de uno: con un
-      // solo pago el movimiento sale idéntico a como salía antes, y con
-      // varios el libro de caja no muestra dos líneas indistinguibles.
-      for (const [i, pago] of dto.pagos.entries()) {
-        const medio =
-          pago.medio === 'CAJA'
-            ? ({ medio: 'CAJA', cajaId: pago.cajaId! } as const)
-            : ({
-                medio: 'BANCO',
-                cuentaBancariaId: pago.cuentaBancariaId!,
-              } as const);
-        const reparto =
-          dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
-        await this.tesoreria.registrarCobro(
-          ctx,
-          {
-            ...medio,
-            fecha: dto.fecha,
-            valor: pago.valor,
-            concepto: `Cobro de la factura ${numero}${reparto}`,
-            cuentaClientesId: cuentaCartera.id,
-            terceroId: documento.tercero_id,
-            facturaVentaId: id,
-          },
-          t,
-        );
-      }
-
-      const actualizado = fila<VentaDocumentoResumen>(
-        await t.query(
-          `UPDATE venta_documento SET monto_pagado = $2
-            WHERE id = $1
-          RETURNING ${CAMPOS_DOCUMENTO}`,
-          [id, resultado.montoPagado],
-        ),
-      );
-      if (actualizado === undefined) {
-        throw new BadRequestException('No se pudo registrar el cobro.');
-      }
-      return actualizado;
-    });
+    const actualizado = fila<VentaDocumentoResumen>(
+      await t.query(
+        `UPDATE venta_documento SET monto_pagado = $2
+          WHERE id = $1
+        RETURNING ${CAMPOS_DOCUMENTO}`,
+        [id, resultado.montoPagado],
+      ),
+    );
+    if (actualizado === undefined) {
+      throw new BadRequestException('No se pudo registrar el cobro.');
+    }
+    return actualizado;
   }
 
   /**

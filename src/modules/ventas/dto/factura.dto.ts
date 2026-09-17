@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsBoolean,
+  IsIn,
   IsNumber,
   IsOptional,
   IsUUID,
@@ -9,6 +10,11 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
+import {
+  FORMAS_PAGO,
+  MedioPagoAlFacturarDto,
+  type FormaPago,
+} from './venta.dto';
 
 export class LineaFacturaDto {
   @IsUUID()
@@ -82,4 +88,18 @@ export class CrearFacturaDto {
   @ValidateNested({ each: true })
   @Type(() => RetencionVentaDto)
   retenciones?: RetencionVentaDto[];
+
+  /**
+   * `CONTADO` cobra la factura entera en la misma transacción que la emite,
+   * con los renglones de `pagos` —uno solo, o repartido entre caja y banco; el
+   * que venga sin valor se lleva lo que falte—.
+   * `CREDITO` la deja pendiente y no lleva `pagos`. Ver `validarFormaPago`.
+   */
+  @IsIn(FORMAS_PAGO)
+  formaPago!: FormaPago;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => MedioPagoAlFacturarDto)
+  pagos?: MedioPagoAlFacturarDto[];
 }

@@ -15,6 +15,7 @@ import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import { InventarioApi } from '../../inventario/inventario.api';
 import { NucleoApi } from '../../nucleo/nucleo.api';
 import { RetencionesApi } from '../../retenciones/retenciones.api';
+import type { ConvertirCotizacionDto } from '../dto/cotizacion.dto';
 import type { CrearFacturaDto, RetencionVentaDto } from '../dto/factura.dto';
 import {
   CAMPOS_DOCUMENTO,
@@ -26,6 +27,7 @@ import {
 import {
   calcularLineas,
   evaluarMargen,
+  validarFormaPago,
   type LineaVentaEntrada,
 } from './venta.reglas';
 
@@ -96,8 +98,7 @@ export class FacturaService {
   async convertirCotizacion(
     ctx: CtxEmpresa,
     cotizacionId: string,
-    fecha: string,
-    confirmaSinExistencia = false,
+    opciones: ConvertirCotizacionDto,
   ): Promise<VentaDocumentoDetalle> {
     return this.tx.enContexto(ctx, async (t) => {
       const bloqueo = fila<{ estado: string }>(
@@ -129,12 +130,15 @@ export class FacturaService {
 
       const dto: CrearFacturaDto = {
         terceroId: cotizacion.tercero_id,
-        fecha,
+        fecha: opciones.fecha,
         lineas: cotizacion.lineas.map((l) => ({
           productoId: l.producto_id,
           cantidad: Number(l.cantidad),
         })),
-        confirmaSinExistencia,
+        confirmaSinExistencia: opciones.confirmaSinExistencia ?? false,
+        confirmaPrecioBajoCosto: opciones.confirmaPrecioBajoCosto ?? false,
+        formaPago: opciones.formaPago,
+        pagos: opciones.pagos,
       };
 
       const factura = await this.crearInterno(ctx, dto, cotizacionId, t);
@@ -355,6 +359,22 @@ export class FacturaService {
     );
     const totalRetenido = retenciones.reduce((acc, r) => acc + r.valor, 0);
 
+    // La forma de pago se valida acá, con lo retenido ya calculado y antes de
+    // asentar: de contado se cobra lo que el cliente efectivamente paga, que
+    // es el total menos lo que nos retuvo.
+    const formaPago = validarFormaPago(
+      dto.formaPago,
+      dto.pagos?.map((p) => p.valor),
+      totales.total - totalRetenido,
+    );
+    if (!formaPago.ok) {
+      throw new BadRequestException(formaPago.motivo);
+    }
+    const pagos = (dto.pagos ?? []).map((p, i) => ({
+      ...p,
+      valor: formaPago.valores[i],
+    }));
+
     // El asiento: débito cartera por lo que queda por cobrar, débito de las
     // retenciones que nos practicaron, crédito ingreso por línea, crédito IVA
     // si aplica, y el par costo/inventario por línea — débito costo de venta,
@@ -547,6 +567,21 @@ export class FacturaService {
           ],
         );
       }
+    }
+
+    // De contado, el cobro entra en esta misma transacción y por el mismo
+    // camino que un cobro posterior —mismos movimientos de caja o banco, mismo
+    // candado, mismas validaciones—: si la caja está cerrada, la factura no
+    // se emite. Quien factura puede cobrar acá aunque no tenga el rol CAJA:
+    // es el mostrador, la plata la recibe quien vende.
+    if (dto.formaPago === 'CONTADO') {
+      const cobrada = await this.ventas.cobrarEnTx(
+        ctx,
+        documento.id,
+        { fecha: dto.fecha, pagos },
+        t,
+      );
+      return { ...cobrada, lineas: lineasInsertadas };
     }
 
     return { ...documento, lineas: lineasInsertadas };

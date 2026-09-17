@@ -30,7 +30,8 @@ import { CajaService } from '../servicios/caja.service';
 export class CajasController {
   constructor(private readonly cajas: CajaService) {}
 
-  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'CONSULTA')
+  // VENTAS las lee para elegir dónde entra la plata de una factura de contado.
+  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'CONSULTA', 'VENTAS')
   @Get()
   listar(
     @ActorEmpresa() ctx: CtxEmpresa,
@@ -39,7 +40,7 @@ export class CajasController {
     return this.cajas.listar(ctx, { incluirInactivas });
   }
 
-  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'CONSULTA')
+  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'CONSULTA', 'VENTAS')
   @Get(':id')
   porId(
     @ActorEmpresa() ctx: CtxEmpresa,

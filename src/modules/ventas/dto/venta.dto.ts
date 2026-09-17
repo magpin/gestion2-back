@@ -70,6 +70,37 @@ export class MedioPagoDto {
 }
 
 /**
+ * Un renglón del cobro al emitir la factura. Igual a `MedioPagoDto`, salvo que
+ * el valor puede faltar: el renglón sin valor se lleva lo que quede por cobrar
+ * —quien factura no conoce el total al centavo—. Ver `validarFormaPago`.
+ */
+export class MedioPagoAlFacturarDto {
+  @IsIn(MEDIOS_PAGO)
+  medio!: MedioPago;
+
+  @ValidateIf((o: MedioPagoAlFacturarDto) => o.medio === 'CAJA')
+  @IsUUID()
+  cajaId?: string;
+
+  @ValidateIf((o: MedioPagoAlFacturarDto) => o.medio === 'BANCO')
+  @IsUUID()
+  cuentaBancariaId?: string;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  valor?: number;
+}
+
+/**
+ * Cómo se paga una factura al emitirla. No tiene valor por defecto: quien
+ * factura elige, y "crédito" es una elección, no lo que queda cuando nadie
+ * preguntó.
+ */
+export const FORMAS_PAGO = ['CREDITO', 'CONTADO'] as const;
+export type FormaPago = (typeof FORMAS_PAGO)[number];
+
+/**
  * Cobra una factura, total o parcialmente, **repartida entre uno o varios
  * medios**: el cliente que paga la mitad en efectivo y la mitad por
  * transferencia es un solo cobro, no dos.

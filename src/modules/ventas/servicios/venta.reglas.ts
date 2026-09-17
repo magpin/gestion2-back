@@ -258,3 +258,87 @@ export function calcularDevolucionPorLinea(
 
   return { ok: true, pendienteLuego: pendiente - cantidadPedida };
 }
+
+/**
+ * Si la forma de pago de una factura nueva cuadra con lo que trae, y cuánto
+ * lleva cada renglón.
+ *
+ * **Contado es pagada entera, en el acto.** Los renglones tienen que cubrir
+ * exactamente lo que queda por cobrar —el total menos lo retenido—: un abono
+ * parcial al facturar es una venta a crédito con un primer cobro, y se
+ * registra así, con `cobrar` después. Mezclar las dos cosas dejaría una
+ * factura "de contado" con saldo pendiente, que no es ni lo uno ni lo otro.
+ *
+ * **Un renglón puede venir sin valor, y se lleva lo que falte.** Quien factura
+ * no conoce el total al centavo —el IVA y las retenciones los resuelve el
+ * servidor—, así que "todo en efectivo" es un renglón sin valor, y "50.000 en
+ * efectivo y el resto por transferencia" es uno con valor y otro sin. Solo uno
+ * puede quedar abierto: con dos, no habría cómo decidir cuánto va a cada uno.
+ *
+ * Crédito no lleva renglones: si vinieran, alguien creyó que estaba cobrando
+ * y la plata no entraría a ninguna parte.
+ */
+export type ResultadoFormaPago =
+  { ok: true; valores: number[] } | { ok: false; motivo: string };
+
+export function validarFormaPago(
+  formaPago: 'CREDITO' | 'CONTADO',
+  pagos: readonly (number | undefined)[] | undefined,
+  porCobrar: number,
+): ResultadoFormaPago {
+  const renglones = pagos ?? [];
+  if (formaPago === 'CREDITO') {
+    return renglones.length === 0
+      ? { ok: true, valores: [] }
+      : {
+          ok: false,
+          motivo:
+            'Una factura a crédito no lleva medios de pago: se cobra después.',
+        };
+  }
+  if (renglones.length === 0) {
+    return {
+      ok: false,
+      motivo: 'Una factura de contado necesita al menos un medio de pago.',
+    };
+  }
+
+  const abiertos = renglones.filter((r) => r === undefined).length;
+  if (abiertos > 1) {
+    return {
+      ok: false,
+      motivo:
+        'Solo un medio de pago puede quedar sin valor: es el que se lleva lo que falte.',
+    };
+  }
+
+  const porCobrarCentavos = aCentavos(porCobrar);
+  const fijadosCentavos = renglones.reduce<number>(
+    (t, r) => t + (r === undefined ? 0 : aCentavos(r)),
+    0,
+  );
+
+  if (abiertos === 0) {
+    if (fijadosCentavos !== porCobrarCentavos) {
+      return {
+        ok: false,
+        motivo: `De contado se cobra entera: los medios de pago suman ${aPesos(fijadosCentavos)} y la factura es por ${porCobrar}.`,
+      };
+    }
+    return { ok: true, valores: renglones.map((r) => r as number) };
+  }
+
+  const restoCentavos = porCobrarCentavos - fijadosCentavos;
+  if (restoCentavos <= 0) {
+    return {
+      ok: false,
+      motivo: `Los medios con valor ya suman ${aPesos(fijadosCentavos)} y la factura es por ${porCobrar}: al que quedó sin valor no le queda nada.`,
+    };
+  }
+  return {
+    ok: true,
+    valores: renglones.map((r) =>
+      r === undefined ? aPesos(restoCentavos) : r,
+    ),
+  };
+}

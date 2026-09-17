@@ -234,3 +234,75 @@ export function calcularPago(
     montoPagado: aPesos(aCentavos(montoPagadoActual) + aCentavos(valor)),
   };
 }
+
+/**
+ * Si la forma de pago de una compra nueva cuadra con lo que trae, y cuánto
+ * lleva cada renglón. Espejo de `validarFormaPago` de ventas, y allá está el
+ * porqué: contado es pagada entera —el neto, después de retenciones—, un
+ * renglón puede ir sin valor y se lleva lo que falte, y crédito no lleva
+ * renglones.
+ */
+export type ResultadoFormaPago =
+  { ok: true; valores: number[] } | { ok: false; motivo: string };
+
+export function validarFormaPago(
+  formaPago: 'CREDITO' | 'CONTADO',
+  pagos: readonly (number | undefined)[] | undefined,
+  netoAPagar: number,
+): ResultadoFormaPago {
+  const renglones = pagos ?? [];
+  if (formaPago === 'CREDITO') {
+    return renglones.length === 0
+      ? { ok: true, valores: [] }
+      : {
+          ok: false,
+          motivo:
+            'Una compra a crédito no lleva medios de pago: se paga después.',
+        };
+  }
+  if (renglones.length === 0) {
+    return {
+      ok: false,
+      motivo: 'Una compra de contado necesita al menos un medio de pago.',
+    };
+  }
+
+  const abiertos = renglones.filter((r) => r === undefined).length;
+  if (abiertos > 1) {
+    return {
+      ok: false,
+      motivo:
+        'Solo un medio de pago puede quedar sin valor: es el que se lleva lo que falte.',
+    };
+  }
+
+  const netoCentavos = aCentavos(netoAPagar);
+  const fijadosCentavos = renglones.reduce<number>(
+    (t, r) => t + (r === undefined ? 0 : aCentavos(r)),
+    0,
+  );
+
+  if (abiertos === 0) {
+    if (fijadosCentavos !== netoCentavos) {
+      return {
+        ok: false,
+        motivo: `De contado se paga entera: los medios de pago suman ${aPesos(fijadosCentavos)} y el neto a pagar es ${netoAPagar}.`,
+      };
+    }
+    return { ok: true, valores: renglones.map((r) => r as number) };
+  }
+
+  const restoCentavos = netoCentavos - fijadosCentavos;
+  if (restoCentavos <= 0) {
+    return {
+      ok: false,
+      motivo: `Los medios con valor ya suman ${aPesos(fijadosCentavos)} y el neto a pagar es ${netoAPagar}: al que quedó sin valor no le queda nada.`,
+    };
+  }
+  return {
+    ok: true,
+    valores: renglones.map((r) =>
+      r === undefined ? aPesos(restoCentavos) : r,
+    ),
+  };
+}

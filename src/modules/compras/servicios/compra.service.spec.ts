@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import type { Tx, TxService } from '../../../common/db/tx.service';
@@ -203,6 +207,7 @@ describe('CompraService.crear', () => {
       terceroId: 'ter-1',
       fecha: '2026-09-08',
       numeroFacturaProveedor: 'FP-001',
+      formaPago: 'CREDITO',
       lineas: [lineaBase],
     });
 
@@ -265,6 +270,7 @@ describe('CompraService.crear', () => {
       terceroId: 'ter-1',
       fecha: '2026-09-08',
       numeroFacturaProveedor: 'FP-002',
+      formaPago: 'CREDITO',
       lineas: [lineaBase],
     });
 
@@ -304,6 +310,7 @@ describe('CompraService.crear', () => {
       terceroId: 'ter-1',
       fecha: '2026-09-08',
       numeroFacturaProveedor: 'FP-900',
+      formaPago: 'CREDITO',
       lineas: [
         { productoId: 'p-1', cantidad: 1, costoUnitario: 100000, sinIva: true },
       ],
@@ -333,6 +340,7 @@ describe('CompraService.crear', () => {
       terceroId: 'ter-1',
       fecha: '2026-09-08',
       numeroFacturaProveedor: 'FP-003',
+      formaPago: 'CREDITO',
       lineas: [lineaBase],
     });
 
@@ -358,6 +366,7 @@ describe('CompraService.crear', () => {
       terceroId: 'ter-1',
       fecha: '2026-09-08',
       numeroFacturaProveedor: 'FP-004',
+      formaPago: 'CREDITO',
       lineas: [lineaBase],
       retenciones: [{ concepto: 'COMPRAS', base: 100000, valor: 2500 }],
     });
@@ -421,6 +430,7 @@ describe('CompraService.crear', () => {
         terceroId: 'ter-1',
         fecha: '2026-09-08',
         numeroFacturaProveedor: 'FP-005',
+        formaPago: 'CREDITO',
         lineas: [lineaBase],
         retenciones: [{ concepto: 'COMPRAS', base: 100000, valor: 2500 }],
       }),
@@ -444,6 +454,7 @@ describe('CompraService.crear', () => {
         terceroId: 'ter-1',
         fecha: '2026-09-08',
         numeroFacturaProveedor: 'FP-006',
+        formaPago: 'CREDITO',
         lineas: [lineaBase],
         retenciones: [{ concepto: 'COMPRAS', base: 200000, valor: 200000 }],
       }),
@@ -473,6 +484,7 @@ describe('CompraService.crear', () => {
         terceroId: 'ter-1',
         fecha: '2026-09-08',
         numeroFacturaProveedor: 'FP-007',
+        formaPago: 'CREDITO',
         lineas: [lineaBase],
         retenciones: [{ concepto: 'COMPRAS', base: 100000, valor: 2500 }],
       }),
@@ -496,6 +508,7 @@ describe('CompraService.crear', () => {
         terceroId: 'ter-1',
         fecha: '2026-09-08',
         numeroFacturaProveedor: 'FP-008',
+        formaPago: 'CREDITO',
         lineas: [lineaBase],
         retenciones: [
           { concepto: 'COMPRAS', base: 50000, valor: 1000 },
@@ -522,6 +535,7 @@ describe('CompraService.crear', () => {
         terceroId: 'ter-1',
         fecha: '2026-09-08',
         numeroFacturaProveedor: 'FP-009',
+        formaPago: 'CREDITO',
         lineas: [lineaBase, lineaBase],
       }),
     ).rejects.toThrow(/No repitas el mismo producto/);
@@ -544,6 +558,7 @@ describe('CompraService.crear', () => {
         terceroId: 'ter-1',
         fecha: '2026-01-05',
         numeroFacturaProveedor: 'FP-010',
+        formaPago: 'CREDITO',
         lineas: [lineaBase],
       }),
     ).rejects.toThrow(BadRequestException);
@@ -566,6 +581,7 @@ describe('CompraService.crear', () => {
         terceroId: 'inexistente',
         fecha: '2026-09-08',
         numeroFacturaProveedor: 'FP-011',
+        formaPago: 'CREDITO',
         lineas: [lineaBase],
       }),
     ).rejects.toThrow(NotFoundException);
@@ -589,6 +605,7 @@ describe('CompraService.crear', () => {
         terceroId: 'ter-1',
         fecha: '2026-09-08',
         numeroFacturaProveedor: 'FP-012',
+        formaPago: 'CREDITO',
         lineas: [lineaBase],
       }),
     ).rejects.toThrow(/no está marcado como proveedor/);
@@ -611,6 +628,7 @@ describe('CompraService.crear', () => {
         terceroId: 'ter-1',
         fecha: '2026-09-08',
         numeroFacturaProveedor: 'FP-013',
+        formaPago: 'CREDITO',
         lineas: [lineaBase],
       }),
     ).rejects.toThrow(/no existe o está inactivo/);
@@ -633,6 +651,7 @@ describe('CompraService.crear', () => {
         terceroId: 'ter-1',
         fecha: '2026-09-08',
         numeroFacturaProveedor: 'FP-014',
+        formaPago: 'CREDITO',
         lineas: [lineaBase],
       }),
     ).rejects.toThrow(/cuenta de proveedores/);
@@ -655,6 +674,7 @@ describe('CompraService.crear', () => {
       terceroId: 'ter-1',
       fecha: '2026-09-08',
       numeroFacturaProveedor: 'FP-015',
+      formaPago: 'CREDITO',
       lineas: [lineaBase],
     });
 
@@ -668,6 +688,160 @@ describe('CompraService.crear', () => {
       'asiento-1',
       tx,
     );
+  });
+});
+
+describe('CompraService.crear — forma de pago', () => {
+  function servicioConPago() {
+    const { tx } = txFalso();
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso().fake,
+      contabilidad,
+      {} as never,
+      {} as never,
+    );
+    // El pago en sí ya lo prueba `CompraService.pagar`: acá importa que se
+    // llame, con qué, y dentro de la misma transacción.
+    const pagarEnTx = jest
+      .spyOn(servicio, 'pagarEnTx')
+      .mockImplementation((_ctx, id, dto) =>
+        Promise.resolve({
+          id,
+          monto_pagado: String(dto.pagos.reduce((t, p) => t + p.valor, 0)),
+        } as never),
+      );
+    return { servicio, asentar, pagarEnTx, tx };
+  }
+
+  const caja: CtxEmpresa = { ...ctx, roles: ['COMPRAS', 'CAJA'] };
+  // 2 x 50000 + 19% = 119000, sin retención.
+  const NETO = 119000;
+
+  it('de contado, con rol CAJA, paga la compra entera en la misma transacción', async () => {
+    const { servicio, pagarEnTx, tx } = servicioConPago();
+
+    const compra = await servicio.crear(caja, {
+      terceroId: 'ter-1',
+      fecha: '2026-09-08',
+      numeroFacturaProveedor: 'FP-C01',
+      formaPago: 'CONTADO',
+      pagos: [
+        { medio: 'CAJA', cajaId: 'caja-1', valor: 19000 },
+        { medio: 'BANCO', cuentaBancariaId: 'cb-1', valor: 100000 },
+      ],
+      lineas: [lineaBase],
+    });
+
+    expect(pagarEnTx).toHaveBeenCalledTimes(1);
+    const [, id, dto, t] = pagarEnTx.mock.calls[0];
+    expect(id).toBe(compra.id);
+    expect(dto.fecha).toBe('2026-09-08');
+    expect(dto.pagos).toHaveLength(2);
+    expect(t).toBe(tx);
+    expect(compra.monto_pagado).toBe(String(NETO));
+    expect(compra.lineas).toHaveLength(1);
+  });
+
+  it('el medio sin valor se lleva el neto entero', async () => {
+    const { servicio, pagarEnTx } = servicioConPago();
+
+    await servicio.crear(caja, {
+      terceroId: 'ter-1',
+      fecha: '2026-09-08',
+      numeroFacturaProveedor: 'FP-C07',
+      formaPago: 'CONTADO',
+      pagos: [{ medio: 'CAJA', cajaId: 'caja-1' }],
+      lineas: [lineaBase],
+    });
+
+    expect(pagarEnTx.mock.calls[0][2].pagos).toEqual([
+      { medio: 'CAJA', cajaId: 'caja-1', valor: NETO },
+    ]);
+  });
+
+  it('de contado sin rol CAJA ni DIRECTOR se rechaza antes de abrir la transacción', async () => {
+    const { servicio, asentar, pagarEnTx } = servicioConPago();
+
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: '2026-09-08',
+        numeroFacturaProveedor: 'FP-C02',
+        formaPago: 'CONTADO',
+        pagos: [{ medio: 'CAJA', cajaId: 'caja-1', valor: NETO }],
+        lineas: [lineaBase],
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(asentar).not.toHaveBeenCalled();
+    expect(pagarEnTx).not.toHaveBeenCalled();
+  });
+
+  it('un DIRECTOR también puede pagar de contado', async () => {
+    const { servicio, pagarEnTx } = servicioConPago();
+
+    await servicio.crear(
+      { ...ctx, roles: ['DIRECTOR'] },
+      {
+        terceroId: 'ter-1',
+        fecha: '2026-09-08',
+        numeroFacturaProveedor: 'FP-C03',
+        formaPago: 'CONTADO',
+        pagos: [{ medio: 'CAJA', cajaId: 'caja-1', valor: NETO }],
+        lineas: [lineaBase],
+      },
+    );
+
+    expect(pagarEnTx).toHaveBeenCalledTimes(1);
+  });
+
+  it('de contado rechaza un pago que no cubre el neto, antes de asentar', async () => {
+    const { servicio, asentar, pagarEnTx } = servicioConPago();
+
+    await expect(
+      servicio.crear(caja, {
+        terceroId: 'ter-1',
+        fecha: '2026-09-08',
+        numeroFacturaProveedor: 'FP-C04',
+        formaPago: 'CONTADO',
+        pagos: [{ medio: 'CAJA', cajaId: 'caja-1', valor: 100000 }],
+        lineas: [lineaBase],
+      }),
+    ).rejects.toThrow(/se paga entera/);
+    expect(asentar).not.toHaveBeenCalled();
+    expect(pagarEnTx).not.toHaveBeenCalled();
+  });
+
+  it('a crédito con medios de pago se rechaza', async () => {
+    const { servicio, pagarEnTx } = servicioConPago();
+
+    await expect(
+      servicio.crear(caja, {
+        terceroId: 'ter-1',
+        fecha: '2026-09-08',
+        numeroFacturaProveedor: 'FP-C05',
+        formaPago: 'CREDITO',
+        pagos: [{ medio: 'CAJA', cajaId: 'caja-1', valor: NETO }],
+        lineas: [lineaBase],
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(pagarEnTx).not.toHaveBeenCalled();
+  });
+
+  it('a crédito no paga nada, aunque quien la registre tenga CAJA', async () => {
+    const { servicio, pagarEnTx } = servicioConPago();
+
+    await servicio.crear(caja, {
+      terceroId: 'ter-1',
+      fecha: '2026-09-08',
+      numeroFacturaProveedor: 'FP-C06',
+      formaPago: 'CREDITO',
+      lineas: [lineaBase],
+    });
+
+    expect(pagarEnTx).not.toHaveBeenCalled();
   });
 });
 

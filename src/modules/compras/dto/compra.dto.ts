@@ -97,6 +97,13 @@ export class RetencionCompraDto {
   valor?: number;
 }
 
+/**
+ * Cómo se paga una compra al registrarla. Espejo de `FORMAS_PAGO` de ventas:
+ * sin valor por defecto, crédito es una elección.
+ */
+export const FORMAS_PAGO = ['CREDITO', 'CONTADO'] as const;
+export type FormaPago = (typeof FORMAS_PAGO)[number];
+
 export class CrearCompraDto {
   @IsUUID()
   terceroId!: string;
@@ -118,6 +125,22 @@ export class CrearCompraDto {
   @ValidateNested({ each: true })
   @Type(() => RetencionCompraDto)
   retenciones?: RetencionCompraDto[];
+
+  /**
+   * `CONTADO` paga la compra entera —el neto, después de retenciones— en la
+   * misma transacción que la registra, con los renglones de `pagos` —el que venga sin valor se lleva lo que
+   * falte—.
+   * `CREDITO` la deja pendiente y no lleva `pagos`. Pagar de contado exige
+   * además el rol CAJA o DIRECTOR: quien carga la factura del proveedor no
+   * necesariamente maneja la plata.
+   */
+  @IsIn(FORMAS_PAGO)
+  formaPago!: FormaPago;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => MedioPagoAlRegistrarDto)
+  pagos?: MedioPagoAlRegistrarDto[];
 }
 
 export class ListarComprasDto extends PaginacionDto {
@@ -160,6 +183,29 @@ export class MedioPagoDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
   valor!: number;
+}
+
+/**
+ * Un renglón del pago al registrar la compra. Igual a `MedioPagoDto`, salvo
+ * que el valor puede faltar y se lleva lo que quede por pagar — espejo de
+ * `MedioPagoAlFacturarDto` de ventas.
+ */
+export class MedioPagoAlRegistrarDto {
+  @IsIn(MEDIOS_PAGO)
+  medio!: MedioPago;
+
+  @ValidateIf((o: MedioPagoAlRegistrarDto) => o.medio === 'CAJA')
+  @IsUUID()
+  cajaId?: string;
+
+  @ValidateIf((o: MedioPagoAlRegistrarDto) => o.medio === 'BANCO')
+  @IsUUID()
+  cuentaBancariaId?: string;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  valor?: number;
 }
 
 /**

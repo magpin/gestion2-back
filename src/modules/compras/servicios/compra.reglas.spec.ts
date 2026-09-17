@@ -4,6 +4,7 @@ import {
   calcularPago,
   netoAPagar,
   totalRetenciones,
+  validarFormaPago,
 } from './compra.reglas';
 
 describe('calcularLineaCompra', () => {
@@ -210,5 +211,63 @@ describe('calcularPago', () => {
       motivo:
         'Esta compra tiene 14000 a favor nuestro; eso lo devuelve el proveedor, no se le paga.',
     });
+  });
+});
+
+describe('validarFormaPago', () => {
+  it('crédito sin renglones pasa; con renglones no', () => {
+    expect(validarFormaPago('CREDITO', undefined, 119000)).toEqual({
+      ok: true,
+      valores: [],
+    });
+    expect(validarFormaPago('CREDITO', [119000], 119000).ok).toBe(false);
+  });
+
+  it('contado sin renglones se rechaza', () => {
+    expect(validarFormaPago('CONTADO', [], 119000).ok).toBe(false);
+  });
+
+  it('contado con todos los valores tiene que sumar exacto, sin tropezar con el flotante', () => {
+    expect(validarFormaPago('CONTADO', [0.1, 0.2], 0.3)).toEqual({
+      ok: true,
+      valores: [0.1, 0.2],
+    });
+    expect(validarFormaPago('CONTADO', [100000], 119000)).toEqual({
+      ok: false,
+      motivo:
+        'De contado se paga entera: los medios de pago suman 100000 y el neto a pagar es 119000.',
+    });
+    expect(validarFormaPago('CONTADO', [119000.01], 119000).ok).toBe(false);
+  });
+
+  it('un renglón sin valor se lleva todo', () => {
+    expect(validarFormaPago('CONTADO', [undefined], 344981.5)).toEqual({
+      ok: true,
+      valores: [344981.5],
+    });
+  });
+
+  it('repartido: el renglón sin valor se lleva lo que falte, en centavos exactos', () => {
+    expect(validarFormaPago('CONTADO', [50000.1, undefined], 119000.3)).toEqual(
+      {
+        ok: true,
+        valores: [50000.1, 69000.2],
+      },
+    );
+  });
+
+  it('dos renglones sin valor se rechazan: no hay cómo repartir', () => {
+    expect(validarFormaPago('CONTADO', [undefined, undefined], 119000).ok).toBe(
+      false,
+    );
+  });
+
+  it('si los valores ya cubren todo, al renglón abierto no le queda nada', () => {
+    expect(validarFormaPago('CONTADO', [119000, undefined], 119000).ok).toBe(
+      false,
+    );
+    expect(validarFormaPago('CONTADO', [120000, undefined], 119000).ok).toBe(
+      false,
+    );
   });
 });

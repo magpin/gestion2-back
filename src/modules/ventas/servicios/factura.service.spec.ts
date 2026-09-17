@@ -175,6 +175,31 @@ function ventasFalso(cotizacion: VentaDocumentoDetalle = cotizacionEmitida) {
 }
 
 /**
+ * `VentaDocumentoService` falso para la factura de contado: `cobrarEnTx`
+ * devuelve el documento como quedaría cobrado, con el `monto_pagado` que
+ * sumaron los renglones.
+ */
+function ventasConCobro(cotizacion: VentaDocumentoDetalle = cotizacionEmitida) {
+  const cobrarEnTx = jest.fn(
+    (
+      _ctx: unknown,
+      id: string,
+      dto: { fecha: string; pagos: Array<{ valor: number }> },
+    ) =>
+      Promise.resolve({
+        id,
+        monto_pagado: String(dto.pagos.reduce((t, p) => t + p.valor, 0)),
+        pendiente: '0',
+      }),
+  );
+  const fake = {
+    porId: jest.fn(() => Promise.resolve(cotizacion)),
+    cobrarEnTx,
+  } as unknown as ConstructorParameters<typeof FacturaService>[4];
+  return { fake, cobrarEnTx };
+}
+
+/**
  * Transacción falsa: los dos `INSERT` de `venta_documento[_linea]`, más el
  * candado y la marca de `convertirCotizacion` cuando `estadoCotizacion` no
  * es `undefined` (`null` simula que la cotización no existe).
@@ -284,6 +309,7 @@ describe('FacturaService.crear', () => {
     const factura = await servicio.crear(ctx, {
       terceroId: 'ter-1',
       fecha: HOY,
+      formaPago: 'CREDITO',
       lineas: [{ productoId: 'p-1', cantidad: 2 }],
     });
 
@@ -338,6 +364,7 @@ describe('FacturaService.crear', () => {
     const factura = await servicio.crear(ctx, {
       terceroId: 'ter-1',
       fecha: HOY,
+      formaPago: 'CREDITO',
       lineas: [{ productoId: 'p-1', cantidad: 1 }],
     });
 
@@ -364,6 +391,7 @@ describe('FacturaService.crear', () => {
       servicio.crear(ctx, {
         terceroId: 'ter-1',
         fecha: HOY,
+        formaPago: 'CREDITO',
         lineas: [{ productoId: 'p-1', cantidad: 1 }],
       }),
     ).rejects.toThrow(BadRequestException);
@@ -392,6 +420,7 @@ describe('FacturaService.crear', () => {
         servicio.crear(ctx, {
           terceroId: 'ter-1',
           fecha: otroDia(dias),
+          formaPago: 'CREDITO',
           lineas: [{ productoId: 'p-1', cantidad: 1 }],
         }),
       ).rejects.toThrow(/fecha de hoy/);
@@ -417,6 +446,7 @@ describe('FacturaService.crear', () => {
     await servicio.crear(ctx, {
       terceroId: 'ter-1',
       fecha: HOY,
+      formaPago: 'CREDITO',
       lineas: [{ productoId: 'p-1', cantidad: 2 }],
       confirmaSinExistencia: true,
     });
@@ -449,6 +479,7 @@ describe('FacturaService.crear', () => {
       servicio.crear(ctx, {
         terceroId: 'ter-1',
         fecha: HOY,
+        formaPago: 'CREDITO',
         lineas: [{ productoId: 'p-1', cantidad: 2 }],
       }),
     ).rejects.toThrow(/por debajo de su costo.*200000.*100000/s);
@@ -473,6 +504,7 @@ describe('FacturaService.crear', () => {
       servicio.crear(ctx, {
         terceroId: 'ter-1',
         fecha: HOY,
+        formaPago: 'CREDITO',
         lineas: [{ productoId: 'p-1', cantidad: 2 }],
         confirmaPrecioBajoCosto: true,
       }),
@@ -499,6 +531,7 @@ describe('FacturaService.crear', () => {
       {
         terceroId: 'ter-1',
         fecha: HOY,
+        formaPago: 'CREDITO',
         lineas: [{ productoId: 'p-1', cantidad: 2 }],
         confirmaPrecioBajoCosto: true,
       },
@@ -524,6 +557,7 @@ describe('FacturaService.crear', () => {
     await servicio.crear(ctx, {
       terceroId: 'ter-1',
       fecha: HOY,
+      formaPago: 'CREDITO',
       lineas: [{ productoId: 'p-1', cantidad: 2 }],
       confirmaSinExistencia: true,
     });
@@ -547,6 +581,7 @@ describe('FacturaService.crear', () => {
       servicio.crear(ctx, {
         terceroId: 'ter-1',
         fecha: HOY,
+        formaPago: 'CREDITO',
         lineas: [
           { productoId: 'p-1', cantidad: 1 },
           { productoId: 'p-1', cantidad: 2 },
@@ -571,6 +606,7 @@ describe('FacturaService.crear', () => {
       servicio.crear(ctx, {
         terceroId: 'inexistente',
         fecha: HOY,
+        formaPago: 'CREDITO',
         lineas: [{ productoId: 'p-1', cantidad: 1 }],
       }),
     ).rejects.toThrow(NotFoundException);
@@ -594,6 +630,7 @@ describe('FacturaService.crear', () => {
       servicio.crear(ctx, {
         terceroId: 'ter-1',
         fecha: HOY,
+        formaPago: 'CREDITO',
         lineas: [{ productoId: 'p-1', cantidad: 1 }],
       }),
     ).rejects.toThrow(/cuenta de costo de venta/);
@@ -617,6 +654,7 @@ describe('FacturaService.crear', () => {
       servicio.crear(ctx, {
         terceroId: 'ter-1',
         fecha: HOY,
+        formaPago: 'CREDITO',
         lineas: [{ productoId: 'p-1', cantidad: 1 }],
       }),
     ).rejects.toThrow(/cuenta de ingreso/);
@@ -638,6 +676,7 @@ describe('FacturaService.crear', () => {
       servicio.crear(ctx, {
         terceroId: 'ter-1',
         fecha: HOY,
+        formaPago: 'CREDITO',
         lineas: [{ productoId: 'p-1', cantidad: 1 }],
       }),
     ).rejects.toThrow(/cuenta de cartera/);
@@ -657,7 +696,10 @@ describe('FacturaService.convertirCotizacion', () => {
       {} as never,
     );
 
-    const factura = await servicio.convertirCotizacion(ctx, 'cot-1', HOY);
+    const factura = await servicio.convertirCotizacion(ctx, 'cot-1', {
+      fecha: HOY,
+      formaPago: 'CREDITO',
+    });
 
     expect(factura.documento_origen_id).toBe('cot-1');
     expect(
@@ -681,7 +723,10 @@ describe('FacturaService.convertirCotizacion', () => {
     );
 
     await expect(
-      servicio.convertirCotizacion(ctx, 'inexistente', HOY),
+      servicio.convertirCotizacion(ctx, 'inexistente', {
+        fecha: HOY,
+        formaPago: 'CREDITO',
+      }),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -698,7 +743,10 @@ describe('FacturaService.convertirCotizacion', () => {
     );
 
     await expect(
-      servicio.convertirCotizacion(ctx, 'cot-1', HOY),
+      servicio.convertirCotizacion(ctx, 'cot-1', {
+        fecha: HOY,
+        formaPago: 'CREDITO',
+      }),
     ).rejects.toThrow(/ya se convirtió/);
   });
 
@@ -715,7 +763,184 @@ describe('FacturaService.convertirCotizacion', () => {
     );
 
     await expect(
-      servicio.convertirCotizacion(ctx, 'cot-1', HOY),
+      servicio.convertirCotizacion(ctx, 'cot-1', {
+        fecha: HOY,
+        formaPago: 'CREDITO',
+      }),
     ).rejects.toThrow(/no está vigente/);
+  });
+});
+
+describe('FacturaService.crear — forma de pago', () => {
+  function servicioCon(
+    ventas: ConstructorParameters<typeof FacturaService>[4],
+  ) {
+    const { tx } = txFalso();
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso(),
+      contabilidad,
+      ventas,
+      {} as never,
+    );
+    return { servicio, asentar };
+  }
+
+  // 1 x 289900 + 19% = 344981.
+  const TOTAL = 344981;
+
+  it('de contado cobra la factura entera en la misma transacción', async () => {
+    const { fake, cobrarEnTx } = ventasConCobro();
+    const { servicio } = servicioCon(fake);
+
+    const factura = await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CONTADO',
+      pagos: [{ medio: 'CAJA', cajaId: 'caja-1', valor: TOTAL }],
+      lineas: [{ productoId: 'p-1', cantidad: 1 }],
+    });
+
+    expect(cobrarEnTx).toHaveBeenCalledTimes(1);
+    const [, id, dto, t] = cobrarEnTx.mock.calls[0] as unknown as [
+      unknown,
+      string,
+      { fecha: string; pagos: unknown[] },
+      unknown,
+    ];
+    expect(id).toBe(factura.id);
+    expect(dto).toEqual({
+      fecha: HOY,
+      pagos: [{ medio: 'CAJA', cajaId: 'caja-1', valor: TOTAL }],
+    });
+    expect(t).toBeDefined();
+    expect(factura.monto_pagado).toBe(String(TOTAL));
+    expect(factura.lineas).toHaveLength(1);
+  });
+
+  it('de contado acepta el cobro repartido entre caja y banco', async () => {
+    const { fake, cobrarEnTx } = ventasConCobro();
+    const { servicio } = servicioCon(fake);
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CONTADO',
+      pagos: [
+        { medio: 'CAJA', cajaId: 'caja-1', valor: 144981 },
+        { medio: 'BANCO', cuentaBancariaId: 'cb-1', valor: 200000 },
+      ],
+      lineas: [{ productoId: 'p-1', cantidad: 1 }],
+    });
+
+    expect(cobrarEnTx).toHaveBeenCalledTimes(1);
+  });
+
+  it('el medio sin valor se lleva lo que falte de la factura', async () => {
+    const { fake, cobrarEnTx } = ventasConCobro();
+    const { servicio } = servicioCon(fake);
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CONTADO',
+      pagos: [
+        { medio: 'CAJA', cajaId: 'caja-1', valor: 44981 },
+        { medio: 'BANCO', cuentaBancariaId: 'cb-1' },
+      ],
+      lineas: [{ productoId: 'p-1', cantidad: 1 }],
+    });
+
+    const [, , dto] = cobrarEnTx.mock.calls[0] as unknown as [
+      unknown,
+      string,
+      { pagos: Array<{ valor: number }> },
+    ];
+    expect(dto.pagos.map((p) => p.valor)).toEqual([44981, 300000]);
+  });
+
+  it('de contado rechaza un cobro que no cubre la factura entera, antes de asentar', async () => {
+    const { fake, cobrarEnTx } = ventasConCobro();
+    const { servicio, asentar } = servicioCon(fake);
+
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        formaPago: 'CONTADO',
+        pagos: [{ medio: 'CAJA', cajaId: 'caja-1', valor: 100000 }],
+        lineas: [{ productoId: 'p-1', cantidad: 1 }],
+      }),
+    ).rejects.toThrow(/se cobra entera/);
+    expect(asentar).not.toHaveBeenCalled();
+    expect(cobrarEnTx).not.toHaveBeenCalled();
+  });
+
+  it('de contado sin medios de pago se rechaza', async () => {
+    const { fake } = ventasConCobro();
+    const { servicio } = servicioCon(fake);
+
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        formaPago: 'CONTADO',
+        lineas: [{ productoId: 'p-1', cantidad: 1 }],
+      }),
+    ).rejects.toThrow(/al menos un medio de pago/);
+  });
+
+  it('a crédito con medios de pago se rechaza: la plata no entraría a ninguna parte', async () => {
+    const { fake, cobrarEnTx } = ventasConCobro();
+    const { servicio } = servicioCon(fake);
+
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        formaPago: 'CREDITO',
+        pagos: [{ medio: 'CAJA', cajaId: 'caja-1', valor: TOTAL }],
+        lineas: [{ productoId: 'p-1', cantidad: 1 }],
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(cobrarEnTx).not.toHaveBeenCalled();
+  });
+
+  it('a crédito no cobra nada', async () => {
+    const { fake, cobrarEnTx } = ventasConCobro();
+    const { servicio } = servicioCon(fake);
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CREDITO',
+      lineas: [{ productoId: 'p-1', cantidad: 1 }],
+    });
+
+    expect(cobrarEnTx).not.toHaveBeenCalled();
+  });
+
+  it('al convertir una cotización de contado, también la cobra', async () => {
+    const { tx } = txFalso({ estadoCotizacion: 'EMITIDA' });
+    const { fake, cobrarEnTx } = ventasConCobro();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso(),
+      contabilidadFalso().fake,
+      fake,
+      {} as never,
+    );
+
+    const factura = await servicio.convertirCotizacion(ctx, 'cot-1', {
+      fecha: HOY,
+      formaPago: 'CONTADO',
+      pagos: [{ medio: 'BANCO', cuentaBancariaId: 'cb-1', valor: TOTAL }],
+    });
+
+    expect(cobrarEnTx).toHaveBeenCalledTimes(1);
+    expect(factura.monto_pagado).toBe(String(TOTAL));
   });
 });

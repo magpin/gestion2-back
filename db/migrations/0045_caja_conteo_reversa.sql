@@ -79,7 +79,8 @@ COMMENT ON COLUMN caja_movimiento.reversa_de IS
 
 -- La forma de una reversa la sostiene la base y no solo el servicio: es la
 -- diferencia entre corregir un error y tapar un faltante con un ingreso que
--- dice "corrección".
+-- dice "corrección". `check_violation` para que el filtro de la API devuelva
+-- el mensaje como un 400 y no como un error del servidor.
 CREATE OR REPLACE FUNCTION fn_caja_reversa_valida() RETURNS trigger
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -92,20 +93,24 @@ BEGIN
   SELECT * INTO original FROM caja_movimiento WHERE id = NEW.reversa_de;
 
   IF original.reversa_de IS NOT NULL THEN
-    RAISE EXCEPTION 'Una reversa no se reversa: se registra el movimiento de nuevo.';
+    RAISE EXCEPTION 'Una reversa no se reversa: se registra el movimiento de nuevo.'
+      USING ERRCODE = 'check_violation';
   END IF;
   IF original.tipo NOT IN ('INGRESO', 'EGRESO') OR original.origen_tipo IS NOT NULL THEN
-    RAISE EXCEPTION 'Solo se reversa un ingreso o egreso manual.';
+    RAISE EXCEPTION 'Solo se reversa un ingreso o egreso manual.'
+      USING ERRCODE = 'check_violation';
   END IF;
   -- El ajuste de un arqueo tampoco: es lo que se contó, y se corrige con otro
   -- arqueo, no borrando la diferencia.
   IF EXISTS (SELECT 1 FROM caja_arqueo WHERE asiento_ajuste_id = original.asiento_id) THEN
-    RAISE EXCEPTION 'El ajuste de un arqueo no se reversa: se corrige con otro arqueo.';
+    RAISE EXCEPTION 'El ajuste de un arqueo no se reversa: se corrige con otro arqueo.'
+      USING ERRCODE = 'check_violation';
   END IF;
   IF NEW.caja_id <> original.caja_id
      OR NEW.valor <> original.valor
      OR NEW.tipo = original.tipo THEN
-    RAISE EXCEPTION 'La reversa va en la misma caja, por el mismo valor y en sentido contrario.';
+    RAISE EXCEPTION 'La reversa va en la misma caja, por el mismo valor y en sentido contrario.'
+      USING ERRCODE = 'check_violation';
   END IF;
 
   RETURN NEW;

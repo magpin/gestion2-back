@@ -81,7 +81,12 @@ export class ErrorPostgresFilter implements ExceptionFilter {
       case CODIGOS.VIOLACION_CHECK:
         return {
           estado: HttpStatus.BAD_REQUEST,
-          mensaje: this.mensajeCheck(restriccion),
+          // Sin restricción con nombre, lo lanzó un trigger con
+          // `RAISE ... USING ERRCODE = 'check_violation'`, y ese texto lo
+          // escribió alguien para que lo lea una persona: "Un movimiento de
+          // kardex no se edita ni se borra". Cambiarlo por un genérico era
+          // tirar justo la parte que dice qué hacer.
+          mensaje: restriccion === '' ? texto : this.mensajeCheck(restriccion),
         };
 
       case CODIGOS.VIOLACION_NOT_NULL:
@@ -151,6 +156,11 @@ export class ErrorPostgresFilter implements ExceptionFilter {
         'Ya existe un extracto para esta cuenta bancaria en ese rango de fechas.',
       uq_extracto_linea_movimiento:
         'Ese movimiento de banco ya está conciliado con otra línea del extracto.',
+      ux_caja_mov_reversa: 'Ese movimiento ya se reversó.',
+      uq_arqueo_denominacion:
+        'Esa denominación aparece dos veces en el conteo.',
+      uq_banco_corte_dia:
+        'Ese día ya se cortó para esta cuenta. Un corte no se rehace.',
     };
     return conocidos[restriccion] ?? 'Ese registro ya existe.';
   }
@@ -179,6 +189,12 @@ export class ErrorPostgresFilter implements ExceptionFilter {
         'La fecha de fin no puede ser anterior a la de inicio.',
       ck_caja_sede:
         'Una caja principal necesita una sede; el fondo de caja menor no.',
+      ck_caja_mov_reversa:
+        'Una reversa necesita su motivo, de al menos tres letras.',
+      ck_banco_corte_cuadre:
+        'El corte no cuadra: el saldo final tiene que ser el anterior más entradas menos salidas.',
+      ck_banco_corte_diferencia:
+        'La diferencia del corte tiene que ser el saldo del banco menos el del libro.',
     };
     return (
       conocidos[restriccion] ?? 'Los datos violan una regla de validacion.'

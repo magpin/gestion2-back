@@ -1,4 +1,5 @@
 import {
+  armarCorte,
   calcularEgresoBanco,
   calcularIngresoBanco,
   calcularSaldoBancoEsperado,
@@ -183,5 +184,29 @@ describe('emparejarPorFechaValor', () => {
     expect(resultado.pares).toHaveLength(2);
     expect(resultado.lineasSinAparear).toEqual([]);
     expect(resultado.movimientosSinAparear).toEqual([]);
+  });
+});
+
+describe('armarCorte', () => {
+  it('saldo final = anterior + entradas - salidas, sin diferencia si nadie leyó el banco', () => {
+    expect(armarCorte(1_000_000, 250_000.1, 100_000.2)).toEqual({
+      saldoAnterior: 1_000_000,
+      entradas: 250_000.1,
+      salidas: 100_000.2,
+      saldoFinal: 1_149_999.9,
+      saldoBanco: null,
+      diferencia: null,
+    });
+  });
+
+  it('con el saldo del banco, la diferencia es banco menos libro', () => {
+    const corte = armarCorte(500_000, 0, 20_000, 476_000);
+    expect(corte.saldoFinal).toBe(480_000);
+    // El 4×1000 que el banco ya cobró y el libro todavía no.
+    expect(corte.diferencia).toBe(-4_000);
+  });
+
+  it('admite sobregiro', () => {
+    expect(armarCorte(10_000, 0, 50_000).saldoFinal).toBe(-40_000);
   });
 });

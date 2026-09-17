@@ -34,8 +34,10 @@ export interface MovimientoBancoResumen {
   conciliado: boolean;
 }
 
-const CAMPOS = `id, cuenta_bancaria_id, fecha, tipo, valor, concepto, origen_tipo,
+/** Exportada: el corte diario lista los movimientos del día con las mismas columnas. */
+export const CAMPOS_MOVIMIENTO_BANCO = `id, cuenta_bancaria_id, fecha, tipo, valor, concepto, origen_tipo,
                 origen_id, tercero_id, saldo_valor, asiento_id, conciliado`;
+const CAMPOS = CAMPOS_MOVIMIENTO_BANCO;
 
 export type TipoMovimientoManual =
   (typeof TIPOS_MOVIMIENTO_BANCO_MANUAL)[number];

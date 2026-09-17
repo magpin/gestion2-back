@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { ContabilidadModule } from '../contabilidad/contabilidad.module';
+import { BancoCortesController } from './controladores/banco-cortes.controller';
 import { BancoMovimientosController } from './controladores/banco-movimientos.controller';
 import { CajaArqueosController } from './controladores/caja-arqueos.controller';
 import { CajaConfiguracionController } from './controladores/caja-configuracion.controller';
@@ -9,6 +10,7 @@ import { CajasController } from './controladores/cajas.controller';
 import { CuentasBancariasController } from './controladores/cuentas-bancarias.controller';
 import { ExtractoController } from './controladores/extracto.controller';
 import { ExtractosController } from './controladores/extractos.controller';
+import { BancoCorteService } from './servicios/banco-corte.service';
 import { BancoMovimientoService } from './servicios/banco-movimiento.service';
 import { CajaArqueoService } from './servicios/caja-arqueo.service';
 import { CajaConfiguracionService } from './servicios/caja-configuracion.service';
@@ -43,6 +45,7 @@ import { TesoreriaApi } from './tesoreria.api';
     CajaConfiguracionController,
     CuentasBancariasController,
     BancoMovimientosController,
+    BancoCortesController,
     ExtractosController,
     ExtractoController,
   ],
@@ -53,6 +56,7 @@ import { TesoreriaApi } from './tesoreria.api';
     CajaConfiguracionService,
     CuentaBancariaService,
     BancoMovimientoService,
+    BancoCorteService,
     ExtractoService,
     TesoreriaApi,
   ],

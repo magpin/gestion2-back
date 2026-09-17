@@ -212,3 +212,37 @@ export function emparejarPorFechaValor(
       .map((m) => m.id),
   };
 }
+
+/**
+ * El corte de un día: con cuánto amaneció la cuenta, qué entró, qué salió y
+ * con cuánto cerró. Si alguien leyó el saldo en el portal del banco, la
+ * diferencia contra el libro —positiva si el banco dice más—.
+ *
+ * La diferencia no es un error que haya que ajustar: casi siempre es algo
+ * que el banco ya registró y el libro todavía no (el 4×1000, una
+ * transferencia que entró tarde), o al revés. La explica la conciliación.
+ */
+export function armarCorte(
+  saldoAnterior: number,
+  entradas: number,
+  salidas: number,
+  saldoBanco?: number,
+): {
+  saldoAnterior: number;
+  entradas: number;
+  salidas: number;
+  saldoFinal: number;
+  saldoBanco: number | null;
+  diferencia: number | null;
+} {
+  const saldoFinal = redondear(saldoAnterior + entradas - salidas);
+  return {
+    saldoAnterior: redondear(saldoAnterior),
+    entradas: redondear(entradas),
+    salidas: redondear(salidas),
+    saldoFinal,
+    saldoBanco: saldoBanco === undefined ? null : redondear(saldoBanco),
+    diferencia:
+      saldoBanco === undefined ? null : redondear(saldoBanco - saldoFinal),
+  };
+}

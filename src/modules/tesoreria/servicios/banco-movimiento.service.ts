@@ -64,6 +64,20 @@ export const DIRECCION_MOVIMIENTO_BANCO: Record<
   CHEQUE: 'SALIDA',
 };
 
+/**
+ * Los tipos que entran y los que salen, sacados de `DIRECCION_MOVIMIENTO_BANCO`
+ * y no escritos a mano: el resumen del libro tenía su propia lista y dejaba
+ * afuera las notas débito, las notas crédito y los cheques. El saldo cuadraba
+ * —se lee del último movimiento— pero "entradas" y "salidas" no sumaban lo
+ * mismo que el libro.
+ */
+export const TIPOS_ENTRADA_BANCO = Object.entries(DIRECCION_MOVIMIENTO_BANCO)
+  .filter(([, direccion]) => direccion === 'ENTRADA')
+  .map(([tipo]) => tipo);
+export const TIPOS_SALIDA_BANCO = Object.entries(DIRECCION_MOVIMIENTO_BANCO)
+  .filter(([, direccion]) => direccion === 'SALIDA')
+  .map(([tipo]) => tipo);
+
 /** Comprobante de ingreso para lo que entra, de egreso para lo que sale — mismo criterio que Caja. */
 const CODIGO_COMPROBANTE: Record<'ENTRADA' | 'SALIDA', string> = {
   ENTRADA: 'CI',
@@ -242,8 +256,8 @@ export class BancoMovimientoService {
         saldo: string;
       }>(
         await t.query(
-          `SELECT coalesce(sum(valor) FILTER (WHERE tipo IN ('CONSIGNACION', 'TRANSFERENCIA_ENTRANTE')), 0)::text AS entradas,
-                  coalesce(sum(valor) FILTER (WHERE tipo IN ('RETIRO', 'TRANSFERENCIA_SALIENTE')), 0)::text AS salidas,
+          `SELECT coalesce(sum(valor) FILTER (WHERE tipo = ANY($2::text[])), 0)::text AS entradas,
+                  coalesce(sum(valor) FILTER (WHERE tipo = ANY($3::text[])), 0)::text AS salidas,
                   coalesce(sum(valor) FILTER (WHERE tipo = 'SALDO_INICIAL'), 0)::text AS saldo_inicial,
                   coalesce(
                     (SELECT m.saldo_valor FROM banco_movimiento m
@@ -252,7 +266,7 @@ export class BancoMovimientoService {
                       LIMIT 1), 0)::text AS saldo
              FROM banco_movimiento
             WHERE cuenta_bancaria_id = $1`,
-          [cuentaBancariaId],
+          [cuentaBancariaId, TIPOS_ENTRADA_BANCO, TIPOS_SALIDA_BANCO],
         ),
       );
       return (

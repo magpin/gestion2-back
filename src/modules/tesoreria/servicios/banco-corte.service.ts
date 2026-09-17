@@ -14,7 +14,7 @@ import { TxService, type Tx } from '../../../common/db/tx.service';
 import type { CerrarCorteDto, ListarCortesDto } from '../dto/banco-corte.dto';
 import {
   CAMPOS_MOVIMIENTO_BANCO,
-  DIRECCION_MOVIMIENTO_BANCO,
+  TIPOS_ENTRADA_BANCO,
   type MovimientoBancoResumen,
 } from './banco-movimiento.service';
 import { armarCorte } from './banco.reglas';
@@ -62,17 +62,8 @@ const CAMPOS = `id, cuenta_bancaria_id, to_char(fecha, 'YYYY-MM-DD') AS fecha,
                     AND m.fecha <= banco_corte.fecha
                     AND m.creado_en > banco_corte.cerrado_en) AS cambios_posteriores`;
 
-/**
- * Lo que suma: el saldo inicial y los tipos de entrada. Sale del mismo mapa que
- * usa el libro para decidir el comprobante, y no de una lista aparte: si un
- * día aparece un tipo nuevo, el corte lo clasifica igual que el asiento.
- */
-const TIPOS_QUE_SUMAN = [
-  'SALDO_INICIAL',
-  ...Object.entries(DIRECCION_MOVIMIENTO_BANCO)
-    .filter(([, direccion]) => direccion === 'ENTRADA')
-    .map(([tipo]) => tipo),
-];
+/** Lo que suma: el saldo inicial y los tipos de entrada del libro. */
+const TIPOS_QUE_SUMAN = ['SALDO_INICIAL', ...TIPOS_ENTRADA_BANCO];
 
 /**
  * El corte diario de una cuenta bancaria: qué entró y qué salió un día, contra

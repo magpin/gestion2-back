@@ -284,3 +284,33 @@ describe('BancoMovimientoService.registrarMovimientoDocumento', () => {
     expect(movimiento.origen_tipo).toBe('COMPRA');
   });
 });
+
+describe('BancoMovimientoService.resumen', () => {
+  it('entradas y salidas cuentan todos los tipos del libro, notas y cheques incluidos', async () => {
+    const query = jest.fn(() =>
+      Promise.resolve([
+        { entradas: '0', salidas: '0', saldo_inicial: '0', saldo: '0' },
+      ]),
+    );
+    const servicio = new BancoMovimientoService(
+      {
+        enContexto: (_ctx: unknown, fn: (t: Tx) => unknown) =>
+          fn({ query } as unknown as Tx),
+      } as never,
+      {} as never,
+    );
+
+    await servicio.resumen(ctx, 'cb-1');
+
+    const [, params] = query.mock.calls[0] as unknown as [
+      string,
+      [string, string[], string[]],
+    ];
+    expect([...params[1]].sort()).toEqual(
+      ['CONSIGNACION', 'NOTA_CREDITO', 'TRANSFERENCIA_ENTRANTE'].sort(),
+    );
+    expect([...params[2]].sort()).toEqual(
+      ['CHEQUE', 'NOTA_DEBITO', 'RETIRO', 'TRANSFERENCIA_SALIENTE'].sort(),
+    );
+  });
+});

@@ -154,8 +154,12 @@ export class ErrorPostgresFilter implements ExceptionFilter {
         'Esa cuenta contable ya está asignada a otra cuenta bancaria.',
       uq_extracto_rango:
         'Ya existe un extracto para esta cuenta bancaria en ese rango de fechas.',
-      uq_extracto_linea_movimiento:
-        'Ese movimiento de banco ya está conciliado con otra línea del extracto.',
+      uq_extracto_archivo:
+        'Este archivo ya se subió como extracto de esta cuenta.',
+      uq_conciliacion_partida_linea:
+        'Esa línea del extracto ya está en otro cruce. Deshaz ese cruce primero.',
+      uq_conciliacion_partida_movimiento:
+        'Ese movimiento ya está conciliado en otro cruce. Deshaz ese cruce primero.',
       ux_caja_mov_reversa: 'Ese movimiento ya se reversó.',
       uq_arqueo_denominacion:
         'Esa denominación aparece dos veces en el conteo.',

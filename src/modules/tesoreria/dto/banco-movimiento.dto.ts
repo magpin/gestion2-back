@@ -1,4 +1,12 @@
-import { IsIn, IsNumber, IsString, IsUUID, Length, Min } from 'class-validator';
+import {
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  Min,
+} from 'class-validator';
 
 import { PaginacionDto } from '../../../common/dto/paginacion.dto';
 import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
@@ -66,4 +74,10 @@ export class RegistrarMovimientoBancoDto {
 
   @IsUUID()
   contraCuentaId!: string;
+
+  /** Número de cheque, de aprobación o de transacción: con él cruza la conciliación. */
+  @IsOptional()
+  @IsString()
+  @Length(1, 100)
+  referencia?: string;
 }

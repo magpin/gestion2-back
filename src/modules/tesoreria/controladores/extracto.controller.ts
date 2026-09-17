@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
@@ -15,14 +16,20 @@ import {
 import type { CtxEmpresa } from '../../../common/ctx';
 import {
   AgregarLineaExtractoDto,
-  ConciliarManualDto,
+  CompletarGrupoDto,
+  ConciliarDto,
+  NotaLineaDto,
+  RegistrarDesdeExtractoDto,
 } from '../dto/extracto.dto';
 import { ExtractoService } from '../servicios/extracto.service';
 
 /**
  * Un extracto puntual, referenciado por su propio id — a diferencia de
- * `ExtractosController` (`cuentas-bancarias/:id/extractos`), que lista y
- * crea en el contexto de una cuenta.
+ * `ExtractosController` (`cuentas-bancarias/:id/extractos`), que lista, crea
+ * e importa en el contexto de una cuenta.
+ *
+ * El sistema propone (`GET propuestas`) y una persona confirma (`conciliar`,
+ * `registrar`, `completar`). Nada acá concilia solo.
  */
 @Controller('extractos/:id')
 @ExigeEmpresa()
@@ -48,28 +55,75 @@ export class ExtractoController {
     return this.extractos.agregarLinea(ctx, id, dto);
   }
 
-  /** Aparea por (fecha, valor) exacto; deja sin tocar el caso ambiguo. */
-  @Roles('CONTADOR', 'DIRECTOR')
-  @Post('conciliar-automatico')
-  conciliarAutomatico(
+  /** Qué cruza con qué, calculado en el momento. No escribe nada. */
+  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'CONSULTA')
+  @Get('propuestas')
+  propuestas(
     @ActorEmpresa() ctx: CtxEmpresa,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.extractos.conciliarAutomatico(ctx, id);
+    return this.extractos.propuestas(ctx, id);
   }
 
-  /** Aparea a mano lo que el automático dejó sin tocar. */
+  /** Confirma uno o varios cruces que cuadran al centavo. Todos o ninguno. */
   @Roles('CONTADOR', 'DIRECTOR')
-  @Post('conciliar-manual')
-  conciliarManual(
+  @Post('conciliar')
+  @HttpCode(200)
+  conciliar(
     @ActorEmpresa() ctx: CtxEmpresa,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ConciliarManualDto,
+    @Body() dto: ConciliarDto,
   ) {
-    return this.extractos.conciliarManual(ctx, id, dto);
+    return this.extractos.conciliar(ctx, id, dto);
   }
 
-  /** Exige que cuadren las dos cuentas de la conciliación; rechaza con el detalle si no. */
+  @Roles('CONTADOR', 'DIRECTOR')
+  @Post('grupos/:grupoId/deshacer')
+  @HttpCode(204)
+  deshacer(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('grupoId', ParseUUIDPipe) grupoId: string,
+  ) {
+    return this.extractos.deshacer(ctx, id, grupoId);
+  }
+
+  /** Registra en el libro lo que el banco cobró o abonó solo, y lo cruza. */
+  @Roles('CONTADOR', 'DIRECTOR')
+  @Post('registrar')
+  registrar(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RegistrarDesdeExtractoDto,
+  ) {
+    return this.extractos.registrar(ctx, id, dto);
+  }
+
+  /** Registra la diferencia de un cruce que no cuadra, y lo cruza completo. */
+  @Roles('CONTADOR', 'DIRECTOR')
+  @Post('completar')
+  completar(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CompletarGrupoDto,
+  ) {
+    return this.extractos.completar(ctx, id, dto);
+  }
+
+  /** Error del banco: la línea queda sin cruzar, con el porqué. */
+  @Roles('CONTADOR', 'DIRECTOR')
+  @Post('lineas/:lineaId/nota')
+  @HttpCode(204)
+  anotarLinea(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('lineaId', ParseUUIDPipe) lineaId: string,
+    @Body() dto: NotaLineaDto,
+  ) {
+    return this.extractos.anotarLinea(ctx, id, lineaId, dto);
+  }
+
+  /** Exige que toda línea esté explicada y que cuadren las dos cuentas; rechaza con el detalle si no. */
   @Roles('CONTADOR', 'DIRECTOR')
   @Post('cerrar')
   cerrar(

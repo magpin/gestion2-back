@@ -108,6 +108,12 @@ export function verificarConciliacion(datos: {
   lineas: readonly LineaExtractoEntrada[];
   saldoLibro: number;
   pendientes: readonly MovimientoPendienteEntrada[];
+  /**
+   * Líneas del extracto que quedan sin cruzar con nota: errores del banco que
+   * se le reclaman. El libro no se ajusta por ellas, así que el banco muestra
+   * esa diferencia y el saldo esperado la suma.
+   */
+  porReclamar?: readonly LineaExtractoEntrada[];
 }): ResultadoConciliacion {
   const saldoFinalBanco = redondear(datos.saldoFinalBanco);
 
@@ -125,16 +131,16 @@ export function verificarConciliacion(datos: {
     };
   }
 
-  const saldoBancoEsperado = calcularSaldoBancoEsperado(
-    datos.saldoLibro,
-    datos.pendientes,
+  const saldoBancoEsperado = calcularSaldoExtracto(
+    calcularSaldoBancoEsperado(datos.saldoLibro, datos.pendientes),
+    datos.porReclamar ?? [],
   );
   if (saldoBancoEsperado !== saldoFinalBanco) {
     return {
       ok: false,
       motivo:
         `El saldo del libro (${redondear(datos.saldoLibro)}) ajustado por ` +
-        `las partidas pendientes da ${saldoBancoEsperado}, no los ` +
+        `las partidas pendientes${datos.porReclamar?.length ? ' y lo que se le reclama al banco' : ''} da ${saldoBancoEsperado}, no los ` +
         `${saldoFinalBanco} que dice el extracto. Revisa los movimientos sin conciliar.`,
     };
   }
@@ -142,75 +148,330 @@ export function verificarConciliacion(datos: {
   return { ok: true };
 }
 
-/** Lo mínimo de una línea o un movimiento para poder aparearlos entre sí. */
-export interface ElementoParaAparear {
+// -----------------------------------------------------------------------------
+// Las propuestas de cruce
+// -----------------------------------------------------------------------------
+
+/**
+ * Cuántos días puede ir el banco antes o después del libro para "fecha
+ * cercana": un día antes (se registró tarde con la fecha del día siguiente) y
+ * cuatro después (un fin de semana más el canje).
+ */
+export const DIAS_BANCO_ANTES = 1;
+export const DIAS_BANCO_DESPUES = 4;
+/** Con la misma referencia se busca más lejos: el cheque que se cobra el mes siguiente. */
+export const DIAS_CON_REFERENCIA = 45;
+
+export type CriterioPropuesto = 'REFERENCIA' | 'MISMA_FECHA' | 'FECHA_CERCANA';
+
+/** Una línea del extracto sin cruzar, con lo que hace falta para buscarle pareja. */
+export interface LineaParaCruzar {
   id: string;
   fecha: string;
   valor: number;
+  tipo: 'DEBITO' | 'CREDITO';
+  /** Descripción y referencia del banco, juntas: de ahí salen los números. */
+  texto: string;
 }
 
-export interface ResultadoEmparejamiento {
-  pares: Array<{ lineaId: string; movimientoId: string }>;
-  lineasSinAparear: string[];
-  movimientosSinAparear: string[];
+/** Un movimiento del libro sin conciliar. */
+export interface MovimientoParaCruzar {
+  id: string;
+  fecha: string;
+  valor: number;
+  direccion: 'ENTRADA' | 'SALIDA';
+  /** Referencia propia, NIT del tercero, número del documento de origen. */
+  referencias: readonly string[];
+}
+
+export interface CrucePropuesto {
+  lineaId: string;
+  movimientoId: string;
+  criterio: CriterioPropuesto;
+  /** Días del banco respecto al libro: positivo si el banco lo registró después. */
+  dias: number;
+  /** El número que coincidió, si el criterio es REFERENCIA. */
+  referencia: string | null;
+}
+
+export interface ResultadoPropuestas {
+  propuestas: CrucePropuesto[];
+  /** Líneas con más de un candidato igual de bueno: elige una persona. */
+  ambiguas: Array<{ lineaId: string; candidatos: string[] }>;
+  lineasSueltas: string[];
+  movimientosSueltos: string[];
 }
 
 /**
- * Aparea automáticamente por `(fecha, valor)` exacto.
- *
- * Un caso ambiguo —dos movimientos que calzan igual contra la misma
- * línea, o dos líneas contra el mismo movimiento— se deja SIN tocar de
- * los dos lados: emparejar cualquiera de los dos al azar sería inventar
- * un dato que nadie confirmó. Queda para `conciliarManual`.
+ * Los números de un texto que sirven para cruzar: secuencias de 4 dígitos o
+ * más, sin ceros a la izquierda. "CHQ 0004512" y "cheque 4512" dan lo mismo;
+ * un "15" suelto no, porque coincidiría con cualquier cosa.
  */
-export function emparejarPorFechaValor(
-  lineas: readonly ElementoParaAparear[],
-  movimientos: readonly ElementoParaAparear[],
-): ResultadoEmparejamiento {
-  const clave = (fecha: string, valor: number) =>
-    `${fecha}|${redondear(valor)}`;
+export function tokensReferencia(texto: string): string[] {
+  const tokens = new Set<string>();
+  for (const numero of texto.match(/\d+/g) ?? []) {
+    const sinCeros = numero.replace(/^0+/, '');
+    if (sinCeros.length >= 4) tokens.add(sinCeros);
+  }
+  return [...tokens];
+}
 
-  const agrupar = (elementos: readonly ElementoParaAparear[]) => {
-    const porClave = new Map<string, ElementoParaAparear[]>();
-    for (const e of elementos) {
-      const k = clave(e.fecha, e.valor);
-      const lista = porClave.get(k);
-      if (lista) lista.push(e);
-      else porClave.set(k, [e]);
-    }
-    return porClave;
-  };
+/** Días de `b` menos `a`, para fechas `AAAA-MM-DD`. */
+function diasEntre(a: string, b: string): number {
+  return Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000);
+}
 
-  const lineasPorClave = agrupar(lineas);
-  const movimientosPorClave = agrupar(movimientos);
+/** El signo que la línea o el movimiento le ponen al saldo de la cuenta. */
+function centavosConSigno(valor: number, suma: boolean): number {
+  const centavos = Math.round(valor * 100);
+  return suma ? centavos : -centavos;
+}
 
-  const pares: Array<{ lineaId: string; movimientoId: string }> = [];
-  const lineasApareadas = new Set<string>();
-  const movimientosApareados = new Set<string>();
+interface Candidato {
+  lineaId: string;
+  movimientoId: string;
+  criterio: CriterioPropuesto;
+  dias: number;
+  referencia: string | null;
+  /** Menor es mejor: primero el criterio, después la cercanía. */
+  puntaje: number;
+}
 
-  for (const [k, lineasDeEstaClave] of lineasPorClave) {
-    const movimientosDeEstaClave = movimientosPorClave.get(k) ?? [];
-    // Ambiguo si de cualquiera de los dos lados hay más de uno para la
-    // misma clave: no hay forma de saber cuál con cuál sin adivinar.
-    if (lineasDeEstaClave.length === 1 && movimientosDeEstaClave.length === 1) {
-      pares.push({
-        lineaId: lineasDeEstaClave[0].id,
-        movimientoId: movimientosDeEstaClave[0].id,
-      });
-      lineasApareadas.add(lineasDeEstaClave[0].id);
-      movimientosApareados.add(movimientosDeEstaClave[0].id);
+function evaluar(
+  linea: LineaParaCruzar,
+  tokensLinea: ReadonlySet<string>,
+  movimiento: MovimientoParaCruzar,
+  tokensMovimiento: readonly string[],
+): Candidato | null {
+  const mismoSigno =
+    centavosConSigno(linea.valor, linea.tipo === 'CREDITO') ===
+    centavosConSigno(movimiento.valor, movimiento.direccion === 'ENTRADA');
+  if (!mismoSigno) return null;
+
+  const dias = diasEntre(movimiento.fecha, linea.fecha);
+  const base = { lineaId: linea.id, movimientoId: movimiento.id, dias };
+
+  const referencia = tokensMovimiento.find((t) => tokensLinea.has(t));
+  if (referencia !== undefined && Math.abs(dias) <= DIAS_CON_REFERENCIA) {
+    return {
+      ...base,
+      criterio: 'REFERENCIA',
+      referencia,
+      puntaje: Math.abs(dias),
+    };
+  }
+  if (dias === 0) {
+    return { ...base, criterio: 'MISMA_FECHA', referencia: null, puntaje: 100 };
+  }
+  if (dias >= -DIAS_BANCO_ANTES && dias <= DIAS_BANCO_DESPUES) {
+    return {
+      ...base,
+      criterio: 'FECHA_CERCANA',
+      referencia: null,
+      puntaje: 200 + Math.abs(dias),
+    };
+  }
+  return null;
+}
+
+/** El mejor candidato, o `null` si no hay ninguno o si hay empate en el mejor puntaje. */
+function mejorUnico(candidatos: readonly Candidato[]): Candidato | null {
+  if (candidatos.length === 0) return null;
+  const minimo = Math.min(...candidatos.map((c) => c.puntaje));
+  const mejores = candidatos.filter((c) => c.puntaje === minimo);
+  return mejores.length === 1 ? mejores[0] : null;
+}
+
+/**
+ * Propone qué línea del extracto va con qué movimiento del libro. Propone, no
+ * concilia: lo confirma una persona.
+ *
+ * Solo uno contra uno, con el mismo valor al centavo y la dirección correcta
+ * (un crédito del banco es una entrada del libro). Nunca se propone con valor
+ * distinto: una diferencia es otra partida conciliatoria con su propia causa,
+ * y se explica aparte — ver la decisión 2 del paso 16.
+ *
+ * Un par se propone solo si cada uno es el mejor candidato ÚNICO del otro. Si
+ * una línea tiene dos movimientos igual de buenos, no se escoge al azar: queda
+ * ambigua. Se repite hasta que no salen pares nuevos, porque un par propuesto
+ * puede desempatar a otro.
+ */
+export function proponerCruces(
+  lineas: readonly LineaParaCruzar[],
+  movimientos: readonly MovimientoParaCruzar[],
+): ResultadoPropuestas {
+  const tokensLineas = new Map(
+    lineas.map((l) => [l.id, new Set(tokensReferencia(l.texto))]),
+  );
+  const tokensMovimientos = new Map(
+    movimientos.map((m) => [m.id, m.referencias.flatMap(tokensReferencia)]),
+  );
+
+  let candidatos: Candidato[] = [];
+  for (const linea of lineas) {
+    for (const movimiento of movimientos) {
+      const c = evaluar(
+        linea,
+        tokensLineas.get(linea.id)!,
+        movimiento,
+        tokensMovimientos.get(movimiento.id)!,
+      );
+      if (c !== null) candidatos.push(c);
     }
   }
 
+  const propuestas: CrucePropuesto[] = [];
+  for (;;) {
+    const nuevos: Candidato[] = [];
+    for (const linea of lineas) {
+      const deLaLinea = mejorUnico(
+        candidatos.filter((c) => c.lineaId === linea.id),
+      );
+      if (deLaLinea === null) continue;
+      const delMovimiento = mejorUnico(
+        candidatos.filter((c) => c.movimientoId === deLaLinea.movimientoId),
+      );
+      if (delMovimiento?.lineaId === linea.id) nuevos.push(deLaLinea);
+    }
+    if (nuevos.length === 0) break;
+
+    for (const c of nuevos) {
+      propuestas.push({
+        lineaId: c.lineaId,
+        movimientoId: c.movimientoId,
+        criterio: c.criterio,
+        dias: c.dias,
+        referencia: c.referencia,
+      });
+    }
+    const lineasUsadas = new Set(nuevos.map((c) => c.lineaId));
+    const movimientosUsados = new Set(nuevos.map((c) => c.movimientoId));
+    candidatos = candidatos.filter(
+      (c) =>
+        !lineasUsadas.has(c.lineaId) && !movimientosUsados.has(c.movimientoId),
+    );
+  }
+
+  const lineasPropuestas = new Set(propuestas.map((p) => p.lineaId));
+  const movimientosPropuestos = new Set(propuestas.map((p) => p.movimientoId));
+
+  const ambiguas = lineas
+    .filter((l) => !lineasPropuestas.has(l.id))
+    .map((l) => ({
+      lineaId: l.id,
+      candidatos: candidatos
+        .filter((c) => c.lineaId === l.id)
+        .sort((a, b) => a.puntaje - b.puntaje)
+        .map((c) => c.movimientoId),
+    }))
+    .filter((a) => a.candidatos.length > 0);
+  const lineasAmbiguas = new Set(ambiguas.map((a) => a.lineaId));
+
   return {
-    pares,
-    lineasSinAparear: lineas
-      .filter((l) => !lineasApareadas.has(l.id))
+    propuestas,
+    ambiguas,
+    lineasSueltas: lineas
+      .filter((l) => !lineasPropuestas.has(l.id) && !lineasAmbiguas.has(l.id))
       .map((l) => l.id),
-    movimientosSinAparear: movimientos
-      .filter((m) => !movimientosApareados.has(m.id))
+    movimientosSueltos: movimientos
+      .filter((m) => !movimientosPropuestos.has(m.id))
       .map((m) => m.id),
   };
+}
+
+/** El motivo de una propuesta, en palabras, para la pantalla. */
+export function describirCruce(c: CrucePropuesto): string {
+  const cuando =
+    c.dias === 0
+      ? 'el mismo día'
+      : c.dias > 0
+        ? `${c.dias} día${c.dias === 1 ? '' : 's'} después`
+        : `${-c.dias} día${c.dias === -1 ? '' : 's'} antes`;
+  if (c.criterio === 'REFERENCIA') {
+    return `Mismo valor y la referencia ${c.referencia}, ${cuando}`;
+  }
+  if (c.criterio === 'MISMA_FECHA') return 'Mismo valor y la misma fecha';
+  return `Mismo valor, ${cuando}`;
+}
+
+// -----------------------------------------------------------------------------
+// El grupo de conciliación
+// -----------------------------------------------------------------------------
+
+/**
+ * Si unas líneas explican unos movimientos: las dos sumas con signo tienen que
+ * ser iguales al centavo. `diferencia` es lo que dice el banco menos lo que
+ * dice el libro — negativa si el banco sacó más (una comisión que falta
+ * registrar), positiva si abonó más.
+ */
+export function verificarGrupo(
+  lineas: readonly LineaExtractoEntrada[],
+  movimientos: readonly MovimientoPendienteEntrada[],
+): { cuadra: boolean; diferencia: number } {
+  const banco = lineas.reduce(
+    (t, l) => t + centavosConSigno(l.valor, l.tipo === 'CREDITO'),
+    0,
+  );
+  const libro = movimientos.reduce(
+    (t, m) => t + centavosConSigno(m.valor, m.direccion === 'ENTRADA'),
+    0,
+  );
+  const diferencia = (banco - libro) / 100;
+  return { cuadra: banco === libro, diferencia };
+}
+
+// -----------------------------------------------------------------------------
+// Las reglas del extracto
+// -----------------------------------------------------------------------------
+
+export interface ReglaParaReconocer {
+  id: string;
+  palabras: readonly string[];
+  tipoLinea: 'DEBITO' | 'CREDITO';
+}
+
+/** Mayúsculas, sin tildes, y todo lo que no sea letra o número como espacio. */
+function normalizarTexto(texto: string): string {
+  return ` ${texto
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim()} `;
+}
+
+/**
+ * Qué líneas reconoce cada regla: una línea es de la regla si es del mismo tipo
+ * y su descripción contiene alguna de las palabras COMPLETA — "GMF" reconoce
+ * "IMPTO GMF 4X1000" pero no "PAGMF". Si dos reglas la reconocen, gana la
+ * primera: las reglas llegan ordenadas.
+ */
+export function reconocerPorReglas(
+  lineas: ReadonlyArray<{
+    id: string;
+    tipo: 'DEBITO' | 'CREDITO';
+    descripcion: string;
+  }>,
+  reglas: readonly ReglaParaReconocer[],
+): Map<string, string[]> {
+  const porRegla = new Map<string, string[]>();
+  const palabras = reglas.map((r) => ({
+    regla: r,
+    palabras: r.palabras.map(normalizarTexto),
+  }));
+
+  for (const linea of lineas) {
+    const texto = normalizarTexto(linea.descripcion);
+    const encontrada = palabras.find(
+      ({ regla, palabras: ps }) =>
+        regla.tipoLinea === linea.tipo && ps.some((p) => texto.includes(p)),
+    );
+    if (encontrada === undefined) continue;
+    const lista = porRegla.get(encontrada.regla.id) ?? [];
+    lista.push(linea.id);
+    porRegla.set(encontrada.regla.id, lista);
+  }
+  return porRegla;
 }
 
 /**

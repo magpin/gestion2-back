@@ -14,12 +14,16 @@ import {
   Roles,
 } from '../../../common/auth/decoradores';
 import type { CtxEmpresa } from '../../../common/ctx';
-import { CrearExtractoDto, ListarExtractosDto } from '../dto/extracto.dto';
+import {
+  CrearExtractoDto,
+  ImportarExtractoDto,
+  ListarExtractosDto,
+} from '../dto/extracto.dto';
 import { ExtractoService } from '../servicios/extracto.service';
 
 /**
  * Los extractos de una cuenta bancaria. Las acciones sobre UN extracto ya
- * creado (agregar línea, conciliar, cerrar) viven en `ExtractoController`
+ * creado (agregar línea, proponer, conciliar, cerrar) viven en `ExtractoController`
  * — ese sí referenciado por su propio id, no por el de la cuenta: un
  * extracto no encadena con el anterior, así que no hay "el abierto de
  * esta cuenta" como en `CajaArqueosController`.
@@ -47,5 +51,16 @@ export class ExtractosController {
     @Body() dto: CrearExtractoDto,
   ) {
     return this.extractos.crear(ctx, cuentaBancariaId, dto);
+  }
+
+  /** El extracto leído de un archivo en el navegador: cabecera, líneas y mapeo, de una vez. */
+  @Roles('CONTADOR', 'DIRECTOR')
+  @Post('importar')
+  importar(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) cuentaBancariaId: string,
+    @Body() dto: ImportarExtractoDto,
+  ) {
+    return this.extractos.importar(ctx, cuentaBancariaId, dto);
   }
 }

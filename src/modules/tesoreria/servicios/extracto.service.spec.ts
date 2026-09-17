@@ -2,10 +2,12 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import type { Tx, TxService } from '../../../common/db/tx.service';
+import type { BancoMovimientoService } from './banco-movimiento.service';
 import { ExtractoService } from './extracto.service';
 import type {
   AgregarLineaExtractoDto,
   CrearExtractoDto,
+  ImportarExtractoDto,
 } from '../dto/extracto.dto';
 
 const ctx: CtxEmpresa = {
@@ -21,6 +23,16 @@ function txServiceFalso(tx: Tx): TxService {
   } as unknown as TxService;
 }
 
+function servicio(
+  tx: Tx,
+  movimientos: Partial<BancoMovimientoService> = {},
+): ExtractoService {
+  return new ExtractoService(
+    txServiceFalso(tx),
+    movimientos as BancoMovimientoService,
+  );
+}
+
 const extractoAbiertoFila = {
   id: 'ext-1',
   cuenta_bancaria_id: 'cb-1',
@@ -31,6 +43,7 @@ const extractoAbiertoFila = {
   estado: 'ABIERTO',
   conciliado_en: null,
   conciliado_por: null,
+  archivo_nombre: null,
 };
 
 describe('ExtractoService.crear', () => {
@@ -54,11 +67,7 @@ describe('ExtractoService.crear', () => {
       }),
     } as unknown as Tx;
 
-    const creado = await new ExtractoService(txServiceFalso(tx)).crear(
-      ctx,
-      'cb-1',
-      DTO,
-    );
+    const creado = await servicio(tx).crear(ctx, 'cb-1', DTO);
 
     expect(creado.id).toBe('ext-nuevo');
   });
@@ -71,9 +80,9 @@ describe('ExtractoService.crear', () => {
       }),
     } as unknown as Tx;
 
-    await expect(
-      new ExtractoService(txServiceFalso(tx)).crear(ctx, 'inexistente', DTO),
-    ).rejects.toThrow(NotFoundException);
+    await expect(servicio(tx).crear(ctx, 'inexistente', DTO)).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });
 
@@ -100,7 +109,6 @@ describe('ExtractoService.agregarLinea', () => {
               descripcion: DTO.descripcion,
               valor: String(DTO.valor),
               tipo: DTO.tipo,
-              banco_movimiento_id: null,
             },
           ];
         }
@@ -113,11 +121,7 @@ describe('ExtractoService.agregarLinea', () => {
   it('agrega la línea si el extracto está ABIERTO', async () => {
     const tx = txFalso(extractoAbiertoFila);
 
-    const linea = await new ExtractoService(txServiceFalso(tx)).agregarLinea(
-      ctx,
-      'ext-1',
-      DTO,
-    );
+    const linea = await servicio(tx).agregarLinea(ctx, 'ext-1', DTO);
 
     expect(linea.descripcion).toBe('Consignación cliente X');
   });
@@ -125,167 +129,366 @@ describe('ExtractoService.agregarLinea', () => {
   it('rechaza si el extracto ya está conciliado', async () => {
     const tx = txFalso({ ...extractoAbiertoFila, estado: 'CONCILIADO' });
 
-    await expect(
-      new ExtractoService(txServiceFalso(tx)).agregarLinea(ctx, 'ext-1', DTO),
-    ).rejects.toThrow(BadRequestException);
+    await expect(servicio(tx).agregarLinea(ctx, 'ext-1', DTO)).rejects.toThrow(
+      BadRequestException,
+    );
   });
 
   it('lanza NotFoundException si el extracto no existe', async () => {
     const tx = txFalso(undefined);
 
     await expect(
-      new ExtractoService(txServiceFalso(tx)).agregarLinea(
-        ctx,
-        'inexistente',
-        DTO,
-      ),
+      servicio(tx).agregarLinea(ctx, 'inexistente', DTO),
     ).rejects.toThrow(NotFoundException);
   });
 });
 
-describe('ExtractoService.conciliarAutomatico', () => {
-  function txFalso(
-    lineas: Array<{ id: string; fecha: string; valor: string }>,
-    movimientos: Array<{ id: string; fecha: string; valor: string }>,
-  ) {
-    const actualizacionesLinea: unknown[][] = [];
-    const actualizacionesMovimiento: unknown[][] = [];
+describe('ExtractoService.importar', () => {
+  const DTO: ImportarExtractoDto = {
+    fechaDesde: '2026-09-01',
+    fechaHasta: '2026-09-30',
+    saldoInicialBanco: 1_000_000,
+    saldoFinalBanco: 1_296_000,
+    archivoNombre: 'extracto-sep.xlsx',
+    archivoHuella: 'a'.repeat(64),
+    formato: { filaEncabezado: 1 },
+    lineas: [
+      {
+        fila: 2,
+        fecha: '2026-09-05',
+        descripcion: 'ABONO',
+        valor: 300_000,
+        tipo: 'CREDITO',
+      },
+      {
+        fila: 3,
+        fecha: '2026-09-06',
+        descripcion: 'GMF',
+        valor: 4_000,
+        tipo: 'DEBITO',
+      },
+    ],
+  };
+
+  function txFalso(repetido = false) {
+    const consultas: string[] = [];
     const tx = {
-      query: jest.fn((sql: string, params?: unknown[]) => {
-        if (sql.includes('FOR UPDATE')) return [extractoAbiertoFila];
-        if (sql.startsWith('SELECT id, fecha, valor FROM extracto_linea'))
-          return lineas;
-        if (sql.startsWith('SELECT id, fecha, valor FROM banco_movimiento'))
-          return movimientos;
-        if (sql.startsWith('UPDATE extracto_linea')) {
-          actualizacionesLinea.push(params ?? []);
-          return [];
+      query: jest.fn((sql: string) => {
+        consultas.push(sql);
+        if (sql.includes('FROM cuenta_bancaria WHERE')) return [{ id: 'cb-1' }];
+        if (sql.includes('archivo_huella = $2')) {
+          return repetido
+            ? [{ fecha_desde: '2026-08-01', fecha_hasta: '2026-08-31' }]
+            : [];
         }
-        if (sql.startsWith('UPDATE banco_movimiento')) {
-          actualizacionesMovimiento.push(params ?? []);
-          return [];
+        if (sql.includes('INSERT INTO extracto_bancario')) {
+          return [{ ...extractoAbiertoFila, id: 'ext-nuevo' }];
         }
+        if (sql.includes('INSERT INTO extracto_linea')) return [];
+        if (sql.includes('UPDATE cuenta_bancaria SET formato_extracto'))
+          return [];
         throw new Error(`Query inesperada en el test: ${sql}`);
       }),
     } as unknown as Tx;
-    return { tx, actualizacionesLinea, actualizacionesMovimiento };
+    return { tx, consultas };
   }
 
-  it('aparea una línea con un movimiento exacto y marca los dos lados', async () => {
-    const { tx, actualizacionesLinea, actualizacionesMovimiento } = txFalso(
-      [{ id: 'linea-1', fecha: '2026-09-01', valor: '100000' }],
-      [{ id: 'mov-1', fecha: '2026-09-01', valor: '100000' }],
-    );
+  it('crea el extracto, las líneas y recuerda el formato', async () => {
+    const { tx, consultas } = txFalso();
 
-    const resumen = await new ExtractoService(
-      txServiceFalso(tx),
-    ).conciliarAutomatico(ctx, 'ext-1');
+    const creado = await servicio(tx).importar(ctx, 'cb-1', DTO);
 
-    expect(resumen).toEqual({
-      pares: 1,
-      lineasSinAparear: 0,
-      movimientosSinAparear: 0,
-    });
-    expect(actualizacionesLinea).toEqual([['linea-1', 'mov-1']]);
-    expect(actualizacionesMovimiento).toEqual([['mov-1']]);
+    expect(creado.id).toBe('ext-nuevo');
+    expect(
+      consultas.some((c) => c.includes('INSERT INTO extracto_linea')),
+    ).toBe(true);
+    expect(consultas.some((c) => c.includes('formato_extracto'))).toBe(true);
   });
 
-  it('el caso ambiguo (dos movimientos iguales) no aparea ninguno de los dos lados', async () => {
-    const { tx, actualizacionesLinea, actualizacionesMovimiento } = txFalso(
-      [{ id: 'linea-1', fecha: '2026-09-01', valor: '100000' }],
-      [
-        { id: 'mov-1', fecha: '2026-09-01', valor: '100000' },
-        { id: 'mov-2', fecha: '2026-09-01', valor: '100000' },
-      ],
+  it('rechaza sin tocar la base si el extracto no cuadra (débito y crédito cruzados)', async () => {
+    const { tx, consultas } = txFalso();
+
+    await expect(
+      servicio(tx).importar(ctx, 'cb-1', {
+        ...DTO,
+        saldoFinalBanco: 1_304_000,
+      }),
+    ).rejects.toThrow(/no cuadra/);
+    expect(consultas).toHaveLength(0);
+  });
+
+  it('señala las filas con fecha fuera del extracto', async () => {
+    const { tx } = txFalso();
+
+    await expect(
+      servicio(tx).importar(ctx, 'cb-1', {
+        ...DTO,
+        lineas: [{ ...DTO.lineas[0], fecha: '2026-10-01' }, DTO.lineas[1]],
+        saldoFinalBanco: 1_296_000,
+      }),
+    ).rejects.toThrow(/fila 2/);
+  });
+
+  it('rechaza el mismo archivo subido dos veces, diciendo cuál era', async () => {
+    const { tx } = txFalso(true);
+
+    await expect(servicio(tx).importar(ctx, 'cb-1', DTO)).rejects.toThrow(
+      /ya se subió.*2026-08-01/,
     );
-
-    const resumen = await new ExtractoService(
-      txServiceFalso(tx),
-    ).conciliarAutomatico(ctx, 'ext-1');
-
-    expect(resumen).toEqual({
-      pares: 0,
-      lineasSinAparear: 1,
-      movimientosSinAparear: 2,
-    });
-    expect(actualizacionesLinea).toHaveLength(0);
-    expect(actualizacionesMovimiento).toHaveLength(0);
   });
 });
 
-describe('ExtractoService.conciliarManual', () => {
-  function txFalso(opciones: {
-    linea?: { id: string; banco_movimiento_id: string | null };
-    movimiento?: { id: string; conciliado: boolean };
-  }) {
-    const {
-      linea = { id: 'linea-1', banco_movimiento_id: null },
-      movimiento = { id: 'mov-1', conciliado: false },
-    } = opciones;
-    const actualizaciones: string[] = [];
-    const tx = {
-      query: jest.fn((sql: string) => {
-        if (sql.includes('FOR UPDATE')) return [extractoAbiertoFila];
-        if (sql.startsWith('SELECT id, banco_movimiento_id')) return [linea];
-        if (sql.startsWith('SELECT id, conciliado')) return [movimiento];
-        if (sql.startsWith('UPDATE extracto_linea')) {
-          actualizaciones.push('linea');
-          return [];
-        }
-        if (sql.startsWith('UPDATE banco_movimiento')) {
-          actualizaciones.push('movimiento');
-          return [];
-        }
-        throw new Error(`Query inesperada en el test: ${sql}`);
-      }),
-    } as unknown as Tx;
-    return { tx, actualizaciones };
-  }
+/** Un extracto abierto con líneas y movimientos sueltos, que registra lo que se escribe. */
+function txConciliacion(datos: {
+  lineas: Array<{
+    id: string;
+    valor: string;
+    tipo: 'DEBITO' | 'CREDITO';
+    suelta?: boolean;
+  }>;
+  movimientos: Array<{
+    id: string;
+    valor: string;
+    tipo: string;
+    conciliado?: boolean;
+  }>;
+}) {
+  const escrituras: Array<{ sql: string; params: unknown[] }> = [];
+  const tx = {
+    query: jest.fn((sql: string, params: unknown[] = []) => {
+      if (sql.includes('FROM extracto_bancario WHERE id = $1 FOR UPDATE')) {
+        return [extractoAbiertoFila];
+      }
+      if (
+        sql.includes('FROM extracto_linea el') &&
+        sql.includes('ANY($2::uuid[])')
+      ) {
+        const ids = params[1] as string[];
+        return datos.lineas
+          .filter((l) => ids.includes(l.id))
+          .map((l) => ({
+            fecha: '2026-09-10',
+            referencia: null,
+            ...l,
+            suelta: l.suelta ?? true,
+          }));
+      }
+      if (sql.includes('FROM banco_movimiento') && sql.includes('FOR UPDATE')) {
+        const ids = params[1] as string[];
+        return datos.movimientos
+          .filter((m) => ids.includes(m.id))
+          .map((m) => ({ conciliado: false, ...m }));
+      }
+      if (sql.includes('INSERT INTO conciliacion_grupo')) {
+        escrituras.push({ sql, params });
+        return [{ id: `g-${escrituras.length}` }];
+      }
+      if (
+        sql.includes('INSERT INTO conciliacion_partida') ||
+        sql.includes('UPDATE banco_movimiento SET conciliado')
+      ) {
+        escrituras.push({ sql, params });
+        return [];
+      }
+      throw new Error(`Query inesperada en el test: ${sql}`);
+    }),
+  } as unknown as Tx;
+  return { tx, escrituras };
+}
 
-  it('aparea la línea con el movimiento cuando los dos están sueltos', async () => {
-    const { tx, actualizaciones } = txFalso({});
+describe('ExtractoService.conciliar', () => {
+  it('cruza uno contra uno y marca el movimiento conciliado', async () => {
+    const { tx, escrituras } = txConciliacion({
+      lineas: [{ id: 'l-1', valor: '100000', tipo: 'CREDITO' }],
+      movimientos: [{ id: 'm-1', valor: '100000', tipo: 'CONSIGNACION' }],
+    });
 
-    await new ExtractoService(txServiceFalso(tx)).conciliarManual(
-      ctx,
+    await servicio(tx).conciliar(ctx, 'ext-1', {
+      grupos: [
+        { lineaIds: ['l-1'], movimientoIds: ['m-1'], criterio: 'MISMA_FECHA' },
+      ],
+    });
+
+    expect(escrituras[0].params).toEqual([
+      'e-1',
       'ext-1',
-      {
-        lineaId: 'linea-1',
-        movimientoId: 'mov-1',
-      },
-    );
-
-    expect(actualizaciones).toEqual(['linea', 'movimiento']);
+      'MISMA_FECHA',
+      'u-1',
+    ]);
+    expect(escrituras[2].params).toEqual([['m-1']]);
   });
 
-  it('rechaza si la línea ya está conciliada', async () => {
-    const { tx } = txFalso({
-      linea: { id: 'linea-1', banco_movimiento_id: 'otro-mov' },
+  it('cruza el renglón del banco que junta dos consignaciones', async () => {
+    const { tx, escrituras } = txConciliacion({
+      lineas: [{ id: 'l-1', valor: '300000', tipo: 'CREDITO' }],
+      movimientos: [
+        { id: 'm-1', valor: '100000', tipo: 'CONSIGNACION' },
+        { id: 'm-2', valor: '200000', tipo: 'TRANSFERENCIA_ENTRANTE' },
+      ],
+    });
+
+    await servicio(tx).conciliar(ctx, 'ext-1', {
+      grupos: [
+        {
+          lineaIds: ['l-1'],
+          movimientoIds: ['m-1', 'm-2'],
+          criterio: 'MANUAL',
+        },
+      ],
+    });
+
+    expect(escrituras).toHaveLength(3);
+  });
+
+  it('rechaza valores distintos y dice cuánto y hacia dónde, sin escribir nada', async () => {
+    const { tx, escrituras } = txConciliacion({
+      lineas: [{ id: 'l-1', valor: '510000', tipo: 'DEBITO' }],
+      movimientos: [{ id: 'm-1', valor: '500000', tipo: 'CHEQUE' }],
     });
 
     await expect(
-      new ExtractoService(txServiceFalso(tx)).conciliarManual(ctx, 'ext-1', {
-        lineaId: 'linea-1',
-        movimientoId: 'mov-1',
+      servicio(tx).conciliar(ctx, 'ext-1', {
+        grupos: [
+          { lineaIds: ['l-1'], movimientoIds: ['m-1'], criterio: 'MANUAL' },
+        ],
       }),
-    ).rejects.toThrow(/ya está conciliada/);
+    ).rejects.toThrow(/10\.000 menos/);
+    expect(escrituras).toHaveLength(0);
   });
 
-  it('rechaza si el movimiento ya está conciliado', async () => {
-    const { tx } = txFalso({ movimiento: { id: 'mov-1', conciliado: true } });
+  it('rechaza un débito del banco contra una entrada del libro', async () => {
+    const { tx } = txConciliacion({
+      lineas: [{ id: 'l-1', valor: '100000', tipo: 'DEBITO' }],
+      movimientos: [{ id: 'm-1', valor: '100000', tipo: 'CONSIGNACION' }],
+    });
 
     await expect(
-      new ExtractoService(txServiceFalso(tx)).conciliarManual(ctx, 'ext-1', {
-        lineaId: 'linea-1',
-        movimientoId: 'mov-1',
+      servicio(tx).conciliar(ctx, 'ext-1', {
+        grupos: [
+          { lineaIds: ['l-1'], movimientoIds: ['m-1'], criterio: 'MANUAL' },
+        ],
       }),
-    ).rejects.toThrow(/ya está conciliado/);
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rechaza una línea que ya está en otro cruce', async () => {
+    const { tx } = txConciliacion({
+      lineas: [{ id: 'l-1', valor: '100000', tipo: 'CREDITO', suelta: false }],
+      movimientos: [{ id: 'm-1', valor: '100000', tipo: 'CONSIGNACION' }],
+    });
+
+    await expect(
+      servicio(tx).conciliar(ctx, 'ext-1', {
+        grupos: [
+          { lineaIds: ['l-1'], movimientoIds: ['m-1'], criterio: 'MANUAL' },
+        ],
+      }),
+    ).rejects.toThrow(/ya está cruzada/);
+  });
+
+  it('rechaza la misma línea en dos cruces del mismo pedido', async () => {
+    const { tx } = txConciliacion({ lineas: [], movimientos: [] });
+
+    await expect(
+      servicio(tx).conciliar(ctx, 'ext-1', {
+        grupos: [
+          { lineaIds: ['l-1'], movimientoIds: ['m-1'], criterio: 'MANUAL' },
+          { lineaIds: ['l-1'], movimientoIds: ['m-2'], criterio: 'MANUAL' },
+        ],
+      }),
+    ).rejects.toThrow(/dos veces/);
+  });
+});
+
+describe('ExtractoService.registrar y completar', () => {
+  function movimientosFalso() {
+    const registrarNota = jest.fn(
+      (_ctx: unknown, _cuenta: string, datos: object) =>
+        Promise.resolve({ id: 'nota-1', ...datos }),
+    );
+    return {
+      registrarNota,
+      fake: { registrarNota } as unknown as Partial<BancoMovimientoService>,
+    };
+  }
+
+  it('registra el 4×1000 como nota débito con la fecha y el valor del banco, y lo cruza', async () => {
+    const { tx, escrituras } = txConciliacion({
+      lineas: [{ id: 'l-1', valor: '4000', tipo: 'DEBITO' }],
+      movimientos: [],
+    });
+    const { registrarNota, fake } = movimientosFalso();
+
+    await servicio(tx, fake).registrar(ctx, 'ext-1', {
+      lineaIds: ['l-1'],
+      contraCuentaId: 'cta-gmf',
+      concepto: '4×1000',
+    });
+
+    expect(registrarNota).toHaveBeenCalledWith(
+      ctx,
+      'cb-1',
+      expect.objectContaining({
+        tipo: 'NOTA_DEBITO',
+        fecha: '2026-09-10',
+        valor: 4000,
+        contraCuentaId: 'cta-gmf',
+      }),
+      tx,
+    );
+    expect(escrituras[0].params[2]).toBe('REGISTRADA');
+  });
+
+  it('el cheque cobrado por 10.000 más: registra la nota débito por la diferencia y cruza los tres', async () => {
+    const { tx, escrituras } = txConciliacion({
+      lineas: [{ id: 'l-1', valor: '510000', tipo: 'DEBITO' }],
+      movimientos: [{ id: 'm-1', valor: '500000', tipo: 'CHEQUE' }],
+    });
+    const { registrarNota, fake } = movimientosFalso();
+
+    const r = await servicio(tx, fake).completar(ctx, 'ext-1', {
+      lineaIds: ['l-1'],
+      movimientoIds: ['m-1'],
+      contraCuentaId: 'cta-comisiones',
+      concepto: 'Comisión cheque',
+    });
+
+    expect(r.diferencia).toBe(-10_000);
+    expect(registrarNota).toHaveBeenCalledWith(
+      ctx,
+      'cb-1',
+      expect.objectContaining({ tipo: 'NOTA_DEBITO', valor: 10_000 }),
+      tx,
+    );
+    expect(escrituras[1].params[3]).toEqual(['m-1', 'nota-1']);
+  });
+
+  it('completar rechaza un cruce que ya cuadra', async () => {
+    const { tx } = txConciliacion({
+      lineas: [{ id: 'l-1', valor: '500000', tipo: 'DEBITO' }],
+      movimientos: [{ id: 'm-1', valor: '500000', tipo: 'CHEQUE' }],
+    });
+
+    await expect(
+      servicio(tx, movimientosFalso().fake).completar(ctx, 'ext-1', {
+        lineaIds: ['l-1'],
+        movimientoIds: ['m-1'],
+        contraCuentaId: 'cta',
+        concepto: 'Nada',
+      }),
+    ).rejects.toThrow(/ya cuadra/);
   });
 });
 
 describe('ExtractoService.cerrar', () => {
   function txFalso(datos: {
     extracto?: typeof extractoAbiertoFila;
-    lineas: Array<{ valor: string; tipo: 'DEBITO' | 'CREDITO' }>;
+    lineas: Array<{
+      valor: string;
+      tipo: 'DEBITO' | 'CREDITO';
+      suelta?: boolean;
+      nota?: string | null;
+    }>;
     saldoLibro: string | undefined;
     pendientes: Array<{ valor: string; tipo: string }>;
   }) {
@@ -299,8 +502,8 @@ describe('ExtractoService.cerrar', () => {
     const tx = {
       query: jest.fn((sql: string, params?: unknown[]) => {
         if (sql.includes('FOR UPDATE')) return [extracto];
-        if (sql.startsWith('SELECT valor, tipo FROM extracto_linea'))
-          return lineas;
+        if (sql.includes('FROM extracto_linea el'))
+          return lineas.map((l) => ({ suelta: false, nota: null, ...l }));
         if (sql.startsWith('SELECT saldo_valor FROM banco_movimiento'))
           return saldoLibro === undefined ? [] : [{ saldo_valor: saldoLibro }];
         if (sql.startsWith('SELECT valor, tipo FROM banco_movimiento'))
@@ -325,10 +528,7 @@ describe('ExtractoService.cerrar', () => {
       pendientes: [],
     });
 
-    const cerrado = await new ExtractoService(txServiceFalso(tx)).cerrar(
-      ctx,
-      'ext-1',
-    );
+    const cerrado = await servicio(tx).cerrar(ctx, 'ext-1');
 
     expect(cerrado.estado).toBe('CONCILIADO');
     expect(actualizaciones).toHaveLength(1);
@@ -345,9 +545,9 @@ describe('ExtractoService.cerrar', () => {
       pendientes: [],
     });
 
-    await expect(
-      new ExtractoService(txServiceFalso(tx)).cerrar(ctx, 'ext-1'),
-    ).rejects.toThrow(/movimientos sin conciliar/);
+    await expect(servicio(tx).cerrar(ctx, 'ext-1')).rejects.toThrow(
+      /movimientos sin conciliar/,
+    );
     expect(actualizaciones).toHaveLength(0);
   });
 
@@ -361,10 +561,44 @@ describe('ExtractoService.cerrar', () => {
       pendientes: [{ valor: '150000', tipo: 'CHEQUE' }],
     });
 
-    const cerrado = await new ExtractoService(txServiceFalso(tx)).cerrar(
-      ctx,
-      'ext-1',
+    const cerrado = await servicio(tx).cerrar(ctx, 'ext-1');
+
+    expect(cerrado.estado).toBe('CONCILIADO');
+  });
+
+  it('rechaza cerrar con una línea suelta sin explicar', async () => {
+    const { tx, actualizaciones } = txFalso({
+      lineas: [
+        { valor: '500000', tipo: 'CREDITO' },
+        { valor: '200000', tipo: 'DEBITO', suelta: true },
+      ],
+      saldoLibro: '1500000',
+      pendientes: [],
+    });
+
+    await expect(servicio(tx).cerrar(ctx, 'ext-1')).rejects.toThrow(
+      /1 línea del extracto sin cruzar ni explicar/,
     );
+    expect(actualizaciones).toHaveLength(0);
+  });
+
+  it('cierra con un error del banco anotado: el libro no se ajusta por él', async () => {
+    // El banco cobró 200.000 que no son nuestros; se reclama.
+    const { tx } = txFalso({
+      lineas: [
+        { valor: '500000', tipo: 'CREDITO' },
+        {
+          valor: '200000',
+          tipo: 'DEBITO',
+          suelta: true,
+          nota: 'Cobro duplicado, reclamado',
+        },
+      ],
+      saldoLibro: '1500000',
+      pendientes: [],
+    });
+
+    const cerrado = await servicio(tx).cerrar(ctx, 'ext-1');
 
     expect(cerrado.estado).toBe('CONCILIADO');
   });
@@ -377,8 +611,8 @@ describe('ExtractoService.cerrar', () => {
       pendientes: [],
     });
 
-    await expect(
-      new ExtractoService(txServiceFalso(tx)).cerrar(ctx, 'ext-1'),
-    ).rejects.toThrow(/ya está conciliado/);
+    await expect(servicio(tx).cerrar(ctx, 'ext-1')).rejects.toThrow(
+      /ya está conciliado/,
+    );
   });
 });

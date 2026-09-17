@@ -32,11 +32,12 @@ export interface MovimientoBancoResumen {
   saldo_valor: string;
   asiento_id: string | null;
   conciliado: boolean;
+  referencia: string | null;
 }
 
 /** Exportada: el corte diario lista los movimientos del día con las mismas columnas. */
 export const CAMPOS_MOVIMIENTO_BANCO = `id, cuenta_bancaria_id, fecha, tipo, valor, concepto, origen_tipo,
-                origen_id, tercero_id, saldo_valor, asiento_id, conciliado`;
+                origen_id, tercero_id, saldo_valor, asiento_id, conciliado, referencia`;
 const CAMPOS = CAMPOS_MOVIMIENTO_BANCO;
 
 export type TipoMovimientoManual =
@@ -134,6 +135,7 @@ export class BancoMovimientoService {
         null,
         saldo,
         null,
+        null,
       );
     });
   }
@@ -157,7 +159,35 @@ export class BancoMovimientoService {
       origenTipo: null,
       origenId: null,
       terceroId: null,
+      referencia: dto.referencia ?? null,
     });
+  }
+
+  /**
+   * Lo que el banco cobró o abonó solo y el libro todavía no tiene —el
+   * 4×1000, una comisión, intereses—, registrado desde el extracto. Con `t`:
+   * `ExtractoService` la registra y la concilia en la misma transacción.
+   */
+  async registrarNota(
+    ctx: CtxEmpresa,
+    cuentaBancariaId: string,
+    datos: {
+      tipo: 'NOTA_DEBITO' | 'NOTA_CREDITO';
+      fecha: string;
+      valor: number;
+      concepto: string;
+      contraCuentaId: string;
+      terceroId: string | null;
+      referencia: string | null;
+    },
+    t: Tx,
+  ): Promise<MovimientoBancoResumen> {
+    return this.moverBanco(
+      ctx,
+      cuentaBancariaId,
+      { ...datos, origenTipo: null, origenId: null },
+      t,
+    );
   }
 
   /**
@@ -200,6 +230,7 @@ export class BancoMovimientoService {
         origenTipo: datos.documentoTipo,
         origenId: datos.documentoId,
         terceroId: datos.terceroId,
+        referencia: null,
       },
       t,
     );
@@ -320,6 +351,7 @@ export class BancoMovimientoService {
       origenTipo: 'FACTURA_VENTA' | 'COMPRA' | null;
       origenId: string | null;
       terceroId: string | null;
+      referencia: string | null;
     },
     tExterna?: Tx,
   ): Promise<MovimientoBancoResumen> {
@@ -359,6 +391,7 @@ export class BancoMovimientoService {
           datos.terceroId,
           nuevoSaldo,
           asientoId,
+          datos.referencia,
         );
       },
       tExterna,
@@ -459,13 +492,14 @@ export class BancoMovimientoService {
     terceroId: string | null,
     saldoValor: number,
     asientoId: string | null,
+    referencia: string | null,
   ): Promise<MovimientoBancoResumen> {
     const creado = fila<MovimientoBancoResumen>(
       await t.query(
         `INSERT INTO banco_movimiento
            (id, empresa_id, cuenta_bancaria_id, fecha, tipo, valor, concepto, origen_tipo,
-            origen_id, tercero_id, saldo_valor, asiento_id, creado_por)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+            origen_id, tercero_id, saldo_valor, asiento_id, creado_por, referencia)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
          RETURNING ${CAMPOS}`,
         [
           id,
@@ -481,6 +515,7 @@ export class BancoMovimientoService {
           saldoValor,
           asientoId,
           ctx.usuarioId,
+          referencia,
         ],
       ),
     );

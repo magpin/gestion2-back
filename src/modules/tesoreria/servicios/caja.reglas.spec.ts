@@ -3,6 +3,7 @@ import {
   calcularEgreso,
   calcularIngreso,
   redondear,
+  resolverConteo,
   verificarPuedeAbrirArqueo,
 } from './caja.reglas';
 
@@ -75,5 +76,86 @@ describe('verificarPuedeAbrirArqueo', () => {
       motivo:
         'Ya hay un arqueo abierto para esta caja. Cerralo antes de abrir uno nuevo.',
     });
+  });
+});
+
+describe('resolverConteo', () => {
+  it('con el total a secas, cierra como siempre y no guarda denominaciones', () => {
+    expect(resolverConteo(80_000, undefined)).toEqual({
+      ok: true,
+      saldoContado: 80_000,
+      denominaciones: [],
+    });
+  });
+
+  it('sin total ni conteo se rechaza', () => {
+    expect(resolverConteo(undefined, undefined).ok).toBe(false);
+  });
+
+  it('suma billetes y monedas, y descarta lo que quedó en cero', () => {
+    const r = resolverConteo(undefined, [
+      { tipo: 'BILLETE', denominacion: 50_000, cantidad: 3 },
+      { tipo: 'BILLETE', denominacion: 1_000, cantidad: 2 },
+      { tipo: 'MONEDA', denominacion: 1_000, cantidad: 4 },
+      { tipo: 'MONEDA', denominacion: 500, cantidad: 1 },
+      { tipo: 'MONEDA', denominacion: 50, cantidad: 0 },
+    ]);
+    expect(r).toEqual({
+      ok: true,
+      saldoContado: 156_500,
+      denominaciones: [
+        { tipo: 'BILLETE', denominacion: 50_000, cantidad: 3 },
+        { tipo: 'BILLETE', denominacion: 1_000, cantidad: 2 },
+        { tipo: 'MONEDA', denominacion: 1_000, cantidad: 4 },
+        { tipo: 'MONEDA', denominacion: 500, cantidad: 1 },
+      ],
+    });
+  });
+
+  it('un cajón vacío cuenta cero', () => {
+    expect(resolverConteo(undefined, [])).toEqual({
+      ok: true,
+      saldoContado: 0,
+      denominaciones: [],
+    });
+  });
+
+  it('con el total y el conteo, tienen que coincidir', () => {
+    const conteo = [
+      { tipo: 'BILLETE' as const, denominacion: 20_000, cantidad: 4 },
+    ];
+    expect(resolverConteo(80_000, conteo).ok).toBe(true);
+    expect(resolverConteo(100_000, conteo)).toEqual({
+      ok: false,
+      motivo:
+        'El conteo suma 80000 y el total digitado es 100000: uno de los dos está mal.',
+    });
+  });
+
+  it('rechaza una denominación que no existe, o que existe en el otro tipo', () => {
+    expect(
+      resolverConteo(undefined, [
+        { tipo: 'BILLETE', denominacion: 500, cantidad: 1 },
+      ]),
+    ).toEqual({ ok: false, motivo: 'No existe el billete de 500.' });
+    expect(
+      resolverConteo(undefined, [
+        { tipo: 'MONEDA', denominacion: 5_000, cantidad: 1 },
+      ]).ok,
+    ).toBe(false);
+  });
+
+  it('rechaza cantidades partidas y denominaciones repetidas', () => {
+    expect(
+      resolverConteo(undefined, [
+        { tipo: 'BILLETE', denominacion: 2_000, cantidad: 1.5 },
+      ]).ok,
+    ).toBe(false);
+    expect(
+      resolverConteo(undefined, [
+        { tipo: 'MONEDA', denominacion: 200, cantidad: 1 },
+        { tipo: 'MONEDA', denominacion: 200, cantidad: 3 },
+      ]).ok,
+    ).toBe(false);
   });
 });

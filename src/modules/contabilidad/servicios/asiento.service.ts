@@ -365,6 +365,62 @@ export class AsientoService {
     );
   }
 
+  /**
+   * Las líneas de un asiento, tal como se guardaron y sin nombres resueltos:
+   * lo que necesita quien va a armar el asiento contrario. `null` si el
+   * asiento no existe o está anulado —no hay nada que invertir—.
+   */
+  async lineasParaInvertir(
+    ctx: CtxEmpresa,
+    id: string,
+    tx?: Tx,
+  ): Promise<Array<{
+    cuentaId: string;
+    terceroId: string | null;
+    centroCostoId: string | null;
+    baseGravable: number | null;
+    debito: number;
+    credito: number;
+  }> | null> {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const asiento = fila<{ estado: string }>(
+          await t.query('SELECT estado FROM asiento WHERE id = $1', [id]),
+        );
+        if (asiento === undefined || asiento.estado !== 'REGISTRADO') {
+          return null;
+        }
+        const lineas = filas<{
+          cuenta_id: string;
+          tercero_id: string | null;
+          centro_costo_id: string | null;
+          base_gravable: string | null;
+          debito: string;
+          credito: string;
+        }>(
+          await t.query(
+            `SELECT cuenta_id, tercero_id, centro_costo_id, base_gravable, debito, credito
+               FROM asiento_linea
+              WHERE asiento_id = $1
+              ORDER BY orden`,
+            [id],
+          ),
+        );
+        return lineas.map((l) => ({
+          cuentaId: l.cuenta_id,
+          terceroId: l.tercero_id,
+          centroCostoId: l.centro_costo_id,
+          baseGravable:
+            l.base_gravable === null ? null : Number(l.base_gravable),
+          debito: Number(l.debito),
+          credito: Number(l.credito),
+        }));
+      },
+      tx,
+    );
+  }
+
   /** El asiento que generó un documento. Para mostrarlo al lado de la factura. */
   async porOrigen(
     ctx: CtxEmpresa,

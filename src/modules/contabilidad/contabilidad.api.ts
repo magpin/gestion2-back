@@ -87,6 +87,32 @@ export class ContabilidadApi {
   }
 
   /**
+   * Un asiento que da vuelta a otro: mismas cuentas, mismos terceros, débitos
+   * y créditos intercambiados.
+   *
+   * No es anular. Anular deja el asiento viejo marcado y su período tiene que
+   * estar abierto; invertir registra un hecho nuevo con la fecha de hoy, que es
+   * lo que necesita un libro —la caja— cuyo saldo corrido ya contó el original.
+   * Devuelve `null` si el original no existe o ya está anulado.
+   */
+  async lineasInvertidasDe(
+    ctx: CtxEmpresa,
+    asientoId: string,
+    tx: Tx,
+  ): Promise<CrearAsientoDto['lineas'] | null> {
+    const lineas = await this.asientos.lineasParaInvertir(ctx, asientoId, tx);
+    if (lineas === null) return null;
+    return lineas.map((l) => ({
+      cuentaId: l.cuentaId,
+      terceroId: l.terceroId ?? undefined,
+      centroCostoId: l.centroCostoId ?? undefined,
+      baseGravable: l.baseGravable ?? undefined,
+      debito: l.credito,
+      credito: l.debito,
+    }));
+  }
+
+  /**
    * Un tipo de comprobante por código (ej. `'CD'`), para módulos que asientan
    * automático y necesitan uno ya existente. `null` si la empresa no lo
    * sembró o está desactivado.

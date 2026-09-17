@@ -327,3 +327,183 @@ describe('CajaMovimientoService.registrarMovimientoDocumento', () => {
     expect(insertadas).toHaveLength(0);
   });
 });
+
+describe('CajaMovimientoService.reversar', () => {
+  const MOTIVO = { fecha: '2026-09-16', motivo: 'Se cargó dos veces' };
+
+  const egresoManual = {
+    id: 'mov-1',
+    caja_id: 'c-1',
+    fecha: '2026-09-15',
+    tipo: 'EGRESO',
+    valor: '30000',
+    concepto: 'Papelería',
+    origen_tipo: null,
+    origen_id: null,
+    tercero_id: null,
+    saldo_valor: '70000',
+    asiento_id: 'asiento-original',
+    reversa_de: null,
+    motivo_reversa: null,
+    reversado_por: null,
+    es_ajuste_arqueo: false,
+  };
+
+  /** Transacción falsa para la reversa: la caja, el original y el saldo. */
+  function txReversa(
+    original: Record<string, unknown> | undefined,
+    saldo = '70000',
+  ) {
+    const insertadas: unknown[][] = [];
+    const tx = {
+      query: jest.fn((sql: string, params?: unknown[]) => {
+        if (sql.includes('FROM caja WHERE')) {
+          return [{ id: 'c-1', cuenta_id: 'cta-caja' }];
+        }
+        if (
+          sql.includes('FROM caja_movimiento WHERE id = $1 AND caja_id = $2')
+        ) {
+          return original === undefined ? [] : [original];
+        }
+        if (sql.startsWith('SELECT saldo_valor')) {
+          return [{ saldo_valor: saldo }];
+        }
+        if (sql.startsWith('INSERT INTO caja_movimiento')) {
+          insertadas.push(params ?? []);
+          const p = params as unknown[];
+          return [
+            {
+              id: p[0],
+              tipo: p[4],
+              valor: String(p[5]),
+              concepto: p[6],
+              saldo_valor: String(p[10]),
+              asiento_id: p[11],
+              reversa_de: p[13],
+              motivo_reversa: p[14],
+            },
+          ];
+        }
+        throw new Error(`Query inesperada en el test: ${sql}`);
+      }),
+    } as unknown as Tx;
+    return { tx, insertadas };
+  }
+
+  function contabilidadReversa(
+    lineas: unknown[] | null = [
+      { cuentaId: 'cta-caja', debito: 30000, credito: 0 },
+      { cuentaId: 'cta-gasto', debito: 0, credito: 30000 },
+    ],
+  ) {
+    const asentar = jest.fn(() =>
+      Promise.resolve({ id: 'asiento-reversa', numero: 'CI-000009' }),
+    );
+    const tipoComprobantePorCodigo = jest.fn(() =>
+      Promise.resolve({ id: 'comp-ci' }),
+    );
+    const fake = {
+      lineasInvertidasDe: jest.fn(() => Promise.resolve(lineas)),
+      tipoComprobantePorCodigo,
+      asentar,
+    } as unknown as ConstructorParameters<typeof CajaMovimientoService>[1];
+    return { fake, asentar, tipoComprobantePorCodigo };
+  }
+
+  it('un egreso se reversa con un ingreso por el mismo valor, el asiento invertido y el motivo', async () => {
+    const { tx, insertadas } = txReversa(egresoManual);
+    const { fake, asentar, tipoComprobantePorCodigo } = contabilidadReversa();
+
+    const reversa = await servicioCon(tx, fake).reversar(
+      ctx,
+      'c-1',
+      'mov-1',
+      MOTIVO,
+    );
+
+    expect(reversa.tipo).toBe('INGRESO');
+    expect(reversa.valor).toBe('30000');
+    expect(reversa.saldo_valor).toBe('100000');
+    expect(reversa.reversa_de).toBe('mov-1');
+    expect(reversa.motivo_reversa).toBe('Se cargó dos veces');
+    expect(reversa.concepto).toBe('Reversa de: Papelería');
+    expect(tipoComprobantePorCodigo).toHaveBeenCalledWith(ctx, 'CI', tx);
+
+    const [, dtoAsiento, origen] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      { fecha: string; glosa: string; lineas: unknown[] },
+      { origenTipo: string; origenId: string },
+    ];
+    expect(dtoAsiento.fecha).toBe('2026-09-16');
+    expect(dtoAsiento.glosa).toContain('Se cargó dos veces');
+    expect(dtoAsiento.lineas).toHaveLength(2);
+    expect(origen).toEqual({
+      origenTipo: 'MOVIMIENTO_CAJA',
+      origenId: insertadas[0][0],
+    });
+  });
+
+  it('un ingreso no se reversa si la plata ya no está en la caja', async () => {
+    const { tx, insertadas } = txReversa(
+      { ...egresoManual, tipo: 'INGRESO', valor: '50000' },
+      '20000',
+    );
+    const { fake, asentar } = contabilidadReversa();
+
+    await expect(
+      servicioCon(tx, fake).reversar(ctx, 'c-1', 'mov-1', MOTIVO),
+    ).rejects.toThrow(/Solo hay 20000 en caja/);
+    expect(asentar).not.toHaveBeenCalled();
+    expect(insertadas).toHaveLength(0);
+  });
+
+  it.each([
+    [
+      { origen_tipo: 'FACTURA_VENTA', origen_id: 'f-1' },
+      /devolviendo el cobro/,
+    ],
+    [{ origen_tipo: 'COMPRA', origen_id: 'co-1' }, /devolución del pago/],
+    [{ es_ajuste_arqueo: true }, /otro arqueo/],
+    [{ reversa_de: 'mov-0' }, /ya es una reversa/],
+    [{ reversado_por: 'mov-2' }, /ya se reversó/],
+    [
+      { tipo: 'SALDO_INICIAL', asiento_id: null },
+      /saldo inicial no se reversa/,
+    ],
+  ])('rechaza sin asentar: %o', async (cambio, mensaje) => {
+    const { tx, insertadas } = txReversa({ ...egresoManual, ...cambio });
+    const { fake, asentar } = contabilidadReversa();
+
+    await expect(
+      servicioCon(tx, fake).reversar(ctx, 'c-1', 'mov-1', MOTIVO),
+    ).rejects.toThrow(mensaje);
+    expect(asentar).not.toHaveBeenCalled();
+    expect(insertadas).toHaveLength(0);
+  });
+
+  it('rechaza si el movimiento no es de esta caja', async () => {
+    const { tx } = txReversa(undefined);
+
+    await expect(
+      servicioCon(tx, contabilidadReversa().fake).reversar(
+        ctx,
+        'c-1',
+        'mov-x',
+        MOTIVO,
+      ),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('rechaza si el asiento del original está anulado', async () => {
+    const { tx } = txReversa(egresoManual);
+
+    await expect(
+      servicioCon(tx, contabilidadReversa(null).fake).reversar(
+        ctx,
+        'c-1',
+        'mov-1',
+        MOTIVO,
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+});

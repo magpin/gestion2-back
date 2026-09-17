@@ -19,7 +19,9 @@ import type {
 import { CajaMovimientoService } from './caja-movimiento.service';
 import {
   calcularDiferenciaArqueo,
+  resolverConteo,
   verificarPuedeAbrirArqueo,
+  type TipoDenominacion,
 } from './caja.reglas';
 
 export interface ArqueoResumen {
@@ -34,13 +36,33 @@ export interface ArqueoResumen {
   cerrado_por: string | null;
   nota: string | null;
   asiento_ajuste_id: string | null;
+  /**
+   * El conteo billete por billete, si se cerró así. Vacío en un arqueo
+   * abierto o en uno que se cerró con el total a secas.
+   */
+  denominaciones: Array<{
+    tipo: TipoDenominacion;
+    denominacion: string;
+    cantidad: number;
+    subtotal: string;
+  }>;
 }
 
 // `fecha` sale como texto AAAA-MM-DD y no como `Date` de pg: al cerrar, esa
 // fecha vuelve al motor de asientos, que arma el período con `new Date(\`${fecha}T12:00:00\`)`
 // y con un `Date` serializado producía un mes NaN.
+//
+// Las denominaciones van como subconsulta y no como JOIN, por lo mismo que en
+// ventas: así las mismas columnas sirven en el `RETURNING` del cierre. Billetes
+// primero y de mayor a menor, que es como se cuenta un cajón.
 const CAMPOS = `id, caja_id, to_char(fecha, 'YYYY-MM-DD') AS fecha, saldo_sistema, saldo_contado, diferencia,
-                estado, cerrado_en, cerrado_por, nota, asiento_ajuste_id`;
+                estado, cerrado_en, cerrado_por, nota, asiento_ajuste_id,
+                (SELECT coalesce(json_agg(json_build_object(
+                          'tipo', d.tipo, 'denominacion', d.denominacion,
+                          'cantidad', d.cantidad, 'subtotal', d.subtotal)
+                        ORDER BY d.tipo, d.denominacion DESC), '[]'::json)
+                   FROM caja_arqueo_denominacion d
+                  WHERE d.arqueo_id = caja_arqueo.id) AS denominaciones`;
 
 /** El ajuste de un arqueo es un asiento de diario, no un ingreso/egreso de caja. */
 const CODIGO_COMPROBANTE_AJUSTE = 'CD';
@@ -118,12 +140,18 @@ export class CajaArqueoService {
     dto: CerrarArqueoDto,
   ): Promise<ArqueoResumen> {
     return this.tx.enContexto(ctx, async (t) => {
+      const conteo = resolverConteo(dto.saldoContado, dto.denominaciones);
+      if (!conteo.ok) {
+        throw new BadRequestException(conteo.motivo);
+      }
+      const saldoContado = conteo.saldoContado;
+
       const caja = await this.exigirCajaBloqueada(cajaId, t);
       const arqueo = await this.exigirArqueoAbierto(cajaId, t);
 
       const diferencia = calcularDiferenciaArqueo(
         Number(arqueo.saldo_sistema),
-        dto.saldoContado,
+        saldoContado,
       );
 
       let asientoAjusteId: string | null = null;
@@ -152,10 +180,21 @@ export class CajaArqueoService {
             concepto: `Ajuste de arqueo del ${arqueo.fecha}: ${
               diferencia < 0 ? 'faltante' : 'sobrante'
             } de ${Math.abs(diferencia)}`,
-            saldoValor: dto.saldoContado,
+            saldoValor: saldoContado,
             asientoId: asientoAjusteId,
           },
           t,
+        );
+      }
+
+      // Antes del `UPDATE`: así su `RETURNING` ya las ve y el arqueo cerrado
+      // vuelve con su conteo.
+      for (const d of conteo.denominaciones) {
+        await t.query(
+          `INSERT INTO caja_arqueo_denominacion
+             (empresa_id, arqueo_id, tipo, denominacion, cantidad)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [ctx.empresaId, arqueo.id, d.tipo, d.denominacion, d.cantidad],
         );
       }
 
@@ -169,7 +208,7 @@ export class CajaArqueoService {
           RETURNING ${CAMPOS}`,
           [
             arqueo.id,
-            dto.saldoContado,
+            saldoContado,
             diferencia,
             ctx.usuarioId,
             dto.nota ?? null,

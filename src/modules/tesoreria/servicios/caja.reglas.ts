@@ -80,3 +80,94 @@ export function verificarPuedeAbrirArqueo(
   }
   return { ok: true };
 }
+
+/**
+ * Los billetes y monedas de peso colombiano en circulación. Viven en el código
+ * y no en la base: cambian cuando el Banco de la República emite o retira una
+ * denominación —pocas veces en una década—, y ese día es un cambio revisado,
+ * no un dato que alguien digite.
+ *
+ * El 1.000 está en los dos lados: existen el billete y la moneda.
+ */
+export const DENOMINACIONES_COP = {
+  BILLETE: [100_000, 50_000, 20_000, 10_000, 5_000, 2_000, 1_000],
+  MONEDA: [1_000, 500, 200, 100, 50],
+} as const;
+
+export type TipoDenominacion = keyof typeof DENOMINACIONES_COP;
+
+export interface ConteoDenominacion {
+  tipo: TipoDenominacion;
+  denominacion: number;
+  cantidad: number;
+}
+
+/**
+ * Lo que se contó en un arqueo: el total, y las denominaciones que se guardan.
+ *
+ * Se puede cerrar con el total a secas —como hasta ahora— o con el conteo
+ * billete por billete. Con las dos cosas, tienen que coincidir: si alguien
+ * contó 480.000 en billetes y escribió 500.000, uno de los dos números está
+ * mal y el sistema no puede saber cuál.
+ *
+ * Las cantidades en cero se descartan en vez de rechazarse: la pantalla
+ * muestra todas las denominaciones y la mayoría quedan en cero.
+ */
+export type ResultadoConteo =
+  | { ok: true; saldoContado: number; denominaciones: ConteoDenominacion[] }
+  | { ok: false; motivo: string };
+
+export function resolverConteo(
+  saldoContado: number | undefined,
+  denominaciones: readonly ConteoDenominacion[] | undefined,
+): ResultadoConteo {
+  if (denominaciones === undefined) {
+    if (saldoContado === undefined) {
+      return {
+        ok: false,
+        motivo: 'Falta lo contado: el total, o billete por billete.',
+      };
+    }
+    return { ok: true, saldoContado, denominaciones: [] };
+  }
+
+  const vistas = new Set<string>();
+  const contadas: ConteoDenominacion[] = [];
+  let totalCentavos = 0;
+  for (const d of denominaciones) {
+    const validas: readonly number[] = DENOMINACIONES_COP[d.tipo] ?? [];
+    if (!validas.includes(d.denominacion)) {
+      return {
+        ok: false,
+        motivo: `No existe ${d.tipo === 'BILLETE' ? 'el billete' : 'la moneda'} de ${d.denominacion}.`,
+      };
+    }
+    if (!Number.isInteger(d.cantidad) || d.cantidad < 0) {
+      return {
+        ok: false,
+        motivo: `La cantidad de ${d.tipo === 'BILLETE' ? 'billetes' : 'monedas'} de ${d.denominacion} tiene que ser un entero, cero o más.`,
+      };
+    }
+    const clave = `${d.tipo}-${d.denominacion}`;
+    if (vistas.has(clave)) {
+      return {
+        ok: false,
+        motivo: `${d.tipo === 'BILLETE' ? 'El billete' : 'La moneda'} de ${d.denominacion} aparece dos veces.`,
+      };
+    }
+    vistas.add(clave);
+    if (d.cantidad > 0) {
+      contadas.push(d);
+      totalCentavos += Math.round(d.denominacion * 100) * d.cantidad;
+    }
+  }
+
+  const total = totalCentavos / 100;
+  if (saldoContado !== undefined && redondear(saldoContado) !== total) {
+    return {
+      ok: false,
+      motivo: `El conteo suma ${total} y el total digitado es ${saldoContado}: uno de los dos está mal.`,
+    };
+  }
+  return { ok: true, saldoContado: total, denominaciones: contadas };
+}

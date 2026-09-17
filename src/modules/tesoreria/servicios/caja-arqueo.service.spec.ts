@@ -49,6 +49,7 @@ function txFalso(
       : opciones.arqueoAbierto;
   const inserts: unknown[][] = [];
   const updates: unknown[][] = [];
+  const denominaciones: unknown[][] = [];
   const tx = {
     query: jest.fn((sql: string, params?: unknown[]) => {
       if (sql.includes('FROM caja WHERE')) {
@@ -70,6 +71,10 @@ function txFalso(
         return cuentaDiferenciaId === undefined
           ? []
           : [{ cuenta_diferencia_id: cuentaDiferenciaId }];
+      }
+      if (sql.includes('INSERT INTO caja_arqueo_denominacion')) {
+        denominaciones.push(params ?? []);
+        return [];
       }
       if (sql.startsWith('INSERT INTO caja_arqueo')) {
         inserts.push(params ?? []);
@@ -119,7 +124,7 @@ function txFalso(
       throw new Error(`Query inesperada en el test: ${sql}`);
     }),
   } as unknown as Tx;
-  return { tx, inserts, updates };
+  return { tx, inserts, updates, denominaciones };
 }
 
 function contabilidadFalso(
@@ -225,6 +230,47 @@ describe('CajaArqueoService.cerrar', () => {
     expect(asentar).not.toHaveBeenCalled();
     expect(registrarAjusteArqueo).not.toHaveBeenCalled();
     expect(updates).toHaveLength(1);
+  });
+
+  it('contado billete por billete: guarda el conteo y cierra con lo que suma', async () => {
+    const { tx, updates, denominaciones } = txFalso();
+    const { fake: movimientos, registrarAjusteArqueo } = movimientosFalso();
+
+    await servicioCon(tx, contabilidadFalso().fake, movimientos).cerrar(
+      ctx,
+      'c-1',
+      {
+        denominaciones: [
+          { tipo: 'BILLETE', denominacion: 50_000, cantidad: 1 },
+          { tipo: 'BILLETE', denominacion: 10_000, cantidad: 3 },
+          { tipo: 'MONEDA', denominacion: 500, cantidad: 0 },
+        ],
+      },
+    );
+
+    // 50.000 + 30.000 = 80.000: cuadra, sin ajuste.
+    expect(registrarAjusteArqueo).not.toHaveBeenCalled();
+    expect(denominaciones).toEqual([
+      ['e-1', 'arq-1', 'BILLETE', 50_000, 1],
+      ['e-1', 'arq-1', 'BILLETE', 10_000, 3],
+    ]);
+    expect(updates[0][1]).toBe(80_000);
+  });
+
+  it('rechaza sin tocar la base si el conteo y el total no coinciden', async () => {
+    const { tx, updates, denominaciones } = txFalso();
+
+    await expect(
+      servicioCon(tx).cerrar(ctx, 'c-1', {
+        saldoContado: 90_000,
+        denominaciones: [
+          { tipo: 'BILLETE', denominacion: 20_000, cantidad: 4 },
+        ],
+      }),
+    ).rejects.toThrow(/uno de los dos está mal/);
+    expect((tx.query as jest.Mock).mock.calls).toHaveLength(0);
+    expect(updates).toHaveLength(0);
+    expect(denominaciones).toHaveLength(0);
   });
 
   it('faltante: débito a la cuenta de diferencia, crédito a la caja, movimiento EGRESO', async () => {

@@ -16,6 +16,7 @@ import type {
   EgresoCajaDto,
   IngresoCajaDto,
   ListarMovimientosCajaDto,
+  ReversarMovimientoCajaDto,
 } from '../dto/caja-movimiento.dto';
 import { calcularEgreso, calcularIngreso } from './caja.reglas';
 
@@ -31,10 +32,23 @@ export interface MovimientoCajaResumen {
   tercero_id: string | null;
   saldo_valor: string;
   asiento_id: string | null;
+  /** El movimiento que este corrige, si es una reversa. */
+  reversa_de: string | null;
+  motivo_reversa: string | null;
+  /** La reversa que corrigió a este, si ya la tiene. */
+  reversado_por: string | null;
+  /** Si es el ajuste de un arqueo: ese no se reversa, se corrige con otro arqueo. */
+  es_ajuste_arqueo: boolean;
 }
 
+// `reversado_por` y `es_ajuste_arqueo` se derivan: con ellos la pantalla sabe
+// si ofrecer "Reversar" sin tener que repetir las reglas de `reversar`.
 const CAMPOS = `id, caja_id, fecha, tipo, valor, concepto, origen_tipo, origen_id,
-                tercero_id, saldo_valor, asiento_id`;
+                tercero_id, saldo_valor, asiento_id, reversa_de, motivo_reversa,
+                (SELECT r.id FROM caja_movimiento r
+                  WHERE r.reversa_de = caja_movimiento.id) AS reversado_por,
+                EXISTS (SELECT 1 FROM caja_arqueo a
+                         WHERE a.asiento_ajuste_id = caja_movimiento.asiento_id) AS es_ajuste_arqueo`;
 
 /** Comprobante de ingreso para lo que entra, de egreso para lo que sale. */
 const CODIGO_COMPROBANTE: Record<'INGRESO' | 'EGRESO', string> = {
@@ -218,6 +232,140 @@ export class CajaMovimientoService {
       datos.saldoValor,
       datos.asientoId,
     );
+  }
+
+  /**
+   * Corrige un ingreso o egreso manual mal cargado con su movimiento contrario:
+   * mismo valor, sentido opuesto, y un asiento que invierte las líneas del
+   * original. El libro no se edita —el saldo corrido de todo lo posterior ya
+   * contó el error—, así que la corrección es un hecho nuevo que dice a quién
+   * corrige y por qué.
+   *
+   * No se reversa:
+   *   - un cobro o pago de documento: se corrige devolviendo el cobro o el
+   *     pago, que además baja el `monto_pagado` de la factura;
+   *   - el ajuste de un arqueo: es lo que se contó, y se corrige con otro
+   *     arqueo;
+   *   - una reversa, ni algo ya reversado.
+   *
+   * La base sostiene lo mismo con `tg_caja_reversa_valida` y
+   * `ux_caja_mov_reversa`; acá se anticipa con mensajes que se entienden.
+   */
+  async reversar(
+    ctx: CtxEmpresa,
+    cajaId: string,
+    movimientoId: string,
+    dto: ReversarMovimientoCajaDto,
+  ): Promise<MovimientoCajaResumen> {
+    return this.tx.enContexto(ctx, async (t) => {
+      // El asiento invertido ya trae la cuenta de la caja desde el original:
+      // acá la caja solo se bloquea, para que el saldo corrido no se pise.
+      await this.exigirCajaBloqueada(cajaId, t);
+
+      const original = fila<MovimientoCajaResumen>(
+        await t.query(
+          `SELECT ${CAMPOS} FROM caja_movimiento WHERE id = $1 AND caja_id = $2`,
+          [movimientoId, cajaId],
+        ),
+      );
+      if (original === undefined) {
+        throw new NotFoundException('Movimiento no encontrado en esta caja.');
+      }
+      if (original.tipo === 'SALDO_INICIAL') {
+        throw new BadRequestException(
+          'El saldo inicial no se reversa: no tiene asiento. Si quedó mal, lo corrige un contador con un ingreso o egreso contra la cuenta que corresponda.',
+        );
+      }
+      if (original.reversa_de !== null) {
+        throw new BadRequestException(
+          'Este movimiento ya es una reversa. Si la reversa estuvo mal, registrá el movimiento de nuevo.',
+        );
+      }
+      if (original.reversado_por !== null) {
+        throw new BadRequestException('Este movimiento ya se reversó.');
+      }
+      if (original.origen_tipo !== null) {
+        throw new BadRequestException(
+          original.origen_tipo === 'FACTURA_VENTA'
+            ? 'Es el cobro de una factura: se corrige devolviendo el cobro desde la factura.'
+            : 'Es el pago de una compra: se corrige con la devolución del pago desde la compra.',
+        );
+      }
+      if (original.es_ajuste_arqueo) {
+        throw new BadRequestException(
+          'Es el ajuste de un arqueo: se corrige con otro arqueo, no borrando la diferencia.',
+        );
+      }
+
+      const lineas = await this.contabilidad.lineasInvertidasDe(
+        ctx,
+        original.asiento_id!,
+        t,
+      );
+      if (lineas === null) {
+        throw new BadRequestException(
+          'El asiento de este movimiento está anulado: no hay nada que reversar en la contabilidad.',
+        );
+      }
+
+      const tipo = original.tipo === 'INGRESO' ? 'EGRESO' : 'INGRESO';
+      const valor = Number(original.valor);
+      const actual = (await this.ultimoMovimiento(cajaId, t))?.saldo ?? 0;
+      let nuevoSaldo: number;
+      if (tipo === 'INGRESO') {
+        nuevoSaldo = calcularIngreso(actual, valor);
+      } else {
+        // Reversar un ingreso saca plata: si ya no está en el cajón, no se
+        // puede sacar, y eso es un faltante que se ve en el arqueo.
+        const resultado = calcularEgreso(actual, valor);
+        if (!resultado.ok) {
+          throw new BadRequestException(resultado.motivo);
+        }
+        nuevoSaldo = resultado.saldo;
+      }
+
+      const comprobante = await this.contabilidad.tipoComprobantePorCodigo(
+        ctx,
+        CODIGO_COMPROBANTE[tipo],
+        t,
+      );
+      if (comprobante === null) {
+        throw new BadRequestException(
+          `La empresa no tiene el comprobante de ${tipo === 'INGRESO' ? 'ingreso' : 'egreso'} sembrado.`,
+        );
+      }
+
+      const id = randomUUID();
+      const concepto = `Reversa de: ${original.concepto}`;
+      const asiento = await this.contabilidad.asentar(
+        ctx,
+        {
+          comprobanteTipoId: comprobante.id,
+          fecha: dto.fecha,
+          glosa: `${concepto} — ${dto.motivo}`,
+          lineas,
+        },
+        { origenTipo: 'MOVIMIENTO_CAJA', origenId: id },
+        t,
+      );
+
+      return this.insertarMovimiento(
+        t,
+        ctx,
+        id,
+        cajaId,
+        tipo,
+        dto.fecha,
+        valor,
+        concepto,
+        null,
+        null,
+        original.tercero_id,
+        nuevoSaldo,
+        asiento.id,
+        { de: original.id, motivo: dto.motivo },
+      );
+    });
   }
 
   /** El libro de una caja. Orden de digitación, el más reciente primero. */
@@ -486,13 +634,15 @@ export class CajaMovimientoService {
     terceroId: string | null,
     saldoValor: number,
     asientoId: string | null,
+    reversa: { de: string; motivo: string } | null = null,
   ): Promise<MovimientoCajaResumen> {
     const creado = fila<MovimientoCajaResumen>(
       await t.query(
         `INSERT INTO caja_movimiento
            (id, empresa_id, caja_id, fecha, tipo, valor, concepto, origen_tipo,
-            origen_id, tercero_id, saldo_valor, asiento_id, creado_por)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+            origen_id, tercero_id, saldo_valor, asiento_id, creado_por,
+            reversa_de, motivo_reversa)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
          RETURNING ${CAMPOS}`,
         [
           id,
@@ -508,6 +658,8 @@ export class CajaMovimientoService {
           saldoValor,
           asientoId,
           ctx.usuarioId,
+          reversa?.de ?? null,
+          reversa?.motivo ?? null,
         ],
       ),
     );

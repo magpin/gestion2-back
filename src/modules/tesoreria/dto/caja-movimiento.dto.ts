@@ -51,3 +51,17 @@ export class IngresoCajaDto {
 
 /** Misma forma que el ingreso: fecha, valor, concepto, la cuenta contraria. */
 export class EgresoCajaDto extends IngresoCajaDto {}
+
+/**
+ * Reversar un ingreso o egreso manual mal cargado. El motivo es obligatorio:
+ * queda en el movimiento y en la glosa del asiento, y es lo que explica dentro
+ * de un año por qué la caja tiene dos renglones que se anulan.
+ */
+export class ReversarMovimientoCajaDto {
+  @EsFechaCalendario()
+  fecha!: string;
+
+  @IsString()
+  @Length(3, 300)
+  motivo!: string;
+}

@@ -19,13 +19,14 @@ import {
   EgresoCajaDto,
   IngresoCajaDto,
   ListarMovimientosCajaDto,
+  ReversarMovimientoCajaDto,
 } from '../dto/caja-movimiento.dto';
 import { CajaMovimientoService } from '../servicios/caja-movimiento.service';
 
 /**
  * El libro de una caja. No hay `PATCH` ni `DELETE`: un movimiento no se
- * edita ni se borra — se corrige con el movimiento contrario, mismo
- * criterio que el kardex.
+ * edita ni se borra — se corrige con el movimiento contrario (`reversar`),
+ * mismo criterio que el kardex.
  */
 @Controller('cajas/:id/movimientos')
 @ExigeEmpresa()
@@ -83,5 +84,21 @@ export class CajaMovimientosController {
     @Body() dto: EgresoCajaDto,
   ) {
     return this.movimientos.registrarEgreso(ctx, cajaId, dto);
+  }
+
+  /**
+   * Corrige un ingreso o egreso manual con su movimiento contrario. Es un acto
+   * de corrección, no de caja del día a día —mismo criterio que anular una
+   * factura—: lo hace DIRECTOR o CONTADOR, y queda el motivo.
+   */
+  @Roles('DIRECTOR', 'CONTADOR')
+  @Post(':movimientoId/reversar')
+  reversar(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) cajaId: string,
+    @Param('movimientoId', ParseUUIDPipe) movimientoId: string,
+    @Body() dto: ReversarMovimientoCajaDto,
+  ) {
+    return this.movimientos.reversar(ctx, cajaId, movimientoId, dto);
   }
 }

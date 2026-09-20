@@ -98,6 +98,25 @@ ALTER ROLE gestion_provision WITH LOGIN PASSWORD 'otra-distinta';
 `gestion_provision` tiene `BYPASSRLS` y **solo** se usa para el alta de tenants y
 tareas de administración. Nunca para atender peticiones de usuarios finales.
 
+`scripts/asignar-roles.js` hace las dos cosas —les pone contraseña y las deja en
+`.env`— sin imprimirlas.
+
+## Después de eso: con qué entrar
+
+Las migraciones dejan el esquema y los catálogos normativos, pero ni un solo
+usuario: no hay con qué abrir el sistema. Con la API arriba:
+
+```bash
+node scripts/sembrar.js
+```
+
+Siembra un super administrador de la plataforma, una cuenta con su
+`ADMIN_TENANT`, una empresa recién creada —sin sedes, sin situación legal, sin
+DIAN: la configuración es justamente lo que hay que poder probar a medias— y un
+usuario por cada rol de ámbito `EMPRESA` del catálogo. Las contraseñas se generan
+y se muestran una sola vez. Es para desarrollo: se niega a correr con
+`NODE_ENV=production`.
+
 ## Las tres reglas que sostiene el motor, no el código
 
 **1. Aislamiento por RLS.** Toda tabla con datos de cliente lleva

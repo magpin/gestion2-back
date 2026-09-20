@@ -12,6 +12,7 @@ import { SaludController } from './health/salud.controller';
 import { ComprasModule } from './modules/compras/compras.module';
 import { ContabilidadModule } from './modules/contabilidad/contabilidad.module';
 import { InventarioModule } from './modules/inventario/inventario.module';
+import { LecturaDocumentosModule } from './modules/lectura-documentos/lectura-documentos.module';
 import { NucleoModule } from './modules/nucleo/nucleo.module';
 import { PlataformaModule } from './modules/plataforma/plataforma.module';
 import { TesoreriaModule } from './modules/tesoreria/tesoreria.module';
@@ -46,6 +47,7 @@ import { VentasModule } from './modules/ventas/ventas.module';
     ComprasModule,
     PlataformaModule,
     TesoreriaModule,
+    LecturaDocumentosModule,
   ],
   controllers: [SaludController],
   providers: [

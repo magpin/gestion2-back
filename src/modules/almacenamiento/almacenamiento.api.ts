@@ -9,11 +9,18 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-/** Lo que se acepta subir. Un `.exe` con nombre de foto no entra. */
+/**
+ * Lo que se acepta subir. Un `.exe` con nombre de foto no entra.
+ *
+ * El PDF entró con el modo IA del asistente: un RUT o un certificado de Cámara
+ * de Comercio llega en PDF, y el navegador los sube por el mismo camino firmado
+ * que las fotos del catálogo.
+ */
 const TIPOS = new Map([
   ['image/jpeg', 'jpg'],
   ['image/png', 'png'],
   ['image/webp', 'webp'],
+  ['application/pdf', 'pdf'],
 ]);
 
 /** Cuánto vive una URL firmada. */
@@ -86,7 +93,7 @@ export class AlmacenamientoApi {
     const extension = TIPOS.get(tipoMime);
     if (extension === undefined) {
       throw new BadRequestException(
-        `Ese archivo no es una imagen que se pueda subir (${tipoMime}). Se aceptan JPG, PNG y WebP.`,
+        `Ese archivo no se puede subir (${tipoMime}). Se aceptan JPG, PNG, WebP y PDF.`,
       );
     }
 
@@ -101,6 +108,34 @@ export class AlmacenamientoApi {
       { expiresIn: MINUTOS_SUBIDA * 60 },
     );
     return { url, clave };
+  }
+
+  /**
+   * Baja el objeto al servidor.
+   *
+   * Es la excepción a «el archivo no pasa por la API», y tiene un solo uso: el
+   * modo IA del asistente necesita el contenido para mandárselo al modelo. Lo
+   * baja **una vez** por documento, y con la llave que guardó la fila, no con
+   * una que venga de afuera.
+   */
+  async descargar(clave: string): Promise<{
+    contenido: Buffer;
+    tipoMime: string;
+  }> {
+    const objeto = await this.interno.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: clave }),
+    );
+
+    if (objeto.Body === undefined) {
+      throw new BadRequestException(`El archivo ${clave} ya no está.`);
+    }
+
+    return {
+      contenido: Buffer.from(await objeto.Body.transformToByteArray()),
+      // Lo que el bucket registró al recibirlo. La extensión de la llave no
+      // decide: la puso el servidor, pero el contenido lo puso el navegador.
+      tipoMime: objeto.ContentType ?? 'application/octet-stream',
+    };
   }
 
   /** La URL con la que el navegador ve el archivo. Caduca: no es un enlace público. */

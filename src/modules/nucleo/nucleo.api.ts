@@ -8,7 +8,17 @@ import type {
   TipoRegimen,
 } from '../../common/ctx';
 import type { Tx } from '../../common/db/tx.service';
+import type { EditarEmpresaDto } from './dto/empresa.dto';
+import type {
+  AbrirActividadDto,
+  AbrirMatriculaDto,
+  AbrirRegimenDto,
+  AbrirRepresentanteDto,
+  AbrirResponsabilidadRutDto,
+} from './dto/empresa-legal.dto';
+import type { CrearResolucionDto } from './dto/resolucion.dto';
 import { AutenticacionService } from './servicios/autenticacion.service';
+import { EmpresaService } from './servicios/empresa.service';
 import { EmpresaLegalService } from './servicios/empresa-legal.service';
 import { EstadoConfiguracionService } from './servicios/estado-configuracion.service';
 import type { EstadoConfiguracion } from './servicios/estado-configuracion.reglas';
@@ -40,6 +50,7 @@ import {
 export class NucleoApi {
   constructor(
     private readonly auth: AutenticacionService,
+    private readonly empresas: EmpresaService,
     private readonly legal: EmpresaLegalService,
     private readonly estadoConfig: EstadoConfiguracionService,
     private readonly plan: PlanCuentasService,
@@ -159,5 +170,83 @@ export class NucleoApi {
     tx?: Tx,
   ): Promise<TerceroResumen | null> {
     return this.terceros.buscarTercero(ctx, id, tx);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Lo que aplica el asistente cuando una persona confirma
+  // ---------------------------------------------------------------------------
+  //
+  // Son las mismas operaciones que hacen los endpoints manuales de configuración,
+  // con los mismos DTO y las mismas validaciones. Están acá —y no importando los
+  // servicios desde `lectura-documentos`— porque la regla del módulo no cambia
+  // por tener un modo nuevo: afuera sale `NucleoApi` y nada más.
+  //
+  // Que sean estos métodos y no un camino propio es lo que hace que no haya dos
+  // verdades sobre cuándo un paso de la configuración está completo.
+
+  /** Paso 1: razón social y nombre comercial. */
+  async editarEmpresa(
+    ctx: CtxEmpresa,
+    dto: EditarEmpresaDto,
+  ): Promise<unknown> {
+    return this.empresas.editar(ctx, ctx.empresaId, dto);
+  }
+
+  /** Paso 2: la sede principal, exista o no todavía. */
+  async fijarSedePrincipal(
+    ctx: CtxEmpresa,
+    dto: {
+      direccion: string;
+      municipioCodigo: string;
+      telefono?: string;
+      email?: string;
+    },
+  ): Promise<unknown> {
+    return this.empresas.fijarSedePrincipal(ctx, dto);
+  }
+
+  /** Paso 3: la actividad económica, con su vigencia. */
+  async abrirActividad(
+    ctx: CtxEmpresa,
+    dto: AbrirActividadDto,
+  ): Promise<unknown> {
+    return this.legal.abrirActividad(ctx, dto);
+  }
+
+  /** Paso 3: una responsabilidad de la casilla 53 del RUT. */
+  async abrirResponsabilidadRut(
+    ctx: CtxEmpresa,
+    dto: AbrirResponsabilidadRutDto,
+  ): Promise<unknown> {
+    return this.legal.abrirResponsabilidadRut(ctx, dto);
+  }
+
+  /** Paso 3: una condición tributaria, con su vigencia. */
+  async abrirRegimen(ctx: CtxEmpresa, dto: AbrirRegimenDto): Promise<unknown> {
+    return this.legal.abrirRegimen(ctx, dto);
+  }
+
+  /** Paso 3: el representante legal. */
+  async abrirRepresentante(
+    ctx: CtxEmpresa,
+    dto: AbrirRepresentanteDto,
+  ): Promise<unknown> {
+    return this.legal.abrirRepresentante(ctx, dto);
+  }
+
+  /** Paso 3: la matrícula mercantil. */
+  async abrirMatricula(
+    ctx: CtxEmpresa,
+    dto: AbrirMatriculaDto,
+  ): Promise<unknown> {
+    return this.legal.abrirMatricula(ctx, dto);
+  }
+
+  /** Paso 5: una resolución de facturación de la DIAN. */
+  async crearResolucion(
+    ctx: CtxEmpresa,
+    dto: CrearResolucionDto,
+  ): Promise<unknown> {
+    return this.resoluciones.crear(ctx, dto);
   }
 }

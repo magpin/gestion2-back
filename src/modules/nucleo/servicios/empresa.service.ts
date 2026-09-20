@@ -281,6 +281,43 @@ export class EmpresaService {
     });
   }
 
+  /**
+   * Deja la sede principal con estos datos, exista o no todavía.
+   *
+   * Nace con el modo IA del asistente: del RUT salen dirección, municipio,
+   * teléfono y correo, pero no si la empresa ya tiene una sede cargada. Decidir
+   * eso es de acá —las sedes son de este servicio— y no de quien trae los datos.
+   *
+   * La primera sede queda como `001 · Principal`. El nombre y el código se
+   * cambian después desde la pantalla; lo que no se puede es no tener ninguno.
+   */
+  async fijarSedePrincipal(
+    ctx: CtxEmpresa,
+    dto: {
+      direccion: string;
+      municipioCodigo: string;
+      telefono?: string;
+      email?: string;
+    },
+  ): Promise<Record<string, unknown>> {
+    const sedes = await this.listarSedes(ctx);
+    const principal = sedes.find((s) => s.es_principal === true) ?? sedes[0];
+
+    if (principal === undefined) {
+      return this.crearSede(ctx, {
+        codigo: '001',
+        nombre: 'Principal',
+        esPrincipal: true,
+        ...dto,
+      });
+    }
+
+    return this.editarSede(ctx, principal.id as string, {
+      ...dto,
+      esPrincipal: true,
+    });
+  }
+
   /** Una sede no se borra: se desactiva. Puede tener documentos emitidos colgando. */
   async desactivarSede(ctx: CtxEmpresa, id: string): Promise<void> {
     await this.tx.enContexto(ctx, async (t) => {

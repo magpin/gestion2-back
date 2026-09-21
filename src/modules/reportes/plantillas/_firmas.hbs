@@ -1,0 +1,22 @@
+{{!--
+  Elaboró / Revisó.
+
+  Es práctica contable colombiana y la razón por la que estos reportes existen
+  en papel: alguien los firma y los entrega.
+
+  **«Elaboró» lleva nombre y «Revisó» va en blanco**, y no es una omisión. El
+  sistema sabe quién generó la hoja —es quien apretó el botón—; no sabe quién
+  la revisó. Imprimir ahí un nombre sería el sistema afirmando algo que no le
+  consta, en un documento que se firma.
+--}}
+<section class="firmas junto">
+  <div class="campo">
+    <div class="raya"></div>
+    <div class="rotulo">Elaboró</div>
+    {{#if elaboro}}<div class="nombre">{{elaboro}}</div>{{/if}}
+  </div>
+  <div class="campo">
+    <div class="raya"></div>
+    <div class="rotulo">Revisó</div>
+  </div>
+</section>

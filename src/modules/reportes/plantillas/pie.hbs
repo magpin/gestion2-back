@@ -1,0 +1,45 @@
+{{!--
+  El pie, que Gotenberg imprime en **todas** las páginas.
+
+  Va como `footer.html` en el `multipart` y no dentro del cuerpo, porque es el
+  único lugar donde `pageNumber` y `totalPages` significan algo: el HTML no sabe
+  dónde va a cortar Chromium las hojas.
+
+  Tres reglas de Chromium que no se pueden saltar acá:
+
+  - Los estilos van **en línea o en un `<style>` propio**: este HTML se rinde
+    aparte del cuerpo y no ve su CSS ni sus `@font-face`.
+  - **El pie sale en la fuente del contenedor —Noto Sans— y no hay forma de
+    cambiarlo.** Comprobado el 21 de septiembre de dos maneras: referenciando
+    el `.woff2` por nombre de archivo, como hace el cuerpo, y empotrándolo en
+    base64 dentro de este mismo HTML. En los dos casos el PDF salió con
+    `NotoSans-Regular`. Chromium rinde el encabezado y el pie en un contexto
+    aislado que no carga fuentes. Es la letra más chica de la hoja, a 7,5 px y
+    en gris, y Noto Sans es una grotesca neutra: se nota poco. Pero conviene
+    saberlo antes de perder una tarde peleándolo.
+  - El tamaño de letra **por defecto es minúsculo**; hay que fijarlo.
+  - El pie vive dentro del margen inferior de la `@page`, así que si el margen
+    es chico no se ve. Con 0,46 in del diseño entra.
+
+  La fecha de generación no es un adorno: dice desde cuándo los números de la
+  hoja pueden estar viejos.
+--}}
+<html>
+  <head>
+    <style>
+      body {
+        margin: 0 {{margenLateral}};
+        width: 100%;
+        font-family: sans-serif;
+        font-size: 7.5px;
+        color: #6b6b6b;
+        display: flex;
+        justify-content: space-between;
+      }
+    </style>
+  </head>
+  <body>
+    <span>{{pie.izquierda}}</span>
+    <span>Página <span class="pageNumber"></span> de <span class="totalPages"></span></span>
+  </body>
+</html>

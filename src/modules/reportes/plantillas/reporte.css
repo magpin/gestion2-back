@@ -1,0 +1,225 @@
+/*
+ * Los tokens del reporte impreso. Contraparte en papel de
+ * `docs/identidad-visual/reglamento-color.md`, que es el que manda.
+ *
+ * Tres diferencias con la pantalla, y las tres por el papel:
+ *
+ * 1. **No hay modo oscuro.** Una hoja es blanca. Los roles existen igual, pero
+ *    con un solo valor.
+ * 2. **Tiene que leerse fotocopiado en gris.** Por eso los tramos de una
+ *    gráfica son grises que se distinguen por luminosidad y no por matiz, y el
+ *    naranja aparece solo donde importa que salte.
+ * 3. **El tamaño de hoja vive acá**, en la regla `@page` de cada plantilla, y
+ *    no en los parámetros de Gotenberg: el CSS les gana y, cuando les gana, los
+ *    ignora en silencio. Tenerlo en un solo lado es además lo que hace que la
+ *    vista previa en pantalla imprima igual que el PDF.
+ */
+
+:root {
+  /* La escala neutra, los mismos doce pasos del reglamento. */
+  --n-0: #ffffff;
+  --n-50: #f5f5f5;
+  --n-100: #ededed;
+  --n-200: #dedede;
+  --n-300: #b8b8b8;
+  --n-500: #6b6b6b;
+  --n-700: #333333;
+  --n-900: #171717;
+
+  /* El acento. En papel es siempre el tono profundo para texto y el base para
+     relleno: la regla de contraste sobre fondo claro no cambia por imprimirse. */
+  --marca: #f25623;
+  --marca-texto: #c0421a;
+
+  --exito: #2e7d46;
+  --peligro: #c62828;
+  --aviso: #b26a00;
+
+  --texto: var(--n-900);
+  --texto-apagado: var(--n-500);
+  --borde: var(--n-200);
+  --borde-fuerte: var(--n-700);
+}
+
+/* ── Las fuentes ────────────────────────────────────────────────────────────
+ * Van como archivos en el mismo `multipart`, así que se referencian por nombre
+ * y sin ruta. **No se piden a Google Fonts**: el contenedor de Gotenberg puede
+ * no tener salida a internet, y entonces el PDF sale con otra tipografía y no
+ * falla — solo sale feo, que es peor porque nadie se entera.
+ */
+@font-face {
+  font-family: 'Inter';
+  font-weight: 400;
+  src: url('inter-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-weight: 600;
+  src: url('inter-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Inter';
+  font-weight: 700;
+  src: url('inter-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-weight: 400;
+  src: url('mono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-weight: 500;
+  src: url('mono-500.woff2') format('woff2');
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--texto);
+  /* Chromium no imprime los fondos si no se le dice, y las cabeceras oscuras
+     de las tablas son fondo. */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* Las cifras, los códigos de cuenta y los números de documento. Es lo que hace
+   que una columna de plata se lea alineada: en una tipografía proporcional el
+   1 es más angosto que el 8 y los miles dejan de coincidir. */
+.cifra,
+.mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Membrete ─────────────────────────────────────────────────────────────── */
+
+.membrete {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--borde-fuerte);
+}
+
+.membrete .empresa {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.membrete .identificacion,
+.membrete .pagina {
+  font-size: 9px;
+  color: var(--texto-apagado);
+}
+
+.membrete .pagina {
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* En las hojas que siguen a la primera, una sola línea: quien las tiene en la
+   mano ya sabe de qué empresa son y de qué reporte. Repetir el membrete entero
+   gasta el espacio que necesita el detalle. */
+.membrete--continuacion {
+  padding-bottom: 6px;
+  font-size: 9px;
+  color: var(--texto-apagado);
+}
+
+.membrete--continuacion .empresa {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--texto-apagado);
+}
+
+/* ── Título y parámetros ──────────────────────────────────────────────────── */
+
+.titulo {
+  margin: 18px 0 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* Con qué se corrió: el período, y si era relativo o fijo. Va en la hoja porque
+   un reporte impreso se lee meses después, cuando nadie se acuerda de qué se
+   pidió. Sin esto, dos hojas iguales con números distintos no se pueden
+   explicar. */
+.parametros {
+  margin-top: 4px;
+  font-size: 9.5px;
+  color: var(--texto-apagado);
+}
+
+.parametros .separador::before {
+  content: ' · ';
+}
+
+/* ── Pie ──────────────────────────────────────────────────────────────────── */
+
+.pie {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid var(--borde);
+  font-size: 8.5px;
+  color: var(--texto-apagado);
+}
+
+/* ── Firmas ───────────────────────────────────────────────────────────────── */
+
+.firmas {
+  display: flex;
+  gap: 48px;
+  margin-top: 34px;
+}
+
+.firmas .campo {
+  flex: 1;
+  max-width: 230px;
+}
+
+/* La raya sobre la que se firma. Va arriba del rótulo, como en cualquier
+   formato que se firma a mano. */
+.firmas .raya {
+  height: 30px;
+  border-bottom: 1px solid var(--borde-fuerte);
+}
+
+.firmas .rotulo {
+  margin-top: 4px;
+  font-size: 8.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--texto-apagado);
+}
+
+.firmas .nombre {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* ── Utilidades ───────────────────────────────────────────────────────────── */
+
+.derecha {
+  text-align: right;
+}
+
+.atencion {
+  color: var(--marca-texto);
+}
+
+/* Que un grupo no quede partido entre dos hojas con su subtotal del otro lado:
+   un subtotal huérfano en el borde superior de una página no se entiende. */
+.junto {
+  break-inside: avoid;
+}

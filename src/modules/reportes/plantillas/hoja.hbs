@@ -1,0 +1,36 @@
+{{!--
+  La hoja: lo que todos los reportes comparten.
+
+  El tamaño y los márgenes se escriben acá, en la regla `@page`, y **no se
+  mandan como parámetros a Gotenberg**: el CSS les gana y, cuando les gana, los
+  ignora sin decir nada. Pedir una hoja horizontal por parámetro con un `@page`
+  vertical en el CSS devuelve una hoja vertical y ningún error.
+
+  Tenerlo en un solo lado es además lo que hace que la vista previa en pantalla
+  imprima igual que el PDF.
+--}}
+<!doctype html>
+<html lang="es-CO">
+  <head>
+    <meta charset="utf-8">
+    <title>{{titulo}}</title>
+    <style>
+      @page { size: {{tamanoHoja}}; margin: {{margenHoja}}; }
+      {{{css}}}
+    </style>
+  </head>
+  <body>
+    {{> membrete}}
+
+    <h1 class="titulo">{{titulo}}</h1>
+    {{#if parametros.length}}
+      <p class="parametros">
+        {{#each parametros}}<span class="{{#unless @first}}separador{{/unless}}">{{this}}</span>{{/each}}
+      </p>
+    {{/if}}
+
+    {{{cuerpo}}}
+
+    {{#if conFirmas}}{{> firmas}}{{/if}}
+  </body>
+</html>

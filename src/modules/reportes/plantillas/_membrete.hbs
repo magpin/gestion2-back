@@ -1,0 +1,25 @@
+{{!--
+  El membrete: de quién es la hoja.
+
+  Razón social, NIT con su dígito de verificación y la ciudad de la sede
+  principal. Nada de eso es decoración en un documento contable: es lo que
+  permite que alguien que recibe una hoja suelta sepa de qué empresa habla.
+
+  **No lleva «Página n de N».** Eso no lo puede saber el HTML —no sabe dónde va
+  a cortar Chromium— y va en `pie.hbs`, que Gotenberg imprime en todas las
+  páginas con la numeración de verdad.
+
+  El logo es opcional y hoy **nunca llega**: `empresa` no tiene columna de logo.
+  El hueco queda puesto para el día que la tenga; mientras tanto el membrete se
+  apoya en la razón social, que es lo que identifica legalmente a una empresa.
+  Ver `planes/reportes.md`.
+--}}
+<header class="membrete">
+  <div>
+    {{#if logo}}<img class="logo" src="{{logo}}" height="28" alt="">{{/if}}
+    <div class="empresa">{{empresa.razonSocial}}</div>
+    <div class="identificacion">
+      NIT {{empresa.nit}}{{#if empresa.dv}}-{{empresa.dv}}{{/if}}{{#if empresa.ciudad}} · {{empresa.ciudad}}{{/if}}
+    </div>
+  </div>
+</header>

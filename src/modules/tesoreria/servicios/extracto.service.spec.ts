@@ -245,6 +245,7 @@ function txConciliacion(datos: {
     valor: string;
     tipo: 'DEBITO' | 'CREDITO';
     suelta?: boolean;
+    nota?: string | null;
   }>;
   movimientos: Array<{
     id: string;
@@ -269,6 +270,7 @@ function txConciliacion(datos: {
           .map((l) => ({
             fecha: '2026-09-10',
             referencia: null,
+            nota: null,
             ...l,
             suelta: l.suelta ?? true,
           }));
@@ -384,6 +386,33 @@ describe('ExtractoService.conciliar', () => {
         ],
       }),
     ).rejects.toThrow(/ya está cruzada/);
+  });
+
+  it('rechaza una línea anotada como error del banco: primero se quita la nota', async () => {
+    const { tx, escrituras } = txConciliacion({
+      lineas: [
+        {
+          id: 'l-1',
+          valor: '100000',
+          tipo: 'CREDITO',
+          nota: 'Cobró dos veces',
+        },
+      ],
+      movimientos: [{ id: 'm-1', valor: '100000', tipo: 'CONSIGNACION' }],
+    });
+
+    await expect(
+      servicio(tx).conciliar(ctx, 'ext-1', {
+        grupos: [
+          {
+            lineaIds: ['l-1'],
+            movimientoIds: ['m-1'],
+            criterio: 'MISMA_FECHA',
+          },
+        ],
+      }),
+    ).rejects.toThrow(/anotada como error del banco/);
+    expect(escrituras).toEqual([]);
   });
 
   it('rechaza la misma línea en dos cruces del mismo pedido', async () => {

@@ -385,7 +385,9 @@ export class ExtractoService {
           `SELECT el.id, el.fecha::text AS fecha, el.valor, el.tipo,
                   el.descripcion, el.referencia
              FROM extracto_linea el
-            WHERE el.extracto_id = $1 AND ${LINEA_SUELTA}
+            -- Una línea anotada como error del banco ya está explicada: no
+            -- se propone ni la reconoce una regla. Se le reclama al banco.
+            WHERE el.extracto_id = $1 AND ${LINEA_SUELTA} AND el.nota IS NULL
             ORDER BY el.fecha, el.fila_archivo NULLS LAST, el.id`,
           [extractoId],
         ),
@@ -718,7 +720,9 @@ export class ExtractoService {
   ): Promise<void> {
     await this.tx.enContexto(ctx, async (t) => {
       await this.exigirExtractoAbierto(extractoId, t);
-      await this.lineasSueltas(extractoId, [lineaId], t);
+      await this.lineasSueltas(extractoId, [lineaId], t, {
+        aceptarAnotadas: true,
+      });
       await t.query(`UPDATE extracto_linea SET nota = $2 WHERE id = $1`, [
         lineaId,
         dto.nota === null ? null : dto.nota.trim(),
@@ -880,10 +884,17 @@ export class ExtractoService {
   }
 
   /** Las líneas pedidas, exigiendo que sean de este extracto y estén sueltas. */
+  /**
+   * Las líneas pedidas, si son de este extracto y están sueltas. Una línea
+   * anotada como error del banco tampoco se cruza ni se registra: se le
+   * reclama al banco, y cruzarla la dejaría cruzada y diciendo «error del
+   * banco». Solo `anotarLinea` la acepta, para poder quitarle la nota.
+   */
   private async lineasSueltas(
     extractoId: string,
     ids: readonly string[],
     t: Tx,
+    { aceptarAnotadas = false }: { aceptarAnotadas?: boolean } = {},
   ) {
     const lineas = filas<{
       id: string;
@@ -891,11 +902,12 @@ export class ExtractoService {
       valor: string;
       tipo: 'DEBITO' | 'CREDITO';
       referencia: string | null;
+      nota: string | null;
       suelta: boolean;
     }>(
       await t.query(
         `SELECT el.id, el.fecha::text AS fecha, el.valor, el.tipo, el.referencia,
-                ${LINEA_SUELTA} AS suelta
+                el.nota, ${LINEA_SUELTA} AS suelta
            FROM extracto_linea el
           WHERE el.extracto_id = $1 AND el.id = ANY($2::uuid[])
           ORDER BY el.fecha, el.fila_archivo NULLS LAST, el.id`,
@@ -908,6 +920,11 @@ export class ExtractoService {
     if (lineas.some((l) => !l.suelta)) {
       throw new BadRequestException(
         'Alguna línea ya está cruzada. Deshaz ese cruce primero.',
+      );
+    }
+    if (!aceptarAnotadas && lineas.some((l) => l.nota !== null)) {
+      throw new BadRequestException(
+        'Alguna línea está anotada como error del banco. Quítale la nota primero.',
       );
     }
     return lineas.map((l) => ({ ...l, valor: Number(l.valor) }));

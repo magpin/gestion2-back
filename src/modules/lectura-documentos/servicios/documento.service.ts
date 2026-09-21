@@ -114,12 +114,6 @@ export class DocumentoService {
     });
   }
 
-  /** Todo lo leído de la empresa, con su fuente. Alimenta `GET /extraido`. */
-  async extraido(ctx: CtxEmpresa): Promise<DatoExtraido[]> {
-    const documentos = await this.listar(ctx);
-    return documentos.flatMap((d) => d.datos);
-  }
-
   async marcarLeyendo(ctx: CtxEmpresa, id: string): Promise<void> {
     await this.tx.enContexto(ctx, (t) =>
       t.query(

@@ -85,12 +85,12 @@ export class DocumentosController {
     return this.documentos.listar(ctx);
   }
 
-  /** Todo lo leído hasta ahora, con su fuente. Sin aplicar. */
-  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR', 'CONSULTA')
-  @Get('extraido')
-  extraido(@ActorEmpresa() ctx: CtxEmpresa) {
-    return this.documentos.extraido(ctx);
-  }
+  // Acá estaba `GET extraido`: todo lo leído de la empresa, en una sola lista.
+  // Se borró el 20 de septiembre, al cerrar el modo IA, porque nunca tuvo
+  // consumidor y no podía tenerlo: devolvía los datos **sueltos, sin el id del
+  // documento**, y confirmar necesita ese id. `GET documentos` da las dos
+  // cosas, así que lo que hacía este era `listar()` aplanado — tres líneas que
+  // duplicaban una consulta y perdían la mitad de lo que hace falta.
 
   /**
    * «Detener» del §7.7: corta la llamada en curso. Si ya había terminado no hay

@@ -18,7 +18,8 @@ import type {
 } from './extractor.puerto';
 
 /**
- * El único archivo del proyecto que importa el SDK de Anthropic.
+ * El único archivo del módulo `lectura-documentos` que importa el SDK de
+ * Anthropic (`conversacion` tiene el suyo, `claude.conversador.ts`).
  *
  * Todo lo que sabe de modelos, tokens y esquemas de salida vive acá; lo que sale
  * de este archivo son `DatoExtraido` y motivos en castellano. Eso es lo que hace

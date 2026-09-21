@@ -18,21 +18,6 @@ import type { DatoExtraido } from '../proveedores/extractor.puerto';
  *    número de documento no es medio representante: es una pregunta.
  */
 
-/** Los regímenes que un RUT puede declarar, tal como los nombra el sistema. */
-const REGIMENES: readonly TipoRegimen[] = [
-  'RESPONSABLE_IVA',
-  'NO_RESPONSABLE_IVA',
-  'RESPONSABLE_INC',
-  'AGENTE_RETENEDOR_RENTA',
-  'AGENTE_RETENEDOR_IVA',
-  'AGENTE_RETENEDOR_ICA',
-  'AUTORRETENEDOR_RENTA',
-  'GRAN_CONTRIBUYENTE',
-  'REGIMEN_SIMPLE',
-  'REGIMEN_ORDINARIO',
-  'ENTIDAD_SIN_ANIMO_DE_LUCRO',
-  'EXENTO_RENTA',
-];
 
 /** Los tipos de documento que la DIAN numera por resolución. */
 const TIPOS_FISCALES: readonly TipoDocumentoFiscal[] = [
@@ -71,11 +56,6 @@ export type Accion =
       tipo: 'RESPONSABILIDADES_RUT';
       campos: string[];
       dto: { codigos: number[]; fechaInicio: string };
-    }
-  | {
-      tipo: 'REGIMEN';
-      campos: string[];
-      dto: { tipoRegimen: TipoRegimen; fechaInicio: string };
     }
   | {
       tipo: 'REPRESENTANTE';
@@ -249,19 +229,9 @@ export function planear(
     }
   }
 
-  const regimen = tomar('tipoRegimen');
-  if (regimen !== undefined) {
-    const valor = texto(regimen);
-    if (valor !== undefined && (REGIMENES as string[]).includes(valor)) {
-      acciones.push({
-        tipo: 'REGIMEN',
-        campos: ['tipoRegimen'],
-        dto: { tipoRegimen: valor as TipoRegimen, fechaInicio: hoy },
-      });
-    } else {
-      sinAplicar.push(renglon(regimen, 'No reconozco ese régimen tributario.'));
-    }
-  }
+  // El régimen no se planea acá: lo abre `abrirResponsabilidadRut` al aplicar
+  // los códigos de la casilla 53, derivándolo de cada uno. Ver el comentario de
+  // `tipoRegimen` en `documento.reglas.ts`.
 
   const camposRepresentante = presentes(valores, [
     'representanteNombre',

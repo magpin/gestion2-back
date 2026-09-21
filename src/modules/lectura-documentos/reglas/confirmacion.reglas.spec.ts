@@ -167,22 +167,16 @@ describe('planear', () => {
   });
 
   describe('el régimen', () => {
-    it('acepta uno del sistema', () => {
-      const { acciones } = planearCon([dato('tipoRegimen', 'RESPONSABLE_IVA')]);
-
-      expect(accion(acciones, 'REGIMEN')?.dto).toEqual({
-        tipoRegimen: 'RESPONSABLE_IVA',
-        fechaInicio: HOY,
-      });
-    });
-
-    it('no inventa uno que no existe', () => {
+    // No se lee: se deriva de los códigos de la casilla 53 al aplicarlos, en
+    // `abrirResponsabilidadRut`. Si alguien vuelve a poner `tipoRegimen` en el
+    // catálogo, esto lo avisa antes de que aparezca el renglón falso.
+    it('no se planea desde un campo leído, ni aunque llegue uno válido', () => {
       const { acciones, sinAplicar } = planearCon([
-        dato('tipoRegimen', 'REGIMEN_ESPECIAL_DE_PRUEBA'),
+        dato('tipoRegimen', 'RESPONSABLE_IVA'),
       ]);
 
       expect(acciones).toEqual([]);
-      expect(motivoDe(sinAplicar, 'tipoRegimen')).toContain('No reconozco');
+      expect(sinAplicar).toEqual([]);
     });
   });
 
@@ -305,15 +299,15 @@ describe('planear', () => {
       dato('municipioCodigo', '11001'),
       dato('codigoCiiu', '4711'),
       dato('responsabilidadesRut', [5, 48]),
-      dato('tipoRegimen', 'RESPONSABLE_IVA'),
     ]);
 
+    // Cuatro, y el régimen no es una quinta: sale de los códigos 5 y 48 al
+    // aplicarlos, sin campo propio y sin renglón propio.
     expect(acciones.map((a) => a.tipo)).toEqual([
       'EDITAR_EMPRESA',
       'SEDE_PRINCIPAL',
       'ACTIVIDAD',
       'RESPONSABILIDADES_RUT',
-      'REGIMEN',
     ]);
     expect(sinAplicar).toEqual([]);
   });

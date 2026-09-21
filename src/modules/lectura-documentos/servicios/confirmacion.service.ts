@@ -108,10 +108,6 @@ export class ConfirmacionService {
         }
         return;
 
-      case 'REGIMEN':
-        await this.nucleo.abrirRegimen(ctx, accion.dto);
-        return;
-
       case 'REPRESENTANTE':
         await this.nucleo.abrirRepresentante(ctx, accion.dto);
         return;

@@ -142,8 +142,8 @@ describe('validar', () => {
   it('el recorte no parte una palabra por la mitad', () => {
     const { datos } = validar(
       crudo({
-        campo: 'representanteNombre',
-        valor: 'María Fernanda Gómez',
+        campo: 'razonSocial',
+        valor: 'Tecnodigital SAS',
         confianza: 'ALTA',
         casilla: 'Representante legal y suplentes',
       }),

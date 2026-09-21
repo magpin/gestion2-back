@@ -85,20 +85,40 @@ export const CAMPOS: Record<string, DefinicionCampo> = {
     etiqueta: 'Responsabilidades del RUT',
     documentos: ['RUT'],
   },
-  tipoRegimen: {
-    paso: 'SITUACION_LEGAL',
-    etiqueta: 'Régimen tributario',
-    documentos: ['RUT'],
-  },
+  // `tipoRegimen` no está, y su ausencia es la regla más importante de acá: el
+  // régimen **se deriva** de los códigos de la casilla 53, no se lee. Lo dice
+  // `responsabilidades-rut.ts`: «una sola se captura: se carga el RUT, y la
+  // condición se deriva. Pedir las dos era pedir dos veces el mismo dato y
+  // dejar abierta la puerta a que se contradigan».
+  //
+  // Estuvo en esta lista y no servía para nada: el formulario 001 no tiene una
+  // casilla de régimen, así que el modelo lo sacaba de la 53 —la misma de la
+  // que sale `responsabilidadesRut`— y devolvía la frase impresa, que nunca
+  // coincide con ningún código del enum. Cada lectura terminaba con un renglón
+  // «No reconozco ese régimen tributario» para algo que ya había quedado bien
+  // puesto. Declararlo a mano sigue existiendo: es `POST empresas/actual/regimenes`.
+
   // El representante legal viaja en cuatro campos sueltos y no en un objeto: la
   // tarjeta «Esto encontré» es una lista de `campo · valor · fuente`, y un dato
   // anidado no tiene cómo mostrarse ahí. También hace que todo valor sea un
   // escalar o una lista de escalares, que es lo que el esquema de la llamada
   // puede exigir de verdad.
+  // Solo desde la Cámara: la hoja que se entrega de un RUT es el formulario 001,
+  // y ahí **no hay representante legal**. Las casillas 31 a 34 son los nombres
+  // del contribuyente —de él mismo, cuando es persona natural— y las 984 y 985
+  // son el funcionario que firma, bajo el rótulo «Para uso exclusivo de la
+  // DIAN». La representación vive en la hoja 2, que no siempre viaja con la 1.
+  //
+  // Esto estaba en `['CAMARA_COMERCIO', 'RUT']` mientras el tipo y el número de
+  // documento seguían siendo solo de la Cámara, y como los tres se aplican
+  // juntos o no se aplica ninguno, un representante leído de un RUT no se podía
+  // guardar nunca. Leer un nombre que después no se puede guardar es peor que
+  // no leerlo. Y para esto está el otro documento: un certificado de existencia
+  // y representación legal es, literalmente, el que lo certifica.
   representanteNombre: {
     paso: 'SITUACION_LEGAL',
     etiqueta: 'Representante legal',
-    documentos: ['CAMARA_COMERCIO', 'RUT'],
+    documentos: ['CAMARA_COMERCIO'],
   },
   representanteTipoDocumento: {
     paso: 'SITUACION_LEGAL',

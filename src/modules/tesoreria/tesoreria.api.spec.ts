@@ -89,7 +89,7 @@ describe('TesoreriaApi.registrarCobro', () => {
   it('con medio CAJA, delega en CajaMovimientoService como INGRESO/FACTURA_VENTA', async () => {
     const { fake: caja, registrarMovimientoDocumento } = cajaMovimientosFalso();
     const { fake: banco } = bancoMovimientosFalso();
-    const api = new TesoreriaApi(caja, banco);
+    const api = new TesoreriaApi(caja, banco, {} as never, {} as never);
 
     const resultado = await api.registrarCobro(ctx, COBRO_CAJA);
 
@@ -119,7 +119,7 @@ describe('TesoreriaApi.registrarCobro', () => {
       cajaMovimientosFalso();
     const { fake: banco, registrarMovimientoDocumento: bancoRegistrar } =
       bancoMovimientosFalso();
-    const api = new TesoreriaApi(caja, banco);
+    const api = new TesoreriaApi(caja, banco, {} as never, {} as never);
 
     const resultado = await api.registrarCobro(ctx, COBRO_BANCO);
 
@@ -148,7 +148,7 @@ describe('TesoreriaApi.registrarCobro', () => {
   it('reenvía la transacción externa cuando se la pasan', async () => {
     const { fake: caja, registrarMovimientoDocumento } = cajaMovimientosFalso();
     const { fake: banco } = bancoMovimientosFalso();
-    const api = new TesoreriaApi(caja, banco);
+    const api = new TesoreriaApi(caja, banco, {} as never, {} as never);
     const txExterna = {} as never;
 
     await api.registrarCobro(ctx, COBRO_CAJA, txExterna);
@@ -169,7 +169,7 @@ describe('TesoreriaApi.registrarPago', () => {
       asiento_id: 'asiento-2',
     });
     const { fake: banco } = bancoMovimientosFalso();
-    const api = new TesoreriaApi(caja, banco);
+    const api = new TesoreriaApi(caja, banco, {} as never, {} as never);
 
     const resultado = await api.registrarPago(ctx, PAGO_CAJA);
 
@@ -201,7 +201,7 @@ describe('TesoreriaApi.registrarPago', () => {
         id: 'mov-banco-2',
         asiento_id: 'asiento-banco-2',
       });
-    const api = new TesoreriaApi(caja, banco);
+    const api = new TesoreriaApi(caja, banco, {} as never, {} as never);
 
     const resultado = await api.registrarPago(ctx, PAGO_BANCO);
 
@@ -232,7 +232,7 @@ describe('TesoreriaApi.registrarPago', () => {
       asiento_id: null,
     });
     const { fake: banco } = bancoMovimientosFalso();
-    const api = new TesoreriaApi(caja, banco);
+    const api = new TesoreriaApi(caja, banco, {} as never, {} as never);
 
     await expect(api.registrarPago(ctx, PAGO_CAJA)).rejects.toThrow(
       /debería generar siempre un asiento/,

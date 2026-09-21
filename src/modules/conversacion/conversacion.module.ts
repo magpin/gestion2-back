@@ -1,8 +1,13 @@
 import { Module } from '@nestjs/common';
 
+import { InventarioModule } from '../inventario/inventario.module';
+import { ReportesModule } from '../reportes/reportes.module';
+import { TesoreriaModule } from '../tesoreria/tesoreria.module';
+
 import { ConversacionController } from './controladores/conversacion.controller';
 import { ClaudeConversador } from './proveedores/claude.conversador';
 import { CONVERSADOR } from './proveedores/conversador.puerto';
+import { ConsultasService } from './servicios/consultas.service';
 import { ConversacionService } from './servicios/conversacion.service';
 
 /**
@@ -16,13 +21,17 @@ import { ConversacionService } from './servicios/conversacion.service';
  * El adaptador se registra bajo `CONVERSADOR` y no por su clase: el servicio
  * depende de la interfaz.
  *
- * En este paso no ve datos de la empresa ni escribe nada del negocio: solo
- * conversa. Eso llega en los pasos 6 y 7.
+ * Desde el paso 6 **ve** datos de la empresa: consulta el armador de
+ * reportes, los saldos de tesorería y las existencias de inventario, con los
+ * permisos de quien pregunta (`ConsultasService`). Todavía no escribe nada del
+ * negocio: eso es el paso 7 (`docs/planes/asistente-acciones.md`).
  */
 @Module({
+  imports: [ReportesModule, TesoreriaModule, InventarioModule],
   controllers: [ConversacionController],
   providers: [
     ConversacionService,
+    ConsultasService,
     { provide: CONVERSADOR, useClass: ClaudeConversador },
   ],
 })

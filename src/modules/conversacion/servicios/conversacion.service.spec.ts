@@ -8,8 +8,10 @@ import type { CtxEmpresa } from '../../../common/ctx';
 import type { Tx, TxService } from '../../../common/db/tx.service';
 import type {
   ConversadorPuerto,
+  HerramientasDelTurno,
   ResultadoRespuesta,
 } from '../proveedores/conversador.puerto';
+import type { ConsultaHecha, ConsultasService } from './consultas.service';
 import { ConversacionService } from './conversacion.service';
 
 const ana: CtxEmpresa = {
@@ -48,6 +50,15 @@ function baseFalsa() {
   const conversaciones: Conversacion[] = [];
   const turnos: Turno[] = [];
   const consultasConversacion: Array<{ sql: string; params: unknown[] }> = [];
+  const consultas: Array<{
+    empresa_id: string;
+    turno_id: string;
+    orden: number;
+    herramienta: string;
+    entrada: string;
+    filas: number | null;
+    error: string | null;
+  }> = [];
   let fallaAlGuardarAsistente = false;
 
   const query = jest.fn((sql: string, params: unknown[] = []) => {
@@ -114,10 +125,39 @@ function baseFalsa() {
       }
       return [];
     }
+    if (sql.includes('INSERT INTO conversacion_consulta')) {
+      const [empresa_id, turno_id, orden, herramienta, entrada, filas, error] =
+        params as [
+          string,
+          string,
+          number,
+          string,
+          string,
+          number | null,
+          string | null,
+        ];
+      consultas.push({
+        empresa_id,
+        turno_id,
+        orden,
+        herramienta,
+        entrada,
+        filas,
+        error,
+      });
+      return [];
+    }
     if (sql.includes('FROM conversacion_turno')) {
       return turnos
         .filter((t) => t.conversacion_id === params[0])
-        .sort((a, b) => a.orden - b.orden);
+        .sort((a, b) => a.orden - b.orden)
+        .map((t) => {
+          const suyas = consultas
+            .filter((c) => c.turno_id === t.id && c.error === null)
+            .sort((a, b) => a.orden - b.orden)
+            .map((c) => c.herramienta);
+          return { ...t, herramientas: suyas.length === 0 ? null : suyas };
+        });
     }
     if (sql.includes('INSERT INTO conversacion_turno')) {
       const [
@@ -171,6 +211,7 @@ function baseFalsa() {
     conversaciones,
     turnos,
     consultasConversacion,
+    consultas,
     romperGuardado: () => {
       fallaAlGuardarAsistente = true;
     },
@@ -178,12 +219,22 @@ function baseFalsa() {
 }
 
 /** Un conversador de mentira que contesta lo que se le diga y escribe en trozos. */
-function conversadorFalso(resultado: ResultadoRespuesta, disponible = true) {
+function conversadorFalso(
+  resultado: ResultadoRespuesta,
+  disponible = true,
+  consultar: readonly string[] = [],
+) {
   const responder = jest.fn(
     async (e: {
       hilo: unknown[];
       alEscribir?: (t: string) => void;
+      herramientas?: HerramientasDelTurno;
+      alConsultar?: (nombre: string, entrada: unknown) => void;
     }): Promise<ResultadoRespuesta> => {
+      for (const nombre of consultar) {
+        e.alConsultar?.(nombre, { de: nombre });
+        await e.herramientas?.ejecutar(nombre, { de: nombre });
+      }
       if (resultado.estado === 'COMPLETO') {
         for (const trozo of resultado.texto.split(' ')) e.alEscribir?.(trozo);
       }
@@ -203,13 +254,48 @@ const COMPLETO: ResultadoRespuesta = {
   uso: { entrada: 2, salida: 40, cacheEscrito: 100, cacheLeido: 2500 },
 };
 
-function servicio(resultado: ResultadoRespuesta = COMPLETO, disponible = true) {
+/** Las consultas de mentira: registran lo que se pide, y «falla» sale mal. */
+function consultasFalsas() {
+  const paraTurno = jest.fn(() => {
+    const hechas: ConsultaHecha[] = [];
+    const herramientas: HerramientasDelTurno = {
+      definiciones: [],
+      ejecutar: (nombre, entrada) => {
+        const error = nombre === 'falla' ? 'Esa columna no existe.' : null;
+        hechas.push({
+          herramienta: nombre,
+          entrada,
+          filas: error ? null : 3,
+          error,
+        });
+        return Promise.resolve(error ?? '{}');
+      },
+    };
+    return { herramientas, hechas };
+  });
+  return {
+    consultas: { paraTurno } as unknown as ConsultasService,
+    paraTurno,
+  };
+}
+
+function servicio(
+  resultado: ResultadoRespuesta = COMPLETO,
+  disponible = true,
+  consultar: readonly string[] = [],
+) {
   const base = baseFalsa();
-  const { conversador, responder } = conversadorFalso(resultado, disponible);
+  const { conversador, responder } = conversadorFalso(
+    resultado,
+    disponible,
+    consultar,
+  );
+  const { consultas, paraTurno } = consultasFalsas();
   return {
     base,
     responder,
-    servicio: new ConversacionService(base.tx, conversador),
+    paraTurno,
+    servicio: new ConversacionService(base.tx, conversador, consultas),
   };
 }
 
@@ -450,5 +536,67 @@ describe('ConversacionService — la lista y las archivadas', () => {
     await expect(s.una(ana, 'c-no-existe')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+});
+
+describe('ConversacionService — las consultas a los datos (paso 6)', () => {
+  it('las herramientas salen de quien pregunta y llegan al modelo', async () => {
+    const { servicio: s, paraTurno, responder } = servicio();
+    await s.responder(ana, await s.preparar(ana, '¿Cuánto me debe Corona?'));
+    expect(paraTurno).toHaveBeenCalledWith(ana);
+    const pedido = responder.mock.calls[0][0] as { herramientas?: unknown };
+    expect(pedido.herramientas).toBeDefined();
+  });
+
+  it('cada consulta se avisa con la etiqueta de la aplicación, no con el nombre de la herramienta', async () => {
+    const { servicio: s } = servicio(COMPLETO, true, [
+      'buscar_valores',
+      'consultar_cartera',
+    ]);
+    const avisos: string[] = [];
+    await s.responder(ana, await s.preparar(ana, '¿Cuánto me debe Corona?'), {
+      alConsultar: (e) => avisos.push(e),
+    });
+    expect(avisos).toEqual(['Búsqueda', 'Cartera']);
+  });
+
+  it('se guardan con la respuesta, en orden, con lo que falló; las fuentes son las que salieron bien', async () => {
+    const { servicio: s, base } = servicio(COMPLETO, true, [
+      'buscar_valores',
+      'falla',
+      'consultar_cartera',
+      'consultar_cartera',
+    ]);
+    const respuesta = await s.responder(
+      ana,
+      await s.preparar(ana, '¿Cuánto me debe Corona?'),
+    );
+    expect(
+      base.consultas.map((c) => [c.orden, c.herramienta, c.error !== null]),
+    ).toEqual([
+      [1, 'buscar_valores', false],
+      [2, 'falla', true],
+      [3, 'consultar_cartera', false],
+      [4, 'consultar_cartera', false],
+    ]);
+    expect(base.consultas.every((c) => c.turno_id === respuesta.id)).toBe(true);
+    // Sin la búsqueda de nombres y sin repetir.
+    expect(respuesta.fuentes).toEqual(['Cartera']);
+  });
+
+  it('al releer la conversación, cada respuesta trae sus fuentes y las preguntas ninguna', async () => {
+    const { servicio: s } = servicio(COMPLETO, true, ['consultar_saldos']);
+    await s.responder(ana, await s.preparar(ana, '¿Cuánto hay en el banco?'));
+    const { turnos } = await s.vigente(ana);
+    expect(turnos.map((t) => [t.autor, t.fuentes])).toEqual([
+      ['PERSONA', []],
+      ['ASISTENTE', ['Saldos de caja y bancos']],
+    ]);
+  });
+
+  it('sin consultas, la respuesta no tiene fuentes', async () => {
+    const { servicio: s } = servicio();
+    const r = await s.responder(ana, await s.preparar(ana, '¿Cómo pago?'));
+    expect(r.fuentes).toEqual([]);
   });
 });

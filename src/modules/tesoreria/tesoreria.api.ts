@@ -4,6 +4,16 @@ import type { CtxEmpresa } from '../../common/ctx';
 import type { Tx } from '../../common/db/tx.service';
 import { BancoMovimientoService } from './servicios/banco-movimiento.service';
 import { CajaMovimientoService } from './servicios/caja-movimiento.service';
+import { CajaService } from './servicios/caja.service';
+import { CuentaBancariaService } from './servicios/cuenta-bancaria.service';
+
+/** La plata de un medio, hoy. Lo que el asistente contesta a «¿cuánto hay en el banco?». */
+export interface SaldoDeMedio {
+  medio: 'CAJA' | 'BANCO';
+  nombre: string;
+  saldo: string;
+  ultimoMovimiento: string | null;
+}
 
 export interface ResultadoTesoreria {
   movimientoId: string;
@@ -73,7 +83,36 @@ export class TesoreriaApi {
   constructor(
     private readonly cajaMovimientos: CajaMovimientoService,
     private readonly bancoMovimientos: BancoMovimientoService,
+    private readonly cajas: CajaService,
+    private readonly cuentas: CuentaBancariaService,
   ) {}
+
+  /**
+   * El saldo de hoy de cada caja y cuenta bancaria activa. Solo lectura: lo
+   * pide el asistente (paso 6 de `asistente-conversacion.md`), con los
+   * mismos datos que `GET /cajas` y `GET /cuentas-bancarias`. **No mira
+   * roles**: eso lo hace quien llama, igual que el controlador.
+   */
+  async saldos(ctx: CtxEmpresa): Promise<SaldoDeMedio[]> {
+    const [cajas, cuentas] = await Promise.all([
+      this.cajas.listar(ctx),
+      this.cuentas.listar(ctx),
+    ]);
+    return [
+      ...cuentas.map((c) => ({
+        medio: 'BANCO' as const,
+        nombre: `${c.banco} ${c.tipo_cuenta === 'AHORROS' ? 'ahorros' : 'corriente'} ${c.numero_cuenta}`,
+        saldo: c.saldo,
+        ultimoMovimiento: c.ultimo_movimiento,
+      })),
+      ...cajas.map((c) => ({
+        medio: 'CAJA' as const,
+        nombre: c.nombre,
+        saldo: c.saldo,
+        ultimoMovimiento: c.ultimo_movimiento,
+      })),
+    ];
+  }
 
   /**
    * Cobra una factura de venta: débito al medio elegido, crédito a

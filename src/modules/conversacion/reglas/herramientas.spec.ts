@@ -1,10 +1,16 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
 import { ATAJOS } from '../../reportes/reglas/rango';
 import { validar } from '../../reportes/reglas/armador';
 import {
   coincidencias,
   definicionDesde,
   DESDE_SIEMPRE,
+  etiquetaDeConsulta,
   herramientasPara,
+  ROLES_EXISTENCIAS,
+  ROLES_SALDOS,
   origenDeHerramienta,
   resultadoParaModelo,
 } from './herramientas';
@@ -13,23 +19,35 @@ const nombres = (roles: Parameters<typeof herramientasPara>[0]) =>
   herramientasPara(roles).map((h) => h.name);
 
 describe('herramientasPara — el modelo ve lo que el rol puede ver', () => {
-  it('VENTAS: ventas y cartera, y buscar valores; nada de compras ni contabilidad', () => {
+  it('VENTAS: ventas y cartera, saldos y existencias; nada de compras ni contabilidad', () => {
     expect(nombres(['VENTAS'])).toEqual([
       'consultar_ventas',
       'consultar_cartera',
       'buscar_valores',
+      'consultar_saldos',
+      'consultar_existencias',
     ]);
   });
 
-  it('INVENTARIO: solo inventario', () => {
+  it('INVENTARIO: inventario y existencias; ni saldos ni ventas', () => {
     expect(nombres(['INVENTARIO'])).toEqual([
       'consultar_inventario',
       'buscar_valores',
+      'consultar_existencias',
     ]);
   });
 
-  it('CONTADOR: los seis orígenes', () => {
-    expect(nombres(['CONTADOR'])).toHaveLength(7);
+  it('CAJA: cartera, tesorería y saldos; no existencias', () => {
+    expect(nombres(['CAJA'])).toEqual([
+      'consultar_cartera',
+      'consultar_tesoreria',
+      'buscar_valores',
+      'consultar_saldos',
+    ]);
+  });
+
+  it('CONTADOR: los seis orígenes, buscar, saldos y existencias', () => {
+    expect(nombres(['CONTADOR'])).toHaveLength(9);
   });
 
   it('un rol sin orígenes no recibe ninguna herramienta, ni la de buscar', () => {
@@ -143,5 +161,33 @@ describe('coincidencias', () => {
         'papeleria',
       ),
     ).toEqual(['PAPELERÍA CENTRAL S.A.S.']);
+  });
+});
+
+describe('saldos y existencias — los roles son los de sus pantallas', () => {
+  // Si alguien cambia quién ve bancos o productos en la pantalla, el asistente
+  // tiene que cambiar igual. Esto lo recuerda leyendo los controladores.
+  const controlador = (ruta: string) =>
+    readFileSync(join(__dirname, '../../', ruta), 'utf8');
+  const lista = (roles: readonly string[]) =>
+    `@Roles(${roles.map((r) => `'${r}'`).join(', ')})`;
+
+  it.each([
+    ['tesoreria/controladores/cuentas-bancarias.controller.ts', ROLES_SALDOS],
+    ['tesoreria/controladores/cajas.controller.ts', ROLES_SALDOS],
+    ['inventario/controladores/productos.controller.ts', ROLES_EXISTENCIAS],
+  ])('%s', (ruta, roles) => {
+    expect(controlador(ruta)).toContain(lista(roles));
+  });
+});
+
+describe('etiquetaDeConsulta', () => {
+  it('con palabras de la aplicación', () => {
+    expect(etiquetaDeConsulta('consultar_cartera')).toBe('Cartera');
+    expect(etiquetaDeConsulta('consultar_saldos')).toBe(
+      'Saldos de caja y bancos',
+    );
+    expect(etiquetaDeConsulta('consultar_existencias')).toBe('Existencias');
+    expect(etiquetaDeConsulta('otra')).toBe('Consulta');
   });
 });

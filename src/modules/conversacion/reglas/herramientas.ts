@@ -1,4 +1,6 @@
 import type { RolCodigo } from '../../../common/ctx';
+import type { Existencia } from '../../inventario/inventario.api';
+import type { SaldoDeMedio } from '../../tesoreria/tesoreria.api';
 import type { Resultado } from '../../reportes/servicios/armador.service';
 import {
   ORIGENES,
@@ -36,6 +38,39 @@ const COINCIDENCIAS = 20;
 export const DESDE_SIEMPRE = '2000-01-01';
 
 const PREFIJO = 'consultar_';
+
+/**
+ * Las dos consultas que el armador no tiene: la plata de hoy en cada caja y
+ * banco, y lo que queda de un producto. Son fotos del día, no movimientos en un
+ * rango, y por eso no son orígenes del armador.
+ *
+ * **Sus roles son los de las pantallas que muestran lo mismo**, copiados de los
+ * controladores: `GET /cuentas-bancarias` y `GET /cajas` para los saldos,
+ * `GET /productos` para las existencias. Si cambian allá, cambian acá: una
+ * prueba lo recuerda.
+ */
+export const ROLES_SALDOS: readonly RolCodigo[] = [
+  'DIRECTOR',
+  'CONTADOR',
+  'CAJA',
+  'CONSULTA',
+  'VENTAS',
+];
+export const ROLES_EXISTENCIAS: readonly RolCodigo[] = [
+  'DIRECTOR',
+  'CONTADOR',
+  'INVENTARIO',
+  'VENTAS',
+  'COMPRAS',
+  'CONSULTA',
+];
+
+export const SALDOS = 'consultar_saldos';
+export const EXISTENCIAS = 'consultar_existencias';
+export const BUSCAR = 'buscar_valores';
+
+const puede = (roles: readonly RolCodigo[], permitidos: readonly RolCodigo[]) =>
+  roles.some((r) => permitidos.includes(r));
 
 /** Lo que el SDK espera de una herramienta. Sin importar el SDK acá: es un objeto. */
 export interface Herramienta {
@@ -77,10 +112,45 @@ Columnas:
 ${columnas}`;
 }
 
-/** Una herramienta por origen que el rol puede correr, más la de buscar valores. */
+/**
+ * Las herramientas de quien pregunta: una por origen del armador que su rol
+ * puede correr, la de buscar valores si hay alguno, y saldos y existencias si
+ * su rol ve esas pantallas. Un rol que no ve nada no recibe nada.
+ */
 export function herramientasPara(roles: readonly RolCodigo[]): Herramienta[] {
+  const extras: Herramienta[] = [
+    ...(puede(roles, ROLES_SALDOS)
+      ? [
+          {
+            name: SALDOS,
+            description:
+              'Cuánta plata hay hoy en cada cuenta bancaria y cada caja activa, con la fecha de su último movimiento. Es el saldo del día, no un rango de fechas.',
+            input_schema: { type: 'object', properties: {} },
+          },
+        ]
+      : []),
+    ...(puede(roles, ROLES_EXISTENCIAS)
+      ? [
+          {
+            name: EXISTENCIAS,
+            description:
+              'Cuántas unidades quedan hoy de los productos activos que coinciden con la búsqueda (código, código de barras o parte del nombre, sin tildes), con su costo promedio y su valor. Devuelve hasta 20.',
+            input_schema: {
+              type: 'object',
+              properties: {
+                busqueda: {
+                  type: 'string',
+                  description: 'Código o parte del nombre del producto.',
+                },
+              },
+              required: ['busqueda'],
+            },
+          },
+        ]
+      : []),
+  ];
   const origenes = origenesPara(roles);
-  if (origenes.length === 0) return [];
+  if (origenes.length === 0) return extras;
 
   const porOrigen = origenes.map((o): Herramienta => {
     const claves = o.columnas.map((c) => c.clave);
@@ -133,7 +203,7 @@ export function herramientasPara(roles: readonly RolCodigo[]): Herramienta[] {
       .map((c) => `${o.clave}.${c.clave}`),
   );
   const buscar: Herramienta = {
-    name: 'buscar_valores',
+    name: BUSCAR,
     description: `Los valores exactos de una columna de lista, como están escritos en los datos de la empresa. Usala antes de filtrar por un cliente, un proveedor, una cuenta o una categoría: el filtro compara el texto exacto, y «Papelería Central» puede estar escrito «PAPELERIA CENTRAL S.A.S.». Busca sin tildes ni mayúsculas y devuelve hasta ${COINCIDENCIAS}.`,
     input_schema: {
       type: 'object',
@@ -148,7 +218,41 @@ export function herramientasPara(roles: readonly RolCodigo[]): Herramienta[] {
     },
   };
 
-  return [...porOrigen, buscar];
+  return [...porOrigen, buscar, ...extras];
+}
+
+/**
+ * Lo que la pantalla dice mientras se consulta, y lo que queda debajo de la
+ * respuesta como fuente. Con palabras de la aplicación, no con el nombre de la
+ * herramienta.
+ */
+export function etiquetaDeConsulta(nombre: string): string {
+  const origen = origenDeHerramienta(nombre);
+  if (origen !== undefined) return ORIGENES[origen].etiqueta;
+  if (nombre === SALDOS) return 'Saldos de caja y bancos';
+  if (nombre === EXISTENCIAS) return 'Existencias';
+  if (nombre === BUSCAR) return 'Búsqueda';
+  return 'Consulta';
+}
+
+/** Los saldos, como los lee el modelo. */
+export function saldosParaModelo(saldos: readonly SaldoDeMedio[]): string {
+  return JSON.stringify(
+    saldos.length === 0
+      ? { aviso: 'La empresa no tiene cajas ni cuentas bancarias activas.' }
+      : saldos,
+  );
+}
+
+/** Las existencias, como las lee el modelo. */
+export function existenciasParaModelo(
+  existencias: readonly Existencia[],
+): string {
+  return JSON.stringify(
+    existencias.length === 0
+      ? { aviso: 'Ningún producto activo coincide con esa búsqueda.' }
+      : existencias,
+  );
 }
 
 /** De qué origen es una herramienta, o `undefined` si no es de consultar. */

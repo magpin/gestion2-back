@@ -11,6 +11,8 @@ import type { TurnoParaModelo } from './conversador.puerto';
  */
 
 interface Guion {
+  /** Varias vueltas: cada llamada a la API consume la siguiente. */
+  vueltas?: Guion[];
   trozos?: string[];
   respuesta?: unknown;
   /** Lo que tira la API al pedir el flujo. */
@@ -39,6 +41,7 @@ class FlujoFalso {
 
 class ConversadorDePrueba extends ClaudeConversador {
   peticion?: Record<string, unknown>;
+  peticiones: Record<string, unknown>[] = [];
 
   constructor(private readonly guion: Guion) {
     super();
@@ -46,9 +49,15 @@ class ConversadorDePrueba extends ClaudeConversador {
 
   protected crearCliente(): Anthropic {
     const stream = (body: Record<string, unknown>): FlujoFalso => {
-      this.peticion = body;
-      if (this.guion.error) throw this.guion.error;
-      return new FlujoFalso(this.guion);
+      // Una copia: el adaptador sigue agregando al mismo arreglo de mensajes.
+      const copia = { ...body, messages: [...(body.messages as unknown[])] };
+      this.peticion = copia;
+      this.peticiones.push(copia);
+      const vuelta = this.guion.vueltas
+        ? this.guion.vueltas[this.peticiones.length - 1]
+        : this.guion;
+      if (vuelta.error) throw vuelta.error;
+      return new FlujoFalso(vuelta);
     };
     return { beta: { messages: { stream } } } as unknown as Anthropic;
   }
@@ -116,8 +125,12 @@ describe('ClaudeConversador — lo que le pide a la API', () => {
           text: INSTRUCCIONES,
           cache_control: { type: 'ephemeral' },
         },
+        // La fecha va aparte y después del punto fijo: cambia una vez por día
+        // y no tira las instrucciones.
+        { type: 'text', text: textoQue(/^Hoy es \d{4}-\d{2}-\d{2} /) },
       ],
     });
+    expect(peticion).not.toHaveProperty('tools');
   });
 
   it('el hilo viaja con los roles de la API y en orden', async () => {
@@ -259,5 +272,129 @@ describe('ClaudeConversador — antes de llamar', () => {
     const { resultado, peticion } = await responder({}, HILO.slice(0, 2));
     expect(resultado).toMatchObject({ estado: 'FALLO', clase: 'FALLA' });
     expect(peticion).toBeUndefined();
+  });
+});
+
+describe('ClaudeConversador — con herramientas', () => {
+  const CARTERA = {
+    name: 'consultar_cartera',
+    description: 'Quién me debe',
+    input_schema: { type: 'object', properties: {} },
+  };
+  const pideConsulta = (id: string, texto?: string) => ({
+    ...respuesta({ stop_reason: 'tool_use' }),
+    content: [
+      ...(texto === undefined ? [] : [{ type: 'text', text: texto }]),
+      {
+        type: 'tool_use',
+        id,
+        name: 'consultar_cartera',
+        input: { columnas: ['saldo'] },
+      },
+    ],
+  });
+
+  async function conHerramientas(guion: Guion, definiciones = [CARTERA]) {
+    const conversador = new ConversadorDePrueba(guion);
+    const trozos: string[] = [];
+    const consultas: string[] = [];
+    const ejecutar = jest.fn(() =>
+      Promise.resolve('{"total":{"Saldo":"1000"}}'),
+    );
+    const resultado = await conversador.responder({
+      hilo: HILO,
+      alEscribir: (t) => trozos.push(t),
+      herramientas: { definiciones, ejecutar },
+      alConsultar: (nombre) => consultas.push(nombre),
+    });
+    return { resultado, trozos, consultas, ejecutar, conversador };
+  }
+
+  it('consulta, lee el resultado y contesta: un solo texto, con un renglón entre las dos vueltas', async () => {
+    const { resultado, trozos, consultas, ejecutar, conversador } =
+      await conHerramientas({
+        vueltas: [
+          { trozos: ['Consulto.'], respuesta: pideConsulta('t1', 'Consulto.') },
+          {
+            trozos: ['Te debe $ 1.000.'],
+            respuesta: respuesta({ texto: 'Te debe $ 1.000.' }),
+          },
+        ],
+      });
+
+    expect(conversador.peticiones[0]).toMatchObject({ tools: [CARTERA] });
+    expect(conversador.peticiones[0]).not.toHaveProperty('tool_choice');
+    expect(consultas).toEqual(['consultar_cartera']);
+    expect(ejecutar).toHaveBeenCalledWith('consultar_cartera', {
+      columnas: ['saldo'],
+    });
+    // La segunda vuelta lleva la respuesta entera del modelo y el resultado.
+    expect(conversador.peticiones[1].messages).toEqual([
+      ...(conversador.peticiones[0].messages as unknown[]),
+      { role: 'assistant', content: pideConsulta('t1', 'Consulto.').content },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 't1',
+            content: '{"total":{"Saldo":"1000"}}',
+          },
+        ],
+      },
+    ]);
+    expect(resultado).toEqual({
+      estado: 'COMPLETO',
+      texto: 'Consulto.\n\nTe debe $ 1.000.',
+      modelo: MODELO,
+      // Las dos vueltas se cobran.
+      uso: { entrada: 80, salida: 50, cacheEscrito: 20, cacheLeido: 1800 },
+    });
+    expect(trozos.join('')).toBe('Consulto.\n\nTe debe $ 1.000.');
+  });
+
+  it('pasadas cuatro consultas, una vuelta más sin herramientas: contesta con lo que tiene', async () => {
+    const { resultado, ejecutar, conversador } = await conHerramientas({
+      vueltas: [
+        { respuesta: pideConsulta('t1') },
+        { respuesta: pideConsulta('t2') },
+        { respuesta: pideConsulta('t3') },
+        { respuesta: pideConsulta('t4') },
+        { respuesta: respuesta({ texto: 'Con lo que tengo: $ 1.000.' }) },
+      ],
+    });
+    expect(ejecutar).toHaveBeenCalledTimes(4);
+    expect(conversador.peticiones).toHaveLength(5);
+    expect(conversador.peticiones[3]).not.toHaveProperty('tool_choice');
+    expect(conversador.peticiones[4]).toMatchObject({
+      tool_choice: { type: 'none' },
+    });
+    expect(resultado).toMatchObject({ estado: 'COMPLETO' });
+  });
+
+  it('sin herramientas para el rol no manda ninguna', async () => {
+    const { conversador } = await conHerramientas(
+      {
+        respuesta: respuesta({ texto: 'Con tu rol no puedo consultar datos.' }),
+      },
+      [],
+    );
+    expect(conversador.peticion).not.toHaveProperty('tools');
+  });
+
+  it('cortado en la segunda vuelta: lo transmitido, y el uso de la vuelta que terminó', async () => {
+    const { resultado } = await conHerramientas({
+      vueltas: [
+        { trozos: ['Consulto.'], respuesta: pideConsulta('t1', 'Consulto.') },
+        { trozos: ['Te de'], errorAMitad: new Anthropic.APIUserAbortError() },
+      ],
+    });
+    expect(resultado).toEqual({
+      estado: 'CORTADO',
+      texto: 'Consulto.\n\nTe de',
+      modelo: MODELO,
+      uso: { entrada: 40, salida: 25, cacheEscrito: 10, cacheLeido: 900 },
+      motivo: null,
+    });
   });
 });

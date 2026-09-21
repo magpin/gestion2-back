@@ -24,6 +24,8 @@ import {
   VentanaDeTurnos,
   type TurnoGuardado,
 } from '../reglas/conversacion.reglas';
+import { BUSCAR, etiquetaDeConsulta } from '../reglas/herramientas';
+import { ConsultasService, type ConsultaHecha } from './consultas.service';
 
 /** Un turno, como lo ve la pantalla. El uso de tokens queda en la base: es del expediente, no de la conversación. */
 export interface TurnoResumen {
@@ -34,6 +36,13 @@ export interface TurnoResumen {
   estado: 'COMPLETO' | 'CORTADO' | 'RECHAZADO' | 'FALLO';
   motivo: string | null;
   creado_en: string;
+  /**
+   * De dónde salieron las cifras de una respuesta: «Cartera», «Saldos de caja
+   * y bancos». Las consultas que salieron bien, sin repetir y sin las
+   * búsquedas de nombres. Vacío en las preguntas y en lo que se contestó sin
+   * consultar.
+   */
+  fuentes: string[];
 }
 
 export interface ConversacionVigente {
@@ -74,8 +83,10 @@ export interface TurnoPreparado {
 
 const CAMPOS = `id, orden, autor, texto, estado, motivo, creado_en`;
 
-interface FilaTurno extends TurnoResumen {
+interface FilaTurno extends Omit<TurnoResumen, 'fuentes'> {
   uso: UsoConversacion | null;
+  /** Las herramientas que salieron bien, en orden. Solo en la lectura. */
+  herramientas?: string[] | null;
 }
 
 /**
@@ -102,6 +113,7 @@ export class ConversacionService {
   constructor(
     private readonly tx: TxService,
     @Inject(CONVERSADOR) private readonly conversador: ConversadorPuerto,
+    private readonly consultas: ConsultasService,
   ) {}
 
   get disponible(): boolean {
@@ -251,8 +263,13 @@ export class ConversacionService {
 
   /**
    * Llama al modelo y guarda la respuesta, pase lo que pase. `alEscribir`
-   * recibe cada pedazo en vivo; `corte` es la persona cerrando la pestaña.
+   * recibe cada pedazo en vivo; `corte` es la persona cerrando la pestaña;
+   * `alConsultar` avisa cada consulta que el modelo hace a los datos.
    * Siempre libera la conversación, aunque falle el guardado.
+   *
+   * Las consultas corren con los permisos de quien pregunta
+   * (`ConsultasService`) y se guardan con la respuesta, en la misma
+   * transacción: una respuesta sin sus fuentes no se guarda.
    */
   async responder(
     ctx: CtxEmpresa,
@@ -260,13 +277,18 @@ export class ConversacionService {
     opciones: {
       alEscribir?: (trozo: string) => void;
       corte?: AbortSignal;
+      alConsultar?: (etiqueta: string) => void;
     } = {},
   ): Promise<TurnoResumen> {
     try {
+      const { herramientas, hechas } = this.consultas.paraTurno(ctx);
       const resultado = await this.conversador.responder({
         hilo: preparado.hilo,
         alEscribir: opciones.alEscribir,
         corte: opciones.corte,
+        herramientas,
+        alConsultar: (nombre) =>
+          opciones.alConsultar?.(etiquetaDeConsulta(nombre)),
       });
       return await this.tx.enContexto(ctx, async (t) => {
         const turnos = await this.turnos(preparado.conversacionId, t);
@@ -277,7 +299,13 @@ export class ConversacionService {
           turnoDeRespuesta(resultado),
           t,
         );
-        return sinUso(guardado);
+        await this.insertarConsultas(ctx, guardado.id, hechas, t);
+        return sinUso({
+          ...guardado,
+          herramientas: hechas
+            .filter((c) => c.error === null)
+            .map((c) => c.herramienta),
+        });
       });
     } finally {
       this.enCurso.delete(preparado.conversacionId);
@@ -324,11 +352,41 @@ export class ConversacionService {
   private async turnos(conversacionId: string, t: Tx): Promise<FilaTurno[]> {
     return filas<FilaTurno>(
       await t.query(
-        `SELECT ${CAMPOS}, uso FROM conversacion_turno
+        `SELECT ${CAMPOS}, uso,
+                (SELECT array_agg(c.herramienta ORDER BY c.orden)
+                   FROM conversacion_consulta c
+                  WHERE c.turno_id = conversacion_turno.id AND c.error IS NULL)
+                  AS herramientas
+           FROM conversacion_turno
           WHERE conversacion_id = $1 ORDER BY orden`,
         [conversacionId],
       ),
     );
+  }
+
+  /** Lo que consultó la respuesta, en el orden en que lo consultó (migración 0051). */
+  private async insertarConsultas(
+    ctx: CtxEmpresa,
+    turnoId: string,
+    hechas: readonly ConsultaHecha[],
+    t: Tx,
+  ): Promise<void> {
+    for (const [i, c] of hechas.entries()) {
+      await t.query(
+        `INSERT INTO conversacion_consulta
+           (empresa_id, turno_id, orden, herramienta, entrada, filas, error)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          ctx.empresaId,
+          turnoId,
+          i + 1,
+          c.herramienta,
+          JSON.stringify(c.entrada ?? {}),
+          c.filas,
+          c.error === null ? null : c.error.slice(0, 1000),
+        ],
+      );
+    }
   }
 
   private async insertarTurno(
@@ -438,5 +496,15 @@ function sinUso(t: FilaTurno): TurnoResumen {
     estado: t.estado,
     motivo: t.motivo,
     creado_en: t.creado_en,
+    fuentes: fuentesDe(t.herramientas ?? []),
   };
+}
+
+/** Las etiquetas de lo consultado, sin repetir y sin las búsquedas de nombres. */
+function fuentesDe(herramientas: readonly string[]): string[] {
+  return [
+    ...new Set(
+      herramientas.filter((h) => h !== BUSCAR).map(etiquetaDeConsulta),
+    ),
+  ];
 }

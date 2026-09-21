@@ -48,6 +48,9 @@ import { VentasReporteService } from './servicios/ventas-reporte.service';
     FechasReporteService,
     ArmadorService,
   ],
-  exports: [VentasReporteService, CarteraReporteService],
+  // `ArmadorService` lo usa el asistente para consultar datos (paso 6 de
+  // `asistente-conversacion.md`): con los mismos permisos que la pantalla, y
+  // re-mirados adentro de `correr`.
+  exports: [VentasReporteService, CarteraReporteService, ArmadorService],
 })
 export class ReportesModule {}

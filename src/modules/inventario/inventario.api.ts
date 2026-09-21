@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
+import { PaginacionDto } from '../../common/dto/paginacion.dto';
+
 import type { CtxEmpresa } from '../../common/ctx';
 import type { Tx } from '../../common/db/tx.service';
 import type { SaldoKardex } from './servicios/kardex.reglas';
@@ -23,6 +25,19 @@ import {
  * `incrementarPorCompra` los completó Compras (#5) — ver
  * `docs/planes/compras-backend.md`, decisión 7.
  */
+/** Lo que hay de un producto hoy. Lo que el asistente contesta a «¿cuántos quedan?». */
+export interface Existencia {
+  codigo: string;
+  nombre: string;
+  unidad: string;
+  cantidad: string;
+  costoPromedio: string;
+  valor: string;
+}
+
+/** Los productos que devuelve una búsqueda de existencias. */
+const EXISTENCIAS_POR_BUSQUEDA = 20;
+
 @Injectable()
 export class InventarioApi {
   constructor(
@@ -30,6 +45,29 @@ export class InventarioApi {
     private readonly kardex: KardexService,
     private readonly precios: PrecioService,
   ) {}
+
+  /**
+   * Las existencias de hoy de los productos activos que coinciden con la
+   * búsqueda (código, código de barras o nombre sin tildes), los primeros 20.
+   * Solo lectura: lo pide el asistente (paso 6 de `asistente-conversacion.md`),
+   * con la misma búsqueda que `GET /productos`. **No mira roles**: eso lo hace
+   * quien llama, igual que el controlador.
+   */
+  async existencias(ctx: CtxEmpresa, busqueda: string): Promise<Existencia[]> {
+    const p = Object.assign(new PaginacionDto(), {
+      tamano: EXISTENCIAS_POR_BUSQUEDA,
+      q: busqueda,
+    });
+    const pagina = await this.productos.listar(ctx, p, {});
+    return pagina.datos.map((r) => ({
+      codigo: r.codigo,
+      nombre: r.nombre,
+      unidad: r.unidad_medida,
+      cantidad: r.saldo_cantidad,
+      costoPromedio: r.saldo_costo_promedio,
+      valor: r.saldo_valor,
+    }));
+  }
 
   /** Los datos de un producto para ponerlo en un documento. `null` si no existe. */
   async producto(

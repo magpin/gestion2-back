@@ -74,6 +74,9 @@ export class ConversacionController {
    * normal, antes de abrir el flujo. Después, la respuesta va como eventos:
    *
    *   `PREGUNTA` — la pregunta ya guardada, con su id y su orden;
+   *   `CONSULTA` — el asistente está consultando datos: «Cartera»,
+   *                «Saldos de caja y bancos». Para que la pantalla no se
+   *                quede quieta los segundos que tarda;
    *   `TROZO`    — un pedazo de texto, a medida que el modelo lo escribe;
    *   `FIN`      — la respuesta guardada, con su estado (COMPLETO, CORTADO,
    *                RECHAZADO o FALLO) y su motivo.
@@ -115,6 +118,7 @@ export class ConversacionController {
     try {
       const respuesta = await this.conversacion.responder(ctx, preparado, {
         alEscribir: (texto) => enviar({ tipo: 'TROZO', texto }),
+        alConsultar: (etiqueta) => enviar({ tipo: 'CONSULTA', etiqueta }),
         corte: corte.signal,
       });
       enviar({ tipo: 'FIN', turno: respuesta });

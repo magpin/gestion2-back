@@ -1,4 +1,13 @@
-import { Body, Controller, Get, HttpCode, Post, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Res,
+} from '@nestjs/common';
 import type { Response } from 'express';
 
 import {
@@ -17,8 +26,9 @@ import { ConversacionService } from '../servicios/conversacion.service';
  * superusuario en este sistema. Conversar no escribe nada del negocio, y cada
  * persona ve solo sus conversaciones.
  *
- * Ninguna ruta recibe el id de una conversación: todo es «la vigente de quien
- * pregunta». Así no hay id ajeno que probar.
+ * Escribir es siempre en «la vigente de quien pregunta»: ninguna ruta que
+ * escribe recibe un id. Leer una archivada sí lo recibe, y el servicio lo
+ * busca entre las de esa persona: un id ajeno da 404.
  */
 @Controller('conversacion')
 @ExigeEmpresa()
@@ -35,6 +45,18 @@ export class ConversacionController {
   @Get()
   vigente(@ActorEmpresa() ctx: CtxEmpresa) {
     return this.conversacion.vigente(ctx);
+  }
+
+  /** Todas las de quien pregunta, para la columna de la izquierda. */
+  @Get('lista')
+  lista(@ActorEmpresa() ctx: CtxEmpresa) {
+    return this.conversacion.lista(ctx);
+  }
+
+  /** Una, para leerla. Las archivadas no se retoman: se empieza otra. */
+  @Get(':id')
+  una(@ActorEmpresa() ctx: CtxEmpresa, @Param('id', ParseUUIDPipe) id: string) {
+    return this.conversacion.una(ctx, id);
   }
 
   /** «Empezar de nuevo»: archiva la vigente. */

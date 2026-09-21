@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
@@ -40,6 +41,27 @@ export interface ConversacionVigente {
   id: string | null;
   turnos: TurnoResumen[];
   /** El hilo ya pesa el tope: la pantalla ofrece empezar otra en vez de dejar escribir. */
+  superaTope: boolean;
+}
+
+/** Una conversación en la lista de la izquierda. */
+export interface ConversacionEnLista {
+  id: string;
+  /** La primera pregunta, recortada: es lo que la persona reconoce. */
+  titulo: string;
+  preguntas: number;
+  creada_en: string;
+  /** `null` en la vigente: es la única en la que se puede seguir escribiendo. */
+  archivada_en: string | null;
+  /** El último turno, o la creación si no hay turnos. Ordena la lista. */
+  ultima_en: string;
+}
+
+/** Una conversación cualquiera de quien pregunta, vigente o archivada. */
+export interface ConversacionCompleta {
+  id: string;
+  vigente: boolean;
+  turnos: TurnoResumen[];
   superaTope: boolean;
 }
 
@@ -93,6 +115,59 @@ export class ConversacionService {
       const turnos = await this.turnos(id, t);
       return {
         id,
+        turnos: turnos.map(sinUso),
+        superaTope: superaTope(ultimoUso(turnos)),
+      };
+    });
+  }
+
+  /**
+   * Las conversaciones de quien pregunta, la más reciente primero. Las que no
+   * llegaron a tener una pregunta no se listan: no hay nada que mostrar.
+   */
+  async lista(ctx: CtxEmpresa): Promise<ConversacionEnLista[]> {
+    return this.tx.enContexto(ctx, async (t) =>
+      filas<ConversacionEnLista>(
+        await t.query(
+          `SELECT c.id, c.creada_en, c.archivada_en, r.titulo, r.preguntas,
+                  COALESCE(r.ultima_en, c.creada_en) AS ultima_en
+             FROM conversacion c
+             CROSS JOIN LATERAL (
+               SELECT left((array_agg(t.texto ORDER BY t.orden)
+                              FILTER (WHERE t.autor = 'PERSONA'))[1], 80) AS titulo,
+                      (count(*) FILTER (WHERE t.autor = 'PERSONA'))::int AS preguntas,
+                      max(t.creado_en) AS ultima_en
+                 FROM conversacion_turno t
+                WHERE t.conversacion_id = c.id
+             ) r
+            WHERE c.usuario_id = $1 AND r.preguntas > 0
+            ORDER BY ultima_en DESC
+            LIMIT 100`,
+          [ctx.usuarioId],
+        ),
+      ),
+    );
+  }
+
+  /**
+   * Una conversación de quien pregunta, por su id. Una ajena —de otra persona
+   * de la misma empresa— contesta lo mismo que una que no existe: 404.
+   */
+  async una(ctx: CtxEmpresa, id: string): Promise<ConversacionCompleta> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const c = fila<{ id: string; archivada_en: string | null }>(
+        await t.query(
+          `SELECT id, archivada_en FROM conversacion WHERE id = $1 AND usuario_id = $2`,
+          [id, ctx.usuarioId],
+        ),
+      );
+      if (c === undefined) {
+        throw new NotFoundException('No encontré esa conversación.');
+      }
+      const turnos = await this.turnos(c.id, t);
+      return {
+        id: c.id,
+        vigente: c.archivada_en === null,
         turnos: turnos.map(sinUso),
         superaTope: superaTope(ultimoUso(turnos)),
       };

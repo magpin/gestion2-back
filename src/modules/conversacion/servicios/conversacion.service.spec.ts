@@ -1,4 +1,8 @@
-import { ConflictException, HttpException } from '@nestjs/common';
+import {
+  ConflictException,
+  HttpException,
+  NotFoundException,
+} from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import type { Tx, TxService } from '../../../common/db/tx.service';
@@ -53,6 +57,30 @@ function baseFalsa() {
       )
     ) {
       consultasConversacion.push({ sql, params });
+    }
+    if (sql.includes('AS titulo')) {
+      return conversaciones
+        .filter((c) => c.usuario_id === params[0])
+        .map((c) => {
+          const propios = turnos.filter((t) => t.conversacion_id === c.id);
+          const preguntas = propios.filter((t) => t.autor === 'PERSONA');
+          return {
+            id: c.id,
+            creada_en: '2026-09-21T09:00:00Z',
+            archivada_en: c.archivada_en,
+            titulo: preguntas[0]?.texto.slice(0, 80),
+            preguntas: preguntas.length,
+            ultima_en: '2026-09-21T10:00:00Z',
+          };
+        })
+        .filter((c) => c.preguntas > 0)
+        .reverse();
+    }
+    if (sql.includes('WHERE id = $1 AND usuario_id = $2')) {
+      const c = conversaciones.find(
+        (x) => x.id === params[0] && x.usuario_id === params[1],
+      );
+      return c ? [{ id: c.id, archivada_en: c.archivada_en }] : [];
     }
     if (sql.startsWith('INSERT INTO conversacion (')) {
       const [empresa_id, usuario_id] = params as string[];
@@ -235,6 +263,8 @@ describe('ConversacionService — un turno', () => {
     const { servicio: s, base } = servicio();
     await s.responder(ana, await s.preparar(ana, 'hola'));
     await s.vigente(ana);
+    await s.lista(ana);
+    await s.una(ana, base.conversaciones[0].id);
     await s.archivar(ana);
     expect(base.consultasConversacion.length).toBeGreaterThan(0);
     for (const c of base.consultasConversacion) {
@@ -371,5 +401,54 @@ describe('ConversacionService — la conversación', () => {
     base.romperGuardado();
     await expect(s.responder(ana, preparado)).rejects.toThrow(/se cayó/);
     await expect(s.preparar(ana, 'de nuevo')).resolves.toBeDefined();
+  });
+});
+
+describe('ConversacionService — la lista y las archivadas', () => {
+  const beto: CtxEmpresa = { ...ana, usuarioId: 'u-beto' };
+
+  it('lista las de quien pregunta, la más reciente primero, con la primera pregunta como título', async () => {
+    const { servicio: s } = servicio();
+    await s.responder(ana, await s.preparar(ana, 'primera charla'));
+    await s.archivar(ana);
+    await s.responder(ana, await s.preparar(ana, 'segunda charla'));
+    await s.responder(beto, await s.preparar(beto, 'la de beto'));
+    const lista = await s.lista(ana);
+    expect(lista.map((c) => [c.titulo, c.archivada_en === null])).toEqual([
+      ['segunda charla', true],
+      ['primera charla', false],
+    ]);
+  });
+
+  it('una conversación vacía no se lista', async () => {
+    const { servicio: s, base } = servicio();
+    base.conversaciones.push({
+      id: 'c-vacia',
+      empresa_id: 'e-1',
+      usuario_id: 'u-ana',
+      archivada_en: null,
+    });
+    expect(await s.lista(ana)).toEqual([]);
+  });
+
+  it('una archivada se lee entera, y dice que no es la vigente', async () => {
+    const { servicio: s, base } = servicio();
+    await s.responder(ana, await s.preparar(ana, 'hola'));
+    await s.archivar(ana);
+    const leida = await s.una(ana, base.conversaciones[0].id);
+    expect(leida.vigente).toBe(false);
+    expect(leida.turnos.map((t) => t.autor)).toEqual(['PERSONA', 'ASISTENTE']);
+    expect(leida.turnos[1]).not.toHaveProperty('uso');
+  });
+
+  it('la de otra persona da 404, igual que una que no existe', async () => {
+    const { servicio: s, base } = servicio();
+    await s.responder(beto, await s.preparar(beto, 'la de beto'));
+    await expect(s.una(ana, base.conversaciones[0].id)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(s.una(ana, 'c-no-existe')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });

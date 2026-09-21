@@ -108,20 +108,40 @@ function abrirProgreso(token, alLlegar) {
 
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** Lo que acepta `UrlDeCargaDto`. La extensión decide; el bucket no adivina. */
+const TIPOS_MIME = {
+  '.pdf': 'application/pdf',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+};
+
 (async () => {
   const archivo = process.argv[2];
   if (!archivo || !fs.existsSync(archivo)) {
     console.error(
-      'Falta el PDF.\n' +
+      'Falta el documento.\n' +
         '  node scripts/rut-de-prueba.js rut.pdf   (uno inventado, para ejercitar la cadena)\n' +
-        '  node scripts/prueba-modo-ia.js rut.pdf',
+        '  node scripts/prueba-modo-ia.js rut.pdf\n' +
+        '  node scripts/prueba-modo-ia.js rut.png  (también acepta imágenes)',
     );
     process.exit(2);
   }
-  const pdf = fs.readFileSync(archivo);
+  const contenido = fs.readFileSync(archivo);
+  const extension = archivo.slice(archivo.lastIndexOf('.')).toLowerCase();
+  const tipoMime = TIPOS_MIME[extension];
+  if (tipoMime === undefined) {
+    console.error(
+      `No sé qué es un «${extension}». Se aceptan ${Object.keys(TIPOS_MIME).join(', ')}.`,
+    );
+    process.exit(2);
+  }
 
   console.log(`\n=== Modo IA · punta a punta contra ${BASE} ===`);
-  console.log(`    Documento: ${archivo} (${pdf.length} bytes)\n`);
+  console.log(
+    `    Documento: ${archivo} (${contenido.length} bytes, ${tipoMime})\n`,
+  );
 
   // -------------------------------------------------------------------------
   console.log('1 · Una empresa desechable');
@@ -209,7 +229,7 @@ const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
   console.log('\n4 · Subir el archivo al bucket, como lo sube el navegador');
   const firma = await pedir('POST', '/configuracion/ia/documentos/carga', {
     token,
-    cuerpo: { tipo: 'RUT', tipoMime: 'application/pdf' },
+    cuerpo: { tipo: 'RUT', tipoMime },
   });
   revisar(
     firma.estado === 201 && !!firma.datos?.url,
@@ -242,8 +262,8 @@ const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
   const subida = await fetch(url, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/pdf', Origin: ORIGEN },
-    body: pdf,
+    headers: { 'Content-Type': tipoMime, Origin: ORIGEN },
+    body: contenido,
   });
   revisar(subida.status === 200, 'el PUT a la URL firmada entra', `${subida.status}`);
 

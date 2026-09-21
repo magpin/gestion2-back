@@ -7,46 +7,64 @@
 // formulario 001 pero con datos que no son de nadie. Sirve para ejercitar la
 // llamada —que la API acepte el esquema, que el caché pegue, que los campos
 // vuelvan con su casilla—, no para probar que sabemos leer un RUT de verdad:
-// eso necesita uno expedido por la DIAN, con su diagramacion y su escaneo, y es
-// lo que pide el paso 4 del cierre.
+// eso necesita uno expedido por la DIAN, con su diagramacion y su escaneo.
+//
+// **No lleva representante legal, y es a proposito**: el formulario 001 no lo
+// tiene. Las casillas 31 a 34 son los nombres del contribuyente y las 984 y 985
+// son el funcionario que firma, «para uso exclusivo de la DIAN». La
+// representacion vive en la hoja 2. Tampoco lleva una linea de «Regimen», por
+// lo mismo: el regimen no es una casilla, se deriva de los codigos de la 53.
 //
 // Texto plano y una sola columna a proposito: si el modelo falla con esto, el
 // problema no es el documento.
 const fs = require('fs');
 
+// La numeracion es la del formulario 001 de verdad, comprobada contra uno en
+// la revision del paso 4. La version anterior de este archivo tenia la
+// direccion en la 38, el municipio en la 42 y el correo en la 45, que son la
+// 41, la 40 y la 42: con numeros inventados, comprobar que un campo vuelve con
+// "su casilla" no comprueba nada.
 const lineas = [
   'DOCUMENTO DE PRUEBA - DATOS FICTICIOS - NO ES UN DOCUMENTO OFICIAL',
   '',
   'Registro Unico Tributario - RUT',
   'Formulario 001',
   '',
-  'Casilla 5  Numero de Identificacion Tributaria NIT: 901234567',
+  'Casilla 5  Numero de Identificacion Tributaria (NIT): 901234567',
   'Casilla 6  DV: 7',
   'Casilla 12 Direccion seccional: Impuestos de Medellin',
   '',
+  'IDENTIFICACION',
+  'Casilla 24 Tipo de contribuyente: Persona juridica',
   'Casilla 35 Razon social: SOLUCIONES CONTABLES DE PRUEBA S.A.S.',
   'Casilla 36 Nombre comercial: CONTAPRUEBA',
+  'Casilla 37 Sigla: CONTAPRUEBA',
   '',
-  'Casilla 38 Direccion principal: CALLE 10 No. 20-30 OFICINA 401',
-  'Casilla 40 Pais: COLOMBIA',
-  'Casilla 41 Departamento: ANTIOQUIA - codigo 05',
-  'Casilla 42 Municipio: MEDELLIN - codigo 05001',
+  'UBICACION',
+  'Casilla 38 Pais: COLOMBIA',
+  'Casilla 39 Departamento: ANTIOQUIA - codigo 05',
+  'Casilla 40 Ciudad/Municipio: MEDELLIN - codigo 05001',
+  'Casilla 41 Direccion principal: CALLE 10 No. 20-30 OFICINA 401',
+  'Casilla 42 Correo electronico: contacto@contaprueba.test',
+  'Casilla 43 Codigo postal: 050021',
   'Casilla 44 Telefono 1: 6045551234',
-  'Casilla 45 Correo electronico: contacto@contaprueba.test',
+  'Casilla 45 Telefono 2:',
   '',
-  'Casilla 46 Actividad economica principal',
-  '           Codigo CIIU: 6920   Fecha inicio: 15/03/2020',
-  'Casilla 48 Actividad secundaria - Codigo CIIU: 7020',
+  'CLASIFICACION - Actividad economica',
+  'Casilla 46 Codigo actividad principal: 6920',
+  'Casilla 47 Fecha inicio actividad: 15/03/2020',
+  'Casilla 48 Codigo actividad secundaria: 7020',
+  'Casilla 49 Fecha inicio actividad: 15/03/2020',
+  'Casilla 52 Numero establecimientos: 1',
   '',
-  'Casilla 53 Responsabilidades, calidades y atributos:',
-  '           05 - 07 - 09 - 14 - 48 - 52',
-  '',
-  'Regimen: Responsable del impuesto sobre las ventas - IVA',
-  '',
-  'Representante legal',
-  '           Nombre: MARIA FERNANDA GOMEZ RESTREPO',
-  '           Tipo de documento: Cedula de ciudadania',
-  '           Numero de documento: 43123456',
+  'Responsabilidades, Calidades y Atributos',
+  'Casilla 53 Codigo: 05 - 07 - 09 - 14 - 48 - 52',
+  '           05 - Impto. renta y compl. regimen ordinario',
+  '           07 - Retencion en la fuente a titulo de renta',
+  '           09 - Retencion en la fuente en el impuesto sobre las ventas',
+  '           14 - Informante de exogena',
+  '           48 - Impuesto sobre las ventas - IVA',
+  '           52 - Facturador electronico',
   '',
   'Fecha de expedicion del documento: 04/02/2026',
 ];

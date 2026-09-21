@@ -170,6 +170,8 @@ describe('ClaudeConversador — cómo termina', () => {
       texto: 'Con «Cobrar», eligiendo Banco.',
       modelo: 'claude-opus-4-8',
       uso: { entrada: 40, salida: 25, cacheEscrito: 10, cacheLeido: 900 },
+      // Una sola llamada al modelo: no consultó nada.
+      vueltas: 1,
     });
   });
 
@@ -347,8 +349,9 @@ describe('ClaudeConversador — con herramientas', () => {
       estado: 'COMPLETO',
       texto: 'Te debe $ 1.000.',
       modelo: MODELO,
-      // Las dos vueltas se cobran.
+      // Las dos vueltas se cobran, y se cuentan.
       uso: { entrada: 80, salida: 50, cacheEscrito: 20, cacheLeido: 1800 },
+      vueltas: 2,
     });
     expect(trozos.join('')).toBe('Te debe $ 1.000.');
   });

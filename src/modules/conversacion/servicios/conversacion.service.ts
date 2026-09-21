@@ -296,6 +296,8 @@ export class ConversacionService {
       const { herramientas, hechas, propuestas } =
         this.consultas.paraTurno(ctx);
       const contexto = await this.consultas.contextoDelTurno(ctx);
+      // Cuánto tardó la respuesta entera, consultas incluidas (0054).
+      const empezo = Date.now();
       const resultado = await this.conversador.responder({
         hilo: preparado.hilo,
         alEscribir: opciones.alEscribir,
@@ -311,7 +313,12 @@ export class ConversacionService {
           ctx,
           preparado.conversacionId,
           siguienteOrden(turnos),
-          turnoDeRespuesta(resultado),
+          {
+            ...turnoDeRespuesta(resultado),
+            duracionMs: Date.now() - empezo,
+            vueltas:
+              resultado.estado === 'FALLO' ? null : (resultado.vueltas ?? null),
+          },
           t,
         );
         await this.insertarConsultas(ctx, guardado.id, hechas, t);
@@ -437,14 +444,18 @@ export class ConversacionService {
       modelo?: string | null;
       uso?: UsoConversacion | null;
       motivo?: string | null;
+      /** Solo en la respuesta del asistente: lo que mide el tablero de consumo. */
+      duracionMs?: number;
+      vueltas?: number | null;
     },
     t: Tx,
   ): Promise<FilaTurno> {
     const guardado = fila<FilaTurno>(
       await t.query(
         `INSERT INTO conversacion_turno
-           (empresa_id, conversacion_id, orden, autor, texto, estado, modelo, uso, motivo)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           (empresa_id, conversacion_id, orden, autor, texto, estado, modelo, uso, motivo,
+            duracion_ms, vueltas)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING ${CAMPOS}, uso`,
         [
           ctx.empresaId,
@@ -458,6 +469,8 @@ export class ConversacionService {
             ? null
             : JSON.stringify(turno.uso),
           turno.motivo ?? null,
+          turno.duracionMs === undefined ? null : Math.round(turno.duracionMs),
+          turno.vueltas ?? null,
         ],
       ),
     );

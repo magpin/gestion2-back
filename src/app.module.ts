@@ -13,6 +13,7 @@ import { ComprasModule } from './modules/compras/compras.module';
 import { ContabilidadModule } from './modules/contabilidad/contabilidad.module';
 import { InventarioModule } from './modules/inventario/inventario.module';
 import { LecturaDocumentosModule } from './modules/lectura-documentos/lectura-documentos.module';
+import { ConsumoIaModule } from './modules/consumo-ia/consumo-ia.module';
 import { ConversacionModule } from './modules/conversacion/conversacion.module';
 import { NucleoModule } from './modules/nucleo/nucleo.module';
 import { PlataformaModule } from './modules/plataforma/plataforma.module';
@@ -51,6 +52,7 @@ import { VentasModule } from './modules/ventas/ventas.module';
     TesoreriaModule,
     LecturaDocumentosModule,
     ConversacionModule,
+    ConsumoIaModule,
     ReportesModule,
   ],
   controllers: [SaludController],

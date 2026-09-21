@@ -37,6 +37,8 @@ interface Guion {
   respuesta?: unknown;
   /** Para probar las fallas: lo que la API tira al pedir el flujo. */
   error?: Error;
+  /** Lo que contesta la herramienta de `analizar`. */
+  analisis?: { tipo: string; clase: string; resumen: string };
 }
 
 class FlujoFalso {
@@ -75,7 +77,21 @@ class ProveedorDePrueba extends ClaudeProveedor {
       if (this.guion.error) throw this.guion.error;
       return new FlujoFalso(this.guion.trozos ?? [], this.guion.respuesta);
     };
-    return { beta: { messages: { stream } } } as unknown as Anthropic;
+    const create = (body: unknown) => {
+      this.peticion = body;
+      return Promise.resolve({
+        content: [
+          {
+            type: 'tool_use',
+            name: 'describir_archivo',
+            input: this.guion.analisis,
+          },
+        ],
+        model: 'claude-opus-5',
+        usage: { input_tokens: 3000, output_tokens: 90 },
+      });
+    };
+    return { beta: { messages: { stream, create } } } as unknown as Anthropic;
   }
 }
 
@@ -86,6 +102,7 @@ const PDF = {
 
 const respuestaCon = (texto: string, extra: Record<string, unknown> = {}) => ({
   content: [{ type: 'text', text: texto }],
+  model: 'claude-opus-5',
   stop_reason: 'end_turn',
   usage: {
     input_tokens: 7000,
@@ -174,7 +191,15 @@ describe('ClaudeProveedor', () => {
       'responsabilidadesRut',
     ]);
     expect(r.datos[0].fuente).toEqual({ documento: 'RUT', casilla: '35' });
-    expect(r.uso).toEqual({ entrada: 7000, salida: 300, cacheLeido: 6500 });
+    // Lo que costó, para guardarlo con el documento (0054).
+    expect(r.medicion.uso).toEqual({
+      entrada: 7000,
+      salida: 300,
+      cacheLeido: 6500,
+      cacheEscrito: 0,
+    });
+    expect(r.medicion.modelo).toBe('claude-opus-5');
+    expect(r.medicion.duracionMs).toBeGreaterThanOrEqual(0);
   });
 
   it('pide lo que el plan dice: Opus 5, respaldo del servidor y caché del prompt', async () => {
@@ -400,5 +425,71 @@ describe('ClaudeProveedor', () => {
     expect(r.clase).toBe(clase);
     expect(r.motivo).not.toContain('Error');
     expect(r.motivo.length).toBeGreaterThan(10);
+  });
+  describe('analizar', () => {
+    const FACTURA = {
+      tipo: 'OTRO',
+      clase: 'Factura de compra',
+      resumen: 'Factura FJ-215183 de Jaltech por $4.266.499.',
+    };
+
+    it('dice qué es, con una herramienta forzada y sin razonamiento', async () => {
+      const proveedor = new ProveedorDePrueba({ analisis: FACTURA });
+
+      const r = await proveedor.analizar(PDF);
+
+      expect(r).toMatchObject({ tipo: null, clase: 'Factura de compra' });
+      expect(r.resumen).toContain('Jaltech');
+      expect(r.medicion?.uso).toMatchObject({ entrada: 3000, salida: 90 });
+      const peticion = proveedor.peticion as {
+        tool_choice: { type: string; name: string };
+        thinking?: unknown;
+        messages: PeticionVista['messages'];
+      };
+      expect(peticion.tool_choice).toEqual({
+        type: 'tool',
+        name: 'describir_archivo',
+      });
+      expect(peticion.thinking).toBeUndefined();
+      expect(peticion.messages[0].content[0].type).toBe('document');
+    });
+
+    it('si es uno de los tres documentos, lo dice en `tipo`', async () => {
+      const proveedor = new ProveedorDePrueba({
+        analisis: {
+          tipo: 'RUT',
+          clase: 'RUT',
+          resumen: 'El RUT de Tecnodigital.',
+        },
+      });
+      expect((await proveedor.analizar(PDF)).tipo).toBe('RUT');
+    });
+
+    it('un CSV le llega al modelo como texto', async () => {
+      const proveedor = new ProveedorDePrueba({ analisis: FACTURA });
+      await proveedor.analizar({
+        tipoMime: 'text/csv',
+        contenido: Buffer.from('producto;cantidad\nTinta;12'),
+      });
+      const peticion = proveedor.peticion as {
+        messages: PeticionVista['messages'];
+      };
+      expect(peticion.messages[0].content[0].type).toBe('text');
+      expect(peticion.messages[0].content[0].text).toContain('Tinta;12');
+    });
+
+    it('lo que no se puede abrir se dice sin llamar a la API', async () => {
+      const proveedor = new ProveedorDePrueba({ analisis: FACTURA });
+      const binario = {
+        tipoMime: 'application/vnd.ms-excel',
+        contenido: Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0, 0, 0]),
+      };
+
+      const r = await proveedor.analizar(binario);
+
+      expect(r.tipo).toBeNull();
+      expect(r.resumen).toContain('.xlsx');
+      expect(proveedor.peticion).toBeUndefined();
+    });
   });
 });

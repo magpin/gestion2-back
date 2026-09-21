@@ -349,7 +349,7 @@ function contar(
     );
   }
 
-  const { entrada, salida, cacheLeido } = resultado.uso;
+  const { entrada, salida, cacheLeido } = resultado.medicion.uso;
   const dolares =
     ((entrada - cacheLeido) * USD_POR_MILLON.entrada +
       cacheLeido * USD_POR_MILLON.cache +

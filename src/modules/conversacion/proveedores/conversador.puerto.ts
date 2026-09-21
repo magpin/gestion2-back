@@ -40,19 +40,28 @@ export interface UsoConversacion {
  *   persona.
  */
 export type ResultadoRespuesta =
-  | { estado: 'COMPLETO'; texto: string; modelo: string; uso: UsoConversacion }
+  | {
+      estado: 'COMPLETO';
+      texto: string;
+      modelo: string;
+      uso: UsoConversacion;
+      /** Las llamadas al modelo: una por ronda de consultas, más la que contesta. */
+      vueltas?: number;
+    }
   | {
       estado: 'CORTADO';
       texto: string;
       modelo: string;
       uso: UsoConversacion | null;
       motivo: string | null;
+      vueltas?: number;
     }
   | {
       estado: 'RECHAZADO';
       modelo: string;
       uso: UsoConversacion | null;
       motivo: string;
+      vueltas?: number;
     }
   | {
       estado: 'FALLO';

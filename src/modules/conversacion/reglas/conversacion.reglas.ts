@@ -1,3 +1,7 @@
+import {
+  costoUsd as costoPorModelo,
+  TARIFAS,
+} from '../../../common/ia/modelos';
 import type {
   TurnoParaModelo,
   UsoConversacion,
@@ -31,10 +35,10 @@ export const TOPE_TOKENS_ENTRADA = 60_000;
  * ciertos: por eso se guarda `uso` y no el costo.
  */
 export const USD_POR_MILLON = {
-  entrada: 5,
-  salida: 25,
-  cacheLeido: 0.5,
-  cacheEscrito: 6.25,
+  entrada: TARIFAS.OPUS.entrada,
+  salida: TARIFAS.OPUS.salida,
+  cacheLeido: TARIFAS.OPUS.cacheLeido,
+  cacheEscrito: TARIFAS.OPUS.cacheEscrito,
 } as const;
 
 /**
@@ -84,15 +88,12 @@ export function superaTope(
   return ultimoUso !== null && entradaTotal(ultimoUso) >= tope;
 }
 
-/** Cuánto costó una llamada, en dólares. Para el registro y el script de medición. */
-export function costoUsd(uso: UsoConversacion): number {
-  return (
-    (uso.entrada * USD_POR_MILLON.entrada +
-      uso.salida * USD_POR_MILLON.salida +
-      uso.cacheLeido * USD_POR_MILLON.cacheLeido +
-      uso.cacheEscrito * USD_POR_MILLON.cacheEscrito) /
-    1_000_000
-  );
+/**
+ * Cuánto costó una llamada, en dólares, con la tarifa del modelo que contestó
+ * (`common/ia/modelos.ts`). Sin modelo, la de Opus.
+ */
+export function costoUsd(uso: UsoConversacion, modelo?: string | null): number {
+  return costoPorModelo(uso, modelo);
 }
 
 /**

@@ -37,10 +37,8 @@ import { DataSource } from 'typeorm';
 import type { CtxEmpresa, RolCodigo } from '../src/common/ctx';
 import { TxService } from '../src/common/db/tx.service';
 import { hoyEnColombia } from '../src/common/fecha';
-import {
-  INSTRUCCIONES,
-  MODELO,
-} from '../src/modules/conversacion/proveedores/claude.conversador';
+import { modeloPara } from '../src/common/ia/modelos';
+import { INSTRUCCIONES } from '../src/modules/conversacion/proveedores/claude.conversador';
 import type { UsoConversacion } from '../src/modules/conversacion/proveedores/conversador.puerto';
 import {
   costoUsd,
@@ -134,6 +132,10 @@ async function entrar(email: string, password: string): Promise<CtxEmpresa> {
     undefined as unknown as ExcelService,
   );
   const hoy = hoyEnColombia();
+  // El mismo de la API: `MODELO_CONVERSACION`, o Opus. Para probar Sonnet sin
+  // tocar el servidor, se pasa solo a este proceso.
+  const modelo = modeloPara('CONVERSACION');
+  console.log(`Modelo: ${modelo}`);
   const herramientas = herramientasPara(ctx.roles);
   console.log(`\n${email} (${ctx.roles.join(', ')}): ${herramientas.map((h) => h.name).join(', ')}`);
 
@@ -219,7 +221,7 @@ async function entrar(email: string, password: string): Promise<CtxEmpresa> {
     for (let vuelta = 0; ; vuelta += 1) {
       const agotado = vuelta >= CONSULTAS_POR_TURNO;
       const m = await cliente_.beta.messages.create({
-        model: MODELO,
+        model: modelo,
         max_tokens: 16000,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
@@ -273,7 +275,7 @@ async function entrar(email: string, password: string): Promise<CtxEmpresa> {
   console.log('|---|---|---|---|---|---|---|');
   let total = 0;
   for (const m of medidas) {
-    const costo = costoUsd(m.uso);
+    const costo = costoUsd(m.uso, modelo);
     total += costo;
     console.log(
       `| ${m.pregunta.slice(0, 40)} | ${m.llamadas} | ${entradaTotal(m.uso)} | ${m.uso.cacheLeido} | ${m.uso.salida} | ${(m.ms / 1000).toFixed(1)} s | ${costo.toFixed(3)} |`,

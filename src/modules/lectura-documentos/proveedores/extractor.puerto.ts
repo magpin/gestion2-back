@@ -43,7 +43,7 @@ export interface DatoExtraido {
 
 /** El archivo, ya bajado del bucket. */
 export interface ArchivoParaLeer {
-  /** `application/pdf`, `image/jpeg`, `image/png` o `image/webp`. */
+  /** Cualquiera de `TIPOS_SUBIBLES` (`reglas/contenido.ts`). `leer` acepta solo PDF e imágenes. */
   tipoMime: string;
   contenido: Buffer;
 }
@@ -89,11 +89,30 @@ export interface UsoLectura {
   salida: number;
   /** Los tokens que se sirvieron del caché del prompt. */
   cacheLeido: number;
+  /** Los que se escribieron en el caché: se cobran más caros que la entrada. */
+  cacheEscrito: number;
+}
+
+/**
+ * Lo que costó una lectura: se guarda con el documento para el tablero de
+ * consumo (`docs/planes/consumo-ia.md`, migración 0054).
+ */
+export interface MedicionLectura {
+  uso: UsoLectura;
+  /** El que contestó, que con el respaldo por rechazo puede no ser el pedido. */
+  modelo: string;
+  duracionMs: number;
 }
 
 export type ResultadoLectura =
-  | { leido: true; datos: DatoExtraido[]; uso: UsoLectura }
-  | { leido: false; clase: ClaseDeFalla; motivo: string };
+  | { leido: true; datos: DatoExtraido[]; medicion: MedicionLectura }
+  | {
+      leido: false;
+      clase: ClaseDeFalla;
+      motivo: string;
+      /** Si la API alcanzó a contestar —y a cobrar— antes de la falla. */
+      medicion?: MedicionLectura;
+    };
 
 export interface ExtractorPuerto {
   /**
@@ -111,6 +130,25 @@ export interface ExtractorPuerto {
     /** «Detener» del §7.7 de la guía. */
     corte?: AbortSignal;
   }): Promise<ResultadoLectura>;
+
+  /**
+   * Qué es un archivo cualquiera —PDF, foto, Excel, Word, texto—, dicho en
+   * palabras. Si es uno de los tres que se leen para configurar la empresa,
+   * `tipo` lo dice y la lectura sigue por `leer`. Es una llamada corta y aparte.
+   */
+  analizar(archivo: ArchivoParaLeer): Promise<AnalisisArchivo>;
+}
+
+/** Lo que dice el asistente de un archivo que se le subió sin decir qué es. */
+export interface AnalisisArchivo {
+  /** Uno de los que se leen para configurar la empresa, o `null`. */
+  tipo: TipoDocumento | null;
+  /** Qué es, en dos o tres palabras: «Factura de compra», «Extracto bancario». */
+  clase: string;
+  /** Qué dice, para el dueño: de quién, fechas y montos principales. */
+  resumen: string;
+  /** Sin medición cuando no se llamó al modelo: el formato no se puede abrir. */
+  medicion?: MedicionLectura;
 }
 
 /** El token con el que Nest inyecta la implementación. */

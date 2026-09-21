@@ -8,6 +8,7 @@ import {
 } from 'class-validator';
 
 import type { TipoDocumento } from '../proveedores/extractor.puerto';
+import { TIPOS_SUBIBLES } from '../reglas/contenido';
 
 const TIPOS: readonly TipoDocumento[] = [
   'RUT',
@@ -17,10 +18,13 @@ const TIPOS: readonly TipoDocumento[] = [
 
 /** Lo que el navegador manda antes de subir: qué va a subir y de qué tipo. */
 export class UrlDeCargaDto {
+  /** Sin tipo: lo reconoce el servidor al registrar. */
+  @IsOptional()
   @IsIn(TIPOS)
-  tipo!: TipoDocumento;
+  tipo?: TipoDocumento;
 
-  @IsIn(['application/pdf', 'image/jpeg', 'image/png', 'image/webp'])
+  /** PDF, fotos, Excel, Word, CSV, XML, JSON o texto: `reglas/contenido.ts`. */
+  @IsIn([...TIPOS_SUBIBLES.keys()])
   tipoMime!: string;
 }
 
@@ -36,6 +40,13 @@ export class RegistrarDocumentoDto {
   @IsIn(TIPOS)
   tipo!: TipoDocumento;
 
+  @IsString()
+  @Length(10, 200)
+  clave!: string;
+}
+
+/** Un archivo ya subido, sin decir qué es: el servidor lo mira. */
+export class AnalizarDocumentoDto {
   @IsString()
   @Length(10, 200)
   clave!: string;

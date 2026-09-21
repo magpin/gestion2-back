@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -15,7 +17,12 @@ import {
 } from '../../../common/auth/decoradores';
 import type { CtxEmpresa } from '../../../common/ctx';
 import { AlmacenamientoApi } from '../../almacenamiento/almacenamiento.api';
-import { RegistrarDocumentoDto, UrlDeCargaDto } from '../dto/lectura.dto';
+import {
+  AnalizarDocumentoDto,
+  RegistrarDocumentoDto,
+  UrlDeCargaDto,
+} from '../dto/lectura.dto';
+import { TIPOS_SUBIBLES } from '../reglas/contenido';
 import { DocumentoService, prefijoDe } from '../servicios/documento.service';
 import { ExtractorService } from '../servicios/extractor.service';
 
@@ -59,6 +66,7 @@ export class DocumentosController {
     return this.almacenamiento.firmarSubida(
       prefijoDe(ctx.empresaId),
       dto.tipoMime,
+      TIPOS_SUBIBLES,
     );
   }
 
@@ -73,6 +81,17 @@ export class DocumentosController {
     @Body() dto: RegistrarDocumentoDto,
   ) {
     return this.extractor.encolar(ctx, dto);
+  }
+
+  /**
+   * Un archivo cualquiera, subido sin decir qué es. Contesta qué es; si es
+   * uno de los tres documentos, la lectura ya arrancó y viene en `documento`.
+   */
+  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR')
+  @Post('documentos/analizar')
+  @HttpCode(HttpStatus.OK)
+  analizar(@ActorEmpresa() ctx: CtxEmpresa, @Body() dto: AnalizarDocumentoDto) {
+    return this.extractor.analizar(ctx, dto.clave);
   }
 
   /**

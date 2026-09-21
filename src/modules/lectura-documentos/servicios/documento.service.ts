@@ -10,6 +10,7 @@ import { TxService } from '../../../common/db/tx.service';
 import type {
   ClaseDeFalla,
   DatoExtraido,
+  MedicionLectura,
   TipoDocumento,
 } from '../proveedores/extractor.puerto';
 
@@ -46,6 +47,19 @@ interface FilaDocumento {
 }
 
 /** El prefijo del bucket donde viven los documentos de una empresa. */
+/**
+ * La llave vuelve por el navegador: tiene que ser del prefijo de **esta**
+ * empresa. Se mira antes de tocar el archivo —también antes de bajarlo para
+ * reconocerlo—, no solo antes de guardar la fila.
+ */
+export function exigirClaveDeLaEmpresa(ctx: CtxEmpresa, clave: string): void {
+  if (!clave.startsWith(`${prefijoDe(ctx.empresaId)}/`)) {
+    throw new BadRequestException(
+      'Esa llave no es de un documento de esta empresa.',
+    );
+  }
+}
+
 export function prefijoDe(empresaId: string): string {
   return `documentos/${empresaId}`;
 }
@@ -65,12 +79,7 @@ export class DocumentoService {
     ctx: CtxEmpresa,
     datos: { tipo: TipoDocumento; clave: string },
   ): Promise<Documento> {
-    const prefijo = `${prefijoDe(ctx.empresaId)}/`;
-    if (!datos.clave.startsWith(prefijo)) {
-      throw new BadRequestException(
-        'Esa llave no es de un documento de esta empresa.',
-      );
-    }
+    exigirClaveDeLaEmpresa(ctx, datos.clave);
 
     return this.tx.enContexto(ctx, async (t) => {
       const creada = fila<FilaDocumento>(
@@ -128,13 +137,15 @@ export class DocumentoService {
     ctx: CtxEmpresa,
     id: string,
     datos: DatoExtraido[],
+    medicion?: MedicionLectura,
   ): Promise<void> {
     await this.tx.enContexto(ctx, (t) =>
       t.query(
         `UPDATE documento_leido
-            SET estado = 'LEIDO', extraido = $2::jsonb, leido_en = now(), error = NULL
+            SET estado = 'LEIDO', extraido = $2::jsonb, leido_en = now(), error = NULL,
+                uso = $3::jsonb, modelo = $4, duracion_ms = $5
           WHERE id = $1`,
-        [id, JSON.stringify(datos)],
+        [id, JSON.stringify(datos), ...columnasDe(medicion)],
       ),
     );
   }
@@ -146,17 +157,27 @@ export class DocumentoService {
   async marcarFallo(
     ctx: CtxEmpresa,
     id: string,
-    falla: { clase: ClaseDeFalla; motivo: string },
+    falla: { clase: ClaseDeFalla; motivo: string; medicion?: MedicionLectura },
   ): Promise<void> {
     await this.tx.enContexto(ctx, (t) =>
       t.query(
         `UPDATE documento_leido
-            SET estado = 'FALLO', error = $2, leido_en = now()
+            SET estado = 'FALLO', error = $2, leido_en = now(),
+                uso = $3::jsonb, modelo = $4, duracion_ms = $5
           WHERE id = $1`,
-        [id, falla.motivo],
+        [id, falla.motivo, ...columnasDe(falla.medicion)],
       ),
     );
   }
+}
+
+/** La medición como columnas (0054). Sin medición, las tres en NULL. */
+function columnasDe(
+  m: MedicionLectura | undefined,
+): [string | null, string | null, number | null] {
+  return m === undefined
+    ? [null, null, null]
+    : [JSON.stringify(m.uso), m.modelo, Math.round(m.duracionMs)];
 }
 
 function aDocumento(f: FilaDocumento): Documento {

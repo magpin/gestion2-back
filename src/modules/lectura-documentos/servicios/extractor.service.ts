@@ -6,9 +6,18 @@ import { nombreDocumento } from '../reglas/documento.reglas';
 import {
   EXTRACTOR_PUERTO,
   type ExtractorPuerto,
+  type TipoDocumento,
 } from '../proveedores/extractor.puerto';
+
+/** Lo que contesta `POST documentos/analizar`. */
+export interface ResultadoAnalisis {
+  /** La lectura que arrancó, si era uno de los tres documentos; si no, `null`. */
+  documento: Documento | null;
+  clase: string;
+  resumen: string;
+}
 import type { Documento } from './documento.service';
-import { DocumentoService } from './documento.service';
+import { DocumentoService, exigirClaveDeLaEmpresa } from './documento.service';
 import { ProgresoService } from './progreso.service';
 
 /**
@@ -40,10 +49,10 @@ export class ExtractorService {
 
   async encolar(
     ctx: CtxEmpresa,
-    datos: { tipo: string; clave: string },
+    datos: { tipo: TipoDocumento; clave: string },
   ): Promise<Documento> {
     const documento = await this.documentos.registrar(ctx, {
-      tipo: datos.tipo as Documento['tipo'],
+      tipo: datos.tipo,
       clave: datos.clave,
     });
 
@@ -57,6 +66,30 @@ export class ExtractorService {
 
     void this.leer(ctx, documento);
     return documento;
+  }
+
+  /**
+   * Un archivo que se subió sin decir qué es: el asistente lo mira y dice qué
+   * es. Se espera en la petición —son pocos segundos—.
+   *
+   * Si es uno de los tres documentos de configuración, la lectura arranca como
+   * siempre y el archivo queda. Si no, **no es un error**: se contesta qué es y
+   * el archivo se borra del bucket, porque nada lo referencia.
+   */
+  async analizar(ctx: CtxEmpresa, clave: string): Promise<ResultadoAnalisis> {
+    exigirClaveDeLaEmpresa(ctx, clave);
+    const archivo = await this.almacenamiento.descargar(clave);
+    const analisis = await this.extractor.analizar(archivo);
+    if (analisis.tipo !== null) {
+      const documento = await this.encolar(ctx, { tipo: analisis.tipo, clave });
+      return { documento, clase: analisis.clase, resumen: analisis.resumen };
+    }
+    await this.almacenamiento.borrar(clave);
+    return {
+      documento: null,
+      clase: analisis.clase,
+      resumen: analisis.resumen,
+    };
   }
 
   /** Corta una lectura en curso. `false` si ya había terminado. */
@@ -116,7 +149,12 @@ export class ExtractorService {
         return;
       }
 
-      await this.documentos.guardarLeido(ctx, documento.id, resultado.datos);
+      await this.documentos.guardarLeido(
+        ctx,
+        documento.id,
+        resultado.datos,
+        resultado.medicion,
+      );
       this.progreso.emitir(ctx.empresaId, {
         etapa: 'LISTO',
         documento: documento.tipo,

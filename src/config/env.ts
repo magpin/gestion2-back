@@ -43,6 +43,13 @@ export interface Entorno {
 
   /** Cabecera que autoriza el alta de tenants. */
   claveProvision?: string;
+
+  /**
+   * Cabecera que abre el tablero de consumo de la IA (`/consumo-ia`). Sin
+   * ella, el tablero responde 503. De 32 caracteres o más: es la única puerta
+   * a cifras de todas las empresas.
+   */
+  claveConsumoIa?: string;
 }
 
 function requerido(nombre: string): string {
@@ -120,7 +127,17 @@ export function leerEntorno(): Entorno {
     },
     claveCifrado,
     claveProvision: opcional('CLAVE_PROVISION'),
+    claveConsumoIa: claveConsumoIa(),
   };
+}
+
+/** La clave del tablero de consumo: opcional, pero si está, larga. */
+function claveConsumoIa(): string | undefined {
+  const clave = opcional('CLAVE_CONSUMO_IA');
+  if (clave !== undefined && clave.length < 32) {
+    throw new Error('CLAVE_CONSUMO_IA debe tener 32 caracteres o mas');
+  }
+  return clave;
 }
 
 export const ENTORNO = Symbol('ENTORNO');

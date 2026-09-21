@@ -89,11 +89,15 @@ export class AlmacenamientoApi {
   async firmarSubida(
     prefijo: string,
     tipoMime: string,
+    /** Tipo MIME → extensión. Por defecto, fotos y PDF; el asistente acepta más. */
+    tipos: ReadonlyMap<string, string> = TIPOS,
   ): Promise<{ url: string; clave: string }> {
-    const extension = TIPOS.get(tipoMime);
+    const extension = tipos.get(tipoMime);
     if (extension === undefined) {
       throw new BadRequestException(
-        `Ese archivo no se puede subir (${tipoMime}). Se aceptan JPG, PNG, WebP y PDF.`,
+        tipos === TIPOS
+          ? `Ese archivo no se puede subir (${tipoMime}). Se aceptan JPG, PNG, WebP y PDF.`
+          : `Ese archivo no se puede subir (${tipoMime}).`,
       );
     }
 
@@ -115,8 +119,10 @@ export class AlmacenamientoApi {
    *
    * Es la excepción a «el archivo no pasa por la API», y tiene un solo uso: el
    * modo IA del asistente necesita el contenido para mandárselo al modelo. Lo
-   * baja **una vez** por documento, y con la llave que guardó la fila, no con
-   * una que venga de afuera.
+   * baja para leerlo, con la llave que guardó la fila, y —si se subió sin decir
+   * qué es— una vez antes para reconocerlo, con una llave que viene del
+   * navegador pero que ya se comprobó que es del prefijo de la empresa
+   * (`exigirClaveDeLaEmpresa`).
    */
   async descargar(clave: string): Promise<{
     contenido: Buffer;

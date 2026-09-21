@@ -166,7 +166,7 @@ function imprimirFila({ turno, resultado, ms }: Fila): void {
     `  turno ${String(turno).padStart(2)}  ${resultado.estado.padEnd(9)} ${resultado.modelo.padEnd(16)}` +
       ` entrada ${String(uso.entrada).padStart(5)}  caché escrito ${String(uso.cacheEscrito).padStart(6)}` +
       `  caché leído ${String(uso.cacheLeido).padStart(6)}  total ${String(entradaTotal(uso)).padStart(6)}` +
-      `  salida ${String(uso.salida).padStart(5)}  ${(ms / 1000).toFixed(1)} s  US$ ${costoUsd(uso).toFixed(4)}`,
+      `  salida ${String(uso.salida).padStart(5)}  ${(ms / 1000).toFixed(1)} s  US$ ${costoUsd(uso, resultado.modelo).toFixed(4)}`,
   );
 }
 
@@ -220,7 +220,7 @@ function imprimirFila({ turno, resultado, ms }: Fila): void {
 
     for (const f of [primera, siguiente]) {
       if (f.resultado.estado !== 'FALLO' && f.resultado.uso)
-        total += costoUsd(f.resultado.uso);
+        total += costoUsd(f.resultado.uso, f.resultado.modelo);
     }
     if (previos === 0 && primera.resultado.estado === 'COMPLETO') {
       console.log(

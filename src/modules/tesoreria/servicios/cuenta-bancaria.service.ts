@@ -20,6 +20,11 @@ export interface CuentaBancaria {
   saldo: string;
   /** El día del último movimiento, o `null` si no hubo ninguno. */
   ultimo_movimiento: string | null;
+  /**
+   * El mapeo de columnas del último extracto subido, para no volver a
+   * pedirlo el mes siguiente. Lo interpreta el frontend; acá solo se guarda.
+   */
+  formato_extracto: Record<string, unknown> | null;
 }
 
 /** Igual que en `CajaService`, y allá está escrito el porqué. */
@@ -31,6 +36,7 @@ const ultimo = (columna: string, porDefecto: string) =>
         LIMIT 1), ${porDefecto}))`;
 
 const CAMPOS = `id, banco, numero_cuenta, tipo_cuenta, cuenta_id, activa,
+                formato_extracto,
                 ${ultimo('saldo_valor', '0')} AS saldo,
                 ${ultimo('fecha', 'NULL')} AS ultimo_movimiento`;
 

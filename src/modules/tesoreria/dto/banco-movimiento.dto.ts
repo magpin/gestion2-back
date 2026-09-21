@@ -32,7 +32,16 @@ export class CargaInicialBancoDto {
 }
 
 /** `cuentaBancariaId` va por la ruta: el libro siempre es de UNA cuenta. */
-export class ListarMovimientosBancoDto extends PaginacionDto {}
+export class ListarMovimientosBancoDto extends PaginacionDto {
+  /**
+   * Solo lo que queda por conciliar: sin cruce y sin el saldo inicial, que no
+   * se cruza contra nada. Es lo que necesita la conciliación, y paginar el
+   * libro entero le escondía los cheques viejos.
+   */
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  sinConciliar?: 'true' | 'false';
+}
 
 /**
  * Los siete tipos que se registran a mano — todos menos `SALDO_INICIAL`

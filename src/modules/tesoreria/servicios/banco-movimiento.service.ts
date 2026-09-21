@@ -242,10 +242,15 @@ export class BancoMovimientoService {
     cuentaBancariaId: string,
     p: ListarMovimientosBancoDto,
   ): Promise<Pagina<MovimientoBancoResumen>> {
+    const where =
+      p.sinConciliar === 'true'
+        ? `WHERE cuenta_bancaria_id = $1 AND NOT conciliado AND tipo <> 'SALDO_INICIAL'`
+        : 'WHERE cuenta_bancaria_id = $1';
+
     return this.tx.enContexto(ctx, async (t) => {
       const conteo = fila<{ total: string }>(
         await t.query(
-          'SELECT count(*) AS total FROM banco_movimiento WHERE cuenta_bancaria_id = $1',
+          `SELECT count(*) AS total FROM banco_movimiento ${where}`,
           [cuentaBancariaId],
         ),
       );
@@ -254,7 +259,7 @@ export class BancoMovimientoService {
         await t.query(
           `SELECT ${CAMPOS}
              FROM banco_movimiento
-            WHERE cuenta_bancaria_id = $1
+            ${where}
             ORDER BY secuencia DESC
             LIMIT $2 OFFSET $3`,
           [cuentaBancariaId, p.tamano, p.salto],

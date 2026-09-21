@@ -7,6 +7,7 @@ import type {
   CargaInicialBancoDto,
   RegistrarMovimientoBancoDto,
 } from '../dto/banco-movimiento.dto';
+import { ListarMovimientosBancoDto } from '../dto/banco-movimiento.dto';
 
 const ctx: CtxEmpresa = {
   tenantId: 't-1',
@@ -312,5 +313,43 @@ describe('BancoMovimientoService.resumen', () => {
     expect([...params[2]].sort()).toEqual(
       ['CHEQUE', 'NOTA_DEBITO', 'RETIRO', 'TRANSFERENCIA_SALIENTE'].sort(),
     );
+  });
+});
+
+describe('BancoMovimientoService.listar', () => {
+  function listarCon(filtro: Partial<ListarMovimientosBancoDto>) {
+    const query = jest.fn((sql: string) =>
+      Promise.resolve(sql.includes('count(*)') ? [{ total: '0' }] : []),
+    );
+    const servicio = new BancoMovimientoService(
+      {
+        enContexto: (_ctx: unknown, fn: (t: Tx) => unknown) =>
+          fn({ query } as unknown as Tx),
+      } as never,
+      {} as never,
+    );
+    const dto = Object.assign(new ListarMovimientosBancoDto(), filtro);
+    return { query, listado: servicio.listar(ctx, 'cb-1', dto) };
+  }
+
+  it('sinConciliar filtra el conteo y la página igual: lo cruzado y el saldo inicial no cuentan', async () => {
+    const { query, listado } = listarCon({ sinConciliar: 'true' });
+    await listado;
+
+    const consultas = query.mock.calls.map(([sql]) => sql);
+    expect(consultas).toHaveLength(2);
+    for (const sql of consultas) {
+      expect(sql).toContain('NOT conciliado');
+      expect(sql).toContain(`tipo <> 'SALDO_INICIAL'`);
+    }
+  });
+
+  it('sin el filtro trae el libro entero, como antes', async () => {
+    const { query, listado } = listarCon({});
+    await listado;
+
+    for (const [sql] of query.mock.calls) {
+      expect(sql).not.toContain('NOT conciliado');
+    }
   });
 });

@@ -1,14 +1,20 @@
 import { Module } from '@nestjs/common';
 
+import { ComprasModule } from '../compras/compras.module';
 import { InventarioModule } from '../inventario/inventario.module';
+import { NucleoModule } from '../nucleo/nucleo.module';
 import { ReportesModule } from '../reportes/reportes.module';
 import { TesoreriaModule } from '../tesoreria/tesoreria.module';
+import { VentasModule } from '../ventas/ventas.module';
 
+import { AutonomiaController } from './controladores/autonomia.controller';
 import { ConversacionController } from './controladores/conversacion.controller';
 import { ClaudeConversador } from './proveedores/claude.conversador';
 import { CONVERSADOR } from './proveedores/conversador.puerto';
+import { AutonomiaService } from './servicios/autonomia.service';
 import { ConsultasService } from './servicios/consultas.service';
 import { ConversacionService } from './servicios/conversacion.service';
+import { PropuestasService } from './servicios/propuestas.service';
 
 /**
  * `conversacion` — conversar con el asistente.
@@ -24,14 +30,29 @@ import { ConversacionService } from './servicios/conversacion.service';
  * Desde el paso 6 **ve** datos de la empresa: consulta el armador de
  * reportes, los saldos de tesorería y las existencias de inventario, con los
  * permisos de quien pregunta (`ConsultasService`). Todavía no escribe nada del
- * negocio: eso es el paso 7 (`docs/planes/asistente-acciones.md`).
+ * negocio por su cuenta.
+ *
+ * Desde el paso 7 **propone** cobros y pagos (`PropuestasService`): los
+ * verifica en seco con el código de ventas y compras, y una persona los
+ * confirma (`docs/planes/asistente-acciones.md`).
  */
 @Module({
-  imports: [ReportesModule, TesoreriaModule, InventarioModule],
-  controllers: [ConversacionController],
+  imports: [
+    ReportesModule,
+    TesoreriaModule,
+    InventarioModule,
+    VentasModule,
+    ComprasModule,
+    NucleoModule,
+  ],
+  // La autonomía primero: `GET /conversacion/autonomia` tiene que ganarle a
+  // `GET /conversacion/:id`, que se registra en el orden de esta lista.
+  controllers: [AutonomiaController, ConversacionController],
   providers: [
     ConversacionService,
     ConsultasService,
+    PropuestasService,
+    AutonomiaService,
     { provide: CONVERSADOR, useClass: ClaudeConversador },
   ],
 })

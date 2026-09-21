@@ -1,5 +1,7 @@
 import { HttpException, Injectable, Logger } from '@nestjs/common';
 
+import type { Tx } from '../../../common/db/tx.service';
+
 import type { CtxEmpresa } from '../../../common/ctx';
 import { hoyEnColombia } from '../../../common/fecha';
 import { InventarioApi } from '../../inventario/inventario.api';
@@ -22,6 +24,17 @@ import {
   SALDOS,
   saldosParaModelo,
 } from '../reglas/herramientas';
+import {
+  accionDeHerramienta,
+  herramientasDeAccion,
+  PROPUESTAS_POR_TURNO,
+} from '../reglas/propuestas';
+import { AutonomiaService } from './autonomia.service';
+import {
+  PropuestasService,
+  type PropuestaNueva,
+  type PropuestaResumen,
+} from './propuestas.service';
 
 /** Una consulta del turno, para guardarla con la respuesta (migración 0051). */
 export interface ConsultaHecha {
@@ -63,7 +76,19 @@ export class ConsultasService {
     private readonly armador: ArmadorService,
     private readonly tesoreria: TesoreriaApi,
     private readonly inventario: InventarioApi,
+    private readonly propuestas: PropuestasService,
+    private readonly autonomia: AutonomiaService,
   ) {}
+
+  /**
+   * Lo que el sistema le dice al modelo en este turno (paso 8): las reglas de
+   * autonomía vigentes, si quien pregunta puede proponer. Sin herramientas de
+   * proponer, la autonomía no le toca.
+   */
+  async contextoDelTurno(ctx: CtxEmpresa): Promise<string | null> {
+    if (herramientasDeAccion(ctx.roles).length === 0) return null;
+    return this.autonomia.contexto(ctx);
+  }
 
   /**
    * Las herramientas de quien pregunta, y la lista donde queda cada consulta
@@ -76,12 +101,33 @@ export class ConsultasService {
   paraTurno(ctx: CtxEmpresa): {
     herramientas: HerramientasDelTurno;
     hechas: ConsultaHecha[];
+    propuestas: PropuestaNueva[];
   } {
-    const definiciones = herramientasPara(ctx.roles);
+    // Las de consultar y, si el rol puede cobrar o pagar, las de proponer
+    // (paso 7). Proponer no registra nada: verifica en seco.
+    const definiciones = [
+      ...herramientasPara(ctx.roles),
+      ...herramientasDeAccion(ctx.roles),
+    ];
     const ofrecidas = new Set(definiciones.map((d) => d.name));
     const hechas: ConsultaHecha[] = [];
+    const propuestas: PropuestaNueva[] = [];
 
     const ejecutar = async (nombre: string, entrada: unknown) => {
+      // Una propuesta no es una consulta: no va a las fuentes; se guarda
+      // aparte, con la respuesta.
+      const accion = accionDeHerramienta(nombre);
+      if (accion !== undefined) {
+        if (!ofrecidas.has(nombre)) {
+          return 'No se pudo proponer: el rol de quien pregunta no puede hacer esto.';
+        }
+        if (propuestas.length >= PROPUESTAS_POR_TURNO) {
+          return `No se pudo proponer: ya van ${PROPUESTAS_POR_TURNO} en este turno. Que confirme esas y sigan en el próximo.`;
+        }
+        const r = await this.propuestas.preparar(ctx, accion, entrada);
+        if (r.nueva !== undefined) propuestas.push(r.nueva);
+        return r.texto;
+      }
       try {
         // El modelo solo ve las ofrecidas; esto es por si pide otra igual.
         if (!ofrecidas.has(nombre)) throw new NoPermitida();
@@ -100,7 +146,45 @@ export class ConsultasService {
       }
     };
 
-    return { herramientas: { definiciones, ejecutar }, hechas };
+    return { herramientas: { definiciones, ejecutar }, hechas, propuestas };
+  }
+
+  /**
+   * Lo que una regla de autonomía confirma sola, después de guardar la
+   * respuesta (paso 8). Devuelve las propuestas como quedaron.
+   */
+  async confirmarPorReglas(
+    ctx: CtxEmpresa,
+    nuevas: readonly PropuestaNueva[],
+    guardadas: readonly PropuestaResumen[],
+  ): Promise<PropuestaResumen[]> {
+    const finales: PropuestaResumen[] = [];
+    for (const [i, g] of guardadas.entries()) {
+      const n = nuevas[i];
+      const confirmada =
+        n?.porRegla === true
+          ? await this.propuestas.confirmarPorRegla(
+              ctx,
+              g.id,
+              n.accion,
+              n.documentoId,
+              n.cuerpo,
+            )
+          : null;
+      finales.push(confirmada ?? g);
+    }
+    return finales;
+  }
+
+  /** Las propuestas del turno, en la transacción que guarda la respuesta. */
+  guardarPropuestas(
+    ctx: CtxEmpresa,
+    turnoId: string,
+    nuevas: readonly PropuestaNueva[],
+    t: Tx,
+  ): Promise<PropuestaResumen[]> {
+    if (nuevas.length === 0) return Promise.resolve([]);
+    return this.propuestas.guardar(ctx, turnoId, nuevas, t);
   }
 
   private async correr(

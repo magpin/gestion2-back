@@ -1,17 +1,105 @@
 import { Injectable } from '@nestjs/common';
 
+import type { CtxEmpresa } from '../../common/ctx';
+import { filas } from '../../common/db/filas';
+import { TxService, type Tx } from '../../common/db/tx.service';
+import {
+  ContabilidadApi,
+  type VistaAsiento,
+} from '../contabilidad/contabilidad.api';
+import type { PagarDto } from './dto/compra.dto';
+import {
+  CompraService,
+  type CompraDocumentoResumen,
+} from './servicios/compra.service';
+
+/** Una compra, tal como la ve quien la va a pagar. */
+export interface CompraParaPagar {
+  id: string;
+  numero: string;
+  proveedor: string;
+  pendiente: string;
+}
+
 /**
- * La única clase que `compras` expondría a otros módulos — hoy vacía, a
- * propósito.
+ * La única clase que `compras` expone a otros módulos.
  *
- * Ningún módulo existente necesita nada de `compras` todavía: `nucleo`,
- * `contabilidad` e `inventario` no dependen de él (la dependencia va al
- * revés — `compras` es quien los consume). El candidato obvio es DIAN (#6
- * de `docs/decisiones/secuencia-modulos.md`), si algún día necesita cruzar
- * información de compras — pero adivinar esa forma antes de diseñar DIAN
- * es el mismo riesgo que ya evitó `VentasApi` (ver su propio comentario).
- * El archivo existe igual, vacío, para que `ComprasModule` tenga dónde
- * registrar el primer método el día que haga falta uno.
+ * Estuvo vacía hasta el paso 7 de `docs/planes/asistente-conversacion.md`
+ * (`asistente-acciones.md`): el asistente propone pagos y una persona los
+ * confirma. Es el espejo de `VentasApi`, y por la misma razón todo pasa por
+ * `pagarEnTx`, el código de la pantalla.
+ *
+ * **No mira roles**: eso lo hace quien llama, con las listas del controlador
+ * (`@Roles('CAJA', 'DIRECTOR')` en `compras/:id/pagar`).
  */
 @Injectable()
-export class ComprasApi {}
+export class ComprasApi {
+  constructor(
+    private readonly compras: CompraService,
+    private readonly tx: TxService,
+    private readonly contabilidad: ContabilidadApi,
+  ) {}
+
+  /**
+   * Las compras vigentes con ese número de factura del proveedor. El número
+   * lo pone cada proveedor, así que **dos pueden repetirlo**: por eso vuelve
+   * una lista, y con \`proveedor\` (parte del nombre, sin tildes) se acota.
+   */
+  async comprasPorNumero(
+    ctx: CtxEmpresa,
+    numero: string,
+    proveedor?: string,
+  ): Promise<CompraParaPagar[]> {
+    const ids = await this.tx.enContexto(ctx, async (t) =>
+      filas<{ id: string }>(
+        await t.query(
+          `SELECT c.id
+             FROM compra_documento c
+             JOIN tercero t ON t.id = c.tercero_id
+            WHERE c.tipo = 'FACTURA' AND c.estado = 'EMITIDA'
+              AND upper(btrim(c.numero_factura_proveedor)) = upper(btrim($1))
+              AND ($2::text IS NULL OR fn_normalizar(
+                    COALESCE(NULLIF(BTRIM(t.razon_social), ''),
+                      CONCAT_WS(' ', t.primer_nombre, t.primer_apellido)))
+                  LIKE '%' || fn_normalizar($2) || '%')
+            LIMIT 5`,
+          [numero, proveedor?.trim() ? proveedor : null],
+        ),
+      ),
+    );
+    const compras: CompraParaPagar[] = [];
+    for (const { id } of ids) {
+      const d = await this.compras.porId(ctx, id);
+      compras.push({
+        id: d.id,
+        numero: d.numero_factura_proveedor,
+        proveedor: d.tercero_nombre,
+        pendiente: d.pendiente,
+      });
+    }
+    return compras;
+  }
+
+  /** El pago **en seco**: el de verdad, deshecho. Ver `VentasApi.simularCobro`. */
+  async simularPago(
+    ctx: CtxEmpresa,
+    compraId: string,
+    dto: PagarDto,
+  ): Promise<{ documento: CompraDocumentoResumen; asientos: VistaAsiento[] }> {
+    return this.tx.simular(ctx, async (t) => {
+      const documento = await this.compras.pagarEnTx(ctx, compraId, dto, t);
+      const asientos = await this.contabilidad.asientosDeLaTransaccion(t);
+      return { documento, asientos };
+    });
+  }
+
+  /** El pago de verdad, en la transacción de quien llama. */
+  pagarEnTx(
+    ctx: CtxEmpresa,
+    compraId: string,
+    dto: PagarDto,
+    t: Tx,
+  ): Promise<CompraDocumentoResumen> {
+    return this.compras.pagarEnTx(ctx, compraId, dto, t);
+  }
+}

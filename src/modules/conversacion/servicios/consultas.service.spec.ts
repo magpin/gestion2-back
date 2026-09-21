@@ -14,6 +14,8 @@ import type {
 } from '../../reportes/servicios/armador.service';
 import type { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import { ConsultasService } from './consultas.service';
+import type { AutonomiaService } from './autonomia.service';
+import type { PropuestasService } from './propuestas.service';
 
 const ctx = (roles: RolCodigo[]): CtxEmpresa => ({
   tenantId: 't-1',
@@ -62,6 +64,12 @@ function preparar() {
     ]),
   );
   const existencias = jest.fn(() => Promise.resolve([]));
+  const preparar = jest.fn(() =>
+    Promise.resolve({
+      texto: '{"propuesta":"lista para confirmar"}',
+      nueva: { accion: 'COBRO', documentoId: 'f-1' },
+    }),
+  );
   const armador = {
     definicion: (e: unknown) => {
       try {
@@ -79,8 +87,10 @@ function preparar() {
     armador,
     { saldos } as unknown as TesoreriaApi,
     { existencias } as unknown as InventarioApi,
+    { preparar } as unknown as PropuestasService,
+    { contexto: () => Promise.resolve(null) } as unknown as AutonomiaService,
   );
-  return { servicio, correr, valores, saldos, existencias };
+  return { servicio, correr, valores, saldos, existencias, preparar };
 }
 
 describe('ConsultasService — con los permisos de quien pregunta', () => {

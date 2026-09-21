@@ -232,6 +232,9 @@ export function etiquetaDeConsulta(nombre: string): string {
   if (nombre === SALDOS) return 'Saldos de caja y bancos';
   if (nombre === EXISTENCIAS) return 'Existencias';
   if (nombre === BUSCAR) return 'Búsqueda';
+  // Las de proponer (paso 7) no son consultas: la burbuja dice que verifica.
+  if (nombre === 'proponer_cobro') return 'Verificando el cobro';
+  if (nombre === 'proponer_pago') return 'Verificando el pago';
   return 'Consulta';
 }
 

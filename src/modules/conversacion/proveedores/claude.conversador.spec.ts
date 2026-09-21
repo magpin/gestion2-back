@@ -310,7 +310,7 @@ describe('ClaudeConversador — con herramientas', () => {
     return { resultado, trozos, consultas, ejecutar, conversador };
   }
 
-  it('consulta, lee el resultado y contesta: un solo texto, con un renglón entre las dos vueltas', async () => {
+  it('consulta, lee el resultado y contesta; el preámbulo antes de consultar no se muestra ni se guarda', async () => {
     const { resultado, trozos, consultas, ejecutar, conversador } =
       await conHerramientas({
         vueltas: [
@@ -345,12 +345,43 @@ describe('ClaudeConversador — con herramientas', () => {
     ]);
     expect(resultado).toEqual({
       estado: 'COMPLETO',
-      texto: 'Consulto.\n\nTe debe $ 1.000.',
+      texto: 'Te debe $ 1.000.',
       modelo: MODELO,
       // Las dos vueltas se cobran.
       uso: { entrada: 80, salida: 50, cacheEscrito: 20, cacheLeido: 1800 },
     });
-    expect(trozos.join('')).toBe('Consulto.\n\nTe debe $ 1.000.');
+    expect(trozos.join('')).toBe('Te debe $ 1.000.');
+  });
+
+  it('un texto largo antes de consultar ya no es un preámbulo: se muestra, y lo de después va un renglón abajo', async () => {
+    const largo =
+      'Antes de responder conviene mirar la cartera completa del cliente. '.repeat(
+        4,
+      );
+    const { resultado, trozos } = await conHerramientas({
+      vueltas: [
+        { trozos: [largo], respuesta: pideConsulta('t1', largo) },
+        {
+          trozos: ['Te debe $ 1.000.'],
+          respuesta: respuesta({ texto: 'Te debe $ 1.000.' }),
+        },
+      ],
+    });
+    expect(trozos.join('')).toBe(`${largo}\n\nTe debe $ 1.000.`);
+    expect(resultado).toMatchObject({ texto: `${largo}\n\nTe debe $ 1.000.` });
+  });
+
+  it('sin herramientas todo va en vivo desde el primer pedazo, sin retener nada', async () => {
+    const conversador = new ConversadorDePrueba({
+      trozos: ['Con ', '«Cobrar».'],
+      respuesta: respuesta({ texto: 'Con «Cobrar».' }),
+    });
+    const trozos: string[] = [];
+    await conversador.responder({
+      hilo: HILO,
+      alEscribir: (t) => trozos.push(t),
+    });
+    expect(trozos).toEqual(['Con ', '«Cobrar».']);
   });
 
   it('pasadas cuatro consultas, una vuelta más sin herramientas: contesta con lo que tiene', async () => {
@@ -382,7 +413,7 @@ describe('ClaudeConversador — con herramientas', () => {
     expect(conversador.peticion).not.toHaveProperty('tools');
   });
 
-  it('cortado en la segunda vuelta: lo transmitido, y el uso de la vuelta que terminó', async () => {
+  it('cortado en la segunda vuelta: lo que alcanzó a escribir sin el preámbulo, y el uso de la vuelta que terminó', async () => {
     const { resultado } = await conHerramientas({
       vueltas: [
         { trozos: ['Consulto.'], respuesta: pideConsulta('t1', 'Consulto.') },
@@ -391,10 +422,36 @@ describe('ClaudeConversador — con herramientas', () => {
     });
     expect(resultado).toEqual({
       estado: 'CORTADO',
-      texto: 'Consulto.\n\nTe de',
+      texto: 'Te de',
       modelo: MODELO,
       uso: { entrada: 40, salida: 25, cacheEscrito: 10, cacheLeido: 900 },
       motivo: null,
     });
+  });
+});
+
+describe('ClaudeConversador — el contexto del sistema', () => {
+  it('va como un bloque más de las instrucciones, después de la fecha y sin caché propio', async () => {
+    const conversador = new ConversadorDePrueba({
+      respuesta: respuesta({ texto: 'Listo.' }),
+    });
+    await conversador.responder({
+      hilo: HILO,
+      contexto:
+        'Autonomía (la escribe el sistema en cada turno): cobros hasta $ 5.000 se registran solos.',
+    });
+    const system = conversador.peticion?.system as {
+      text: string;
+      cache_control?: unknown;
+    }[];
+    expect(system).toHaveLength(3);
+    expect(system[2]).toEqual({
+      type: 'text',
+      text: 'Autonomía (la escribe el sistema en cada turno): cobros hasta $ 5.000 se registran solos.',
+    });
+    // Y nunca dentro del hilo, donde sería de la persona.
+    expect(JSON.stringify(conversador.peticion?.messages)).not.toMatch(
+      /Autonomía/,
+    );
   });
 });

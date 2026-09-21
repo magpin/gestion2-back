@@ -26,6 +26,11 @@ import {
 } from '../reglas/conversacion.reglas';
 import { BUSCAR, etiquetaDeConsulta } from '../reglas/herramientas';
 import { ConsultasService, type ConsultaHecha } from './consultas.service';
+import {
+  CAMPOS_PROPUESTA,
+  resumenDe,
+  type PropuestaResumen,
+} from './propuestas.service';
 
 /** Un turno, como lo ve la pantalla. El uso de tokens queda en la base: es del expediente, no de la conversación. */
 export interface TurnoResumen {
@@ -43,6 +48,11 @@ export interface TurnoResumen {
    * consultar.
    */
   fuentes: string[];
+  /**
+   * Lo que el asistente propuso hacer en esta respuesta (paso 7): cobros o
+   * pagos esperando Confirmar. Vacío en las preguntas.
+   */
+  propuestas: PropuestaResumen[];
 }
 
 export interface ConversacionVigente {
@@ -83,10 +93,12 @@ export interface TurnoPreparado {
 
 const CAMPOS = `id, orden, autor, texto, estado, motivo, creado_en`;
 
-interface FilaTurno extends Omit<TurnoResumen, 'fuentes'> {
+interface FilaTurno extends Omit<TurnoResumen, 'fuentes' | 'propuestas'> {
   uso: UsoConversacion | null;
   /** Las herramientas que salieron bien, en orden. Solo en la lectura. */
   herramientas?: string[] | null;
+  /** Las propuestas del turno, como filas. Solo en la lectura. */
+  propuestas?: Parameters<typeof resumenDe>[0][] | null;
 }
 
 /**
@@ -281,7 +293,9 @@ export class ConversacionService {
     } = {},
   ): Promise<TurnoResumen> {
     try {
-      const { herramientas, hechas } = this.consultas.paraTurno(ctx);
+      const { herramientas, hechas, propuestas } =
+        this.consultas.paraTurno(ctx);
+      const contexto = await this.consultas.contextoDelTurno(ctx);
       const resultado = await this.conversador.responder({
         hilo: preparado.hilo,
         alEscribir: opciones.alEscribir,
@@ -289,8 +303,9 @@ export class ConversacionService {
         herramientas,
         alConsultar: (nombre) =>
           opciones.alConsultar?.(etiquetaDeConsulta(nombre)),
+        contexto: contexto ?? undefined,
       });
-      return await this.tx.enContexto(ctx, async (t) => {
+      const turno = await this.tx.enContexto(ctx, async (t) => {
         const turnos = await this.turnos(preparado.conversacionId, t);
         const guardado = await this.insertarTurno(
           ctx,
@@ -300,13 +315,33 @@ export class ConversacionService {
           t,
         );
         await this.insertarConsultas(ctx, guardado.id, hechas, t);
-        return sinUso({
-          ...guardado,
-          herramientas: hechas
-            .filter((c) => c.error === null)
-            .map((c) => c.herramienta),
-        });
+        const guardadas = await this.consultas.guardarPropuestas(
+          ctx,
+          guardado.id,
+          propuestas,
+          t,
+        );
+        return {
+          ...sinUso({
+            ...guardado,
+            herramientas: hechas
+              .filter((c) => c.error === null)
+              .map((c) => c.herramienta),
+          }),
+          propuestas: guardadas,
+        };
       });
+      // Paso 8: lo que una regla de autonomía cubre se confirma ahora, ya con
+      // la respuesta guardada. Cada una en su transacción: un cobro que falla
+      // no se lleva la respuesta, queda pendiente con el motivo.
+      if (propuestas.some((p) => p.porRegla === true)) {
+        turno.propuestas = await this.consultas.confirmarPorReglas(
+          ctx,
+          propuestas,
+          turno.propuestas,
+        );
+      }
+      return turno;
     } finally {
       this.enCurso.delete(preparado.conversacionId);
     }
@@ -356,7 +391,12 @@ export class ConversacionService {
                 (SELECT array_agg(c.herramienta ORDER BY c.orden)
                    FROM conversacion_consulta c
                   WHERE c.turno_id = conversacion_turno.id AND c.error IS NULL)
-                  AS herramientas
+                  AS herramientas,
+                (SELECT json_agg(row_to_json(p) ORDER BY p.creada_en)
+                   FROM (SELECT ${CAMPOS_PROPUESTA}, creada_en
+                           FROM asistente_propuesta
+                          WHERE turno_id = conversacion_turno.id) p)
+                  AS propuestas
            FROM conversacion_turno
           WHERE conversacion_id = $1 ORDER BY orden`,
         [conversacionId],
@@ -497,6 +537,7 @@ function sinUso(t: FilaTurno): TurnoResumen {
     motivo: t.motivo,
     creado_en: t.creado_en,
     fuentes: fuentesDe(t.herramientas ?? []),
+    propuestas: (t.propuestas ?? []).map(resumenDe),
   };
 }
 

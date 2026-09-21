@@ -271,10 +271,16 @@ function consultasFalsas() {
         return Promise.resolve(error ?? '{}');
       },
     };
-    return { herramientas, hechas };
+    return { herramientas, hechas, propuestas: [] };
   });
+  const guardarPropuestas = jest.fn(() => Promise.resolve([]));
+  const contextoDelTurno = jest.fn(() => Promise.resolve(null));
   return {
-    consultas: { paraTurno } as unknown as ConsultasService,
+    consultas: {
+      paraTurno,
+      guardarPropuestas,
+      contextoDelTurno,
+    } as unknown as ConsultasService,
     paraTurno,
   };
 }

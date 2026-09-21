@@ -49,6 +49,34 @@ export class TxService {
   }
 
   /**
+   * Corre `fn` con el contexto puesto y **deshace todo al final**, salga bien
+   * o mal. Devuelve lo que `fn` devolvió.
+   *
+   * Es la verificación en seco del paso 7 de `asistente-conversacion.md`: el
+   * asistente propone un cobro, y para saber si pasaría y qué asiento haría
+   * se corre el mismo código del cobro de verdad, que valida y asienta, y se
+   * deshace. Así la verificación no es una copia de las reglas que puede
+   * quedar desfasada: son las reglas.
+   *
+   * Es seguro con la numeración: los consecutivos de los comprobantes salen
+   * de un `UPDATE` que el rollback deshace. Las secuencias de Postgres
+   * (`*_secuencia_seq`, 0036) sí avanzan, pero solo ordenan los saldos y un
+   * hueco no se ve.
+   */
+  async simular<T>(ctx: Ctx, fn: (tx: Tx) => Promise<T>): Promise<T> {
+    const qr = this.ds.createQueryRunner();
+    await qr.connect();
+    await qr.startTransaction();
+    try {
+      await this.fijarContexto(qr.manager, ctx);
+      return await fn(qr.manager);
+    } finally {
+      await qr.rollbackTransaction();
+      await qr.release();
+    }
+  }
+
+  /**
    * Transacción sin tenant: solo para el login, que ocurre antes de saber quién
    * es. Lo único que puede hacer es llamar a `fn_usuario_para_login`, que es
    * `SECURITY DEFINER` y devuelve nada más lo que el login necesita.

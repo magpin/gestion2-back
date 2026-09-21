@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../common/ctx';
+import { filas } from '../../common/db/filas';
 import type { Tx } from '../../common/db/tx.service';
 import type { CrearAsientoDto } from './dto/asiento.dto';
 import { AsientoService, type Origen } from './servicios/asiento.service';
@@ -18,6 +19,19 @@ import { PeriodoService } from './servicios/periodo.service';
  * factura y su asiento entran juntos o no entra ninguno. Una factura sin asiento
  * es un papel; un asiento sin factura descuadra el libro.
  */
+/** Un asiento como lo lee quien confirma: número, glosa y sus líneas. */
+export interface VistaAsiento {
+  numero: string;
+  glosa: string;
+  lineas: {
+    cuenta: string;
+    nombre: string;
+    tercero: string | null;
+    debito: string;
+    credito: string;
+  }[];
+}
+
 @Injectable()
 export class ContabilidadApi {
   constructor(
@@ -25,6 +39,59 @@ export class ContabilidadApi {
     private readonly periodos: PeriodoService,
     private readonly comprobantes: ComprobanteService,
   ) {}
+
+  /**
+   * Los asientos creados **en la transacción en curso**, con sus líneas.
+   *
+   * Es la vista previa de la verificación en seco (`TxService.simular`): se
+   * corre el cobro de verdad, se leen los asientos que dejó y se deshace.
+   * Una fila nueva lleva en `xmin` el id de la transacción que la creó, y eso
+   * la distingue de cualquier otra sin depender de la hora.
+   */
+  async asientosDeLaTransaccion(t: Tx): Promise<VistaAsiento[]> {
+    const lineas = filas<{
+      asiento_id: string;
+      numero: string;
+      glosa: string;
+      cuenta: string;
+      nombre: string;
+      tercero: string | null;
+      debito: string;
+      credito: string;
+    }>(
+      await t.query(
+        `SELECT a.id AS asiento_id, a.numero, a.glosa,
+                ec.codigo AS cuenta, ec.nombre,
+                COALESCE(NULLIF(BTRIM(tr.razon_social), ''),
+                  NULLIF(BTRIM(CONCAT_WS(' ', tr.primer_nombre, tr.primer_apellido)), '')) AS tercero,
+                al.debito, al.credito
+           FROM asiento a
+           JOIN asiento_linea al ON al.asiento_id = a.id
+           JOIN empresa_cuenta ec
+             ON ec.id = al.cuenta_id AND ec.empresa_id = al.empresa_id
+           LEFT JOIN tercero tr ON tr.id = al.tercero_id
+          WHERE a.xmin::text::bigint = txid_current() % 4294967296
+          ORDER BY a.numero, al.orden`,
+      ),
+    );
+    const asientos = new Map<string, VistaAsiento>();
+    for (const l of lineas) {
+      const a = asientos.get(l.asiento_id) ?? {
+        numero: l.numero,
+        glosa: l.glosa,
+        lineas: [],
+      };
+      a.lineas.push({
+        cuenta: l.cuenta,
+        nombre: l.nombre,
+        tercero: l.tercero,
+        debito: l.debito,
+        credito: l.credito,
+      });
+      asientos.set(l.asiento_id, a);
+    }
+    return [...asientos.values()];
+  }
 
   /**
    * El asiento de un documento.
@@ -70,7 +137,11 @@ export class ContabilidadApi {
   async periodoEn(
     ctx: CtxEmpresa,
     fecha: Date,
-  ): Promise<{ anio: number; mes: number; estado: 'ABIERTO' | 'CERRADO' } | null> {
+  ): Promise<{
+    anio: number;
+    mes: number;
+    estado: 'ABIERTO' | 'CERRADO';
+  } | null> {
     const periodo = await this.periodos.porFecha(ctx, fecha);
     return periodo === null
       ? null
@@ -92,7 +163,9 @@ export class ContabilidadApi {
     // cerrado es el ultimo que se cerro.
     const periodos = await this.periodos.listar(ctx);
     const cerrado = periodos.find((p) => p.estado === 'CERRADO');
-    return cerrado === undefined ? null : { anio: cerrado.anio, mes: cerrado.mes };
+    return cerrado === undefined
+      ? null
+      : { anio: cerrado.anio, mes: cerrado.mes };
   }
 
   /** El asiento que genero un documento, para mostrarlo al lado. */

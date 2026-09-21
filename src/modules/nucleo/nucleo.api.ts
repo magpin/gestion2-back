@@ -64,6 +64,18 @@ export class NucleoApi {
   }
 
   /**
+   * Los roles vigentes de otra persona en una empresa, y su nombre. Una
+   * persona desactivada vuelve sin roles.
+   */
+  async rolesVigentesDe(
+    ctx: Ctx,
+    usuarioId: string,
+    empresaId: string,
+  ): Promise<{ nombre: string; roles: RolCodigo[] }> {
+    return this.auth.rolesVigentesDe(ctx, usuarioId, empresaId);
+  }
+
+  /**
    * Las condiciones tributarias vigentes a una fecha.
    *
    * Es lo que decide si una operación lleva IVA, si hay que retener y a qué

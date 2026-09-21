@@ -16,8 +16,9 @@ import {
   Roles,
 } from '../../../common/auth/decoradores';
 import { ROLES, type CtxEmpresa } from '../../../common/ctx';
-import { TurnoDto } from '../dto/conversacion.dto';
+import { ConfirmarPropuestaDto, TurnoDto } from '../dto/conversacion.dto';
 import { ConversacionService } from '../servicios/conversacion.service';
+import { PropuestasService } from '../servicios/propuestas.service';
 
 /**
  * Conversar con el asistente (paso 4 de `asistente-conversacion.md`).
@@ -34,7 +35,10 @@ import { ConversacionService } from '../servicios/conversacion.service';
 @ExigeEmpresa()
 @Roles(...ROLES)
 export class ConversacionController {
-  constructor(private readonly conversacion: ConversacionService) {}
+  constructor(
+    private readonly conversacion: ConversacionService,
+    private readonly propuestas: PropuestasService,
+  ) {}
 
   /** Si se puede conversar. Solo depende de la clave del modelo, no del bucket. */
   @Get('disponible')
@@ -45,6 +49,31 @@ export class ConversacionController {
   @Get()
   vigente(@ActorEmpresa() ctx: CtxEmpresa) {
     return this.conversacion.vigente(ctx);
+  }
+
+  /**
+   * Confirmar lo que el asistente propuso (paso 7). Todos los roles llegan
+   * acá, pero el servicio mira **los del endpoint que hace la acción**
+   * —cobrar es de CAJA y DIRECTOR—, y solo quien pidió la puede confirmar.
+   * `correccion` es lo que la persona cambió en la tarjeta.
+   */
+  @Post('propuestas/:id/confirmar')
+  @HttpCode(200)
+  confirmar(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ConfirmarPropuestaDto,
+  ) {
+    return this.propuestas.confirmar(ctx, id, dto.correccion);
+  }
+
+  @Post('propuestas/:id/descartar')
+  @HttpCode(200)
+  descartar(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.propuestas.descartar(ctx, id);
   }
 
   /** Todas las de quien pregunta, para la columna de la izquierda. */

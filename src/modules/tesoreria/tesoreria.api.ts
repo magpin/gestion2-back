@@ -9,6 +9,8 @@ import { CuentaBancariaService } from './servicios/cuenta-bancaria.service';
 
 /** La plata de un medio, hoy. Lo que el asistente contesta a «¿cuánto hay en el banco?». */
 export interface SaldoDeMedio {
+  /** El id de la caja o la cuenta: con esto el asistente arma una propuesta de cobro o de pago. */
+  id: string;
   medio: 'CAJA' | 'BANCO';
   nombre: string;
   saldo: string;
@@ -100,12 +102,14 @@ export class TesoreriaApi {
     ]);
     return [
       ...cuentas.map((c) => ({
+        id: c.id,
         medio: 'BANCO' as const,
         nombre: `${c.banco} ${c.tipo_cuenta === 'AHORROS' ? 'ahorros' : 'corriente'} ${c.numero_cuenta}`,
         saldo: c.saldo,
         ultimoMovimiento: c.ultimo_movimiento,
       })),
       ...cajas.map((c) => ({
+        id: c.id,
         medio: 'CAJA' as const,
         nombre: c.nombre,
         saldo: c.saldo,

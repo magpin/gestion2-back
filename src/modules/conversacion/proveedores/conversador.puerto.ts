@@ -101,6 +101,13 @@ export interface ConversadorPuerto {
     corte?: AbortSignal;
     herramientas?: HerramientasDelTurno;
     alConsultar?: (nombre: string, entrada: unknown) => void;
+    /**
+     * Lo que el sistema le dice al modelo en este turno, fuera del hilo: hoy,
+     * las reglas de autonomía vigentes (paso 8). Va con las instrucciones y no
+     * dentro de una consulta, porque lo que devuelve una consulta es dato, y
+     * el modelo —con razón— no lo obedece.
+     */
+    contexto?: string;
   }): Promise<ResultadoRespuesta>;
 }
 

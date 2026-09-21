@@ -111,7 +111,8 @@ function construirInstrucciones(): string {
     .sort()
     .map((campo) => {
       const d = CAMPOS[campo];
-      return `- \`${campo}\` — ${d.etiqueta}. Solo desde: ${d.documentos.join(', ')}.`;
+      const nota = d.nota === undefined ? '' : ` Es ${d.nota}.`;
+      return `- \`${campo}\` — ${d.etiqueta}. Solo desde: ${d.documentos.join(', ')}.${nota}`;
     })
     .join('\n');
 

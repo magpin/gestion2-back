@@ -24,6 +24,14 @@ interface DefinicionCampo {
   etiqueta: string;
   /** Qué documentos pueden decirlo. Un RUT no sabe la matrícula mercantil. */
   documentos: TipoDocumento[];
+  /**
+   * Una aclaración que viaja con el campo a las instrucciones del modelo.
+   *
+   * Es para lo que el documento imprime de una forma y el sistema guarda de
+   * otra. Va acá y no suelta en las instrucciones para que no haya dos listas
+   * de campos: el que agrega el campo ve al lado dónde se escribe su regla.
+   */
+  nota?: string;
 }
 
 /**
@@ -62,10 +70,16 @@ export const CAMPOS: Record<string, DefinicionCampo> = {
   // El RUT trae el código DANE del municipio impreso; el certificado de Cámara,
   // solo el nombre. Se acepta de donde viene el código y no de donde habría que
   // adivinarlo.
+  //
+  // Pero lo imprime **partido en dos casillas**, y eso costó un dato mal leído:
+  // contra un RUT de verdad volvió `001` —solo la casilla 40— en vez de `11001`.
+  // El código DANE son los dos dígitos del departamento pegados a los tres del
+  // municipio, y ni el modelo ni nadie tiene por qué saberlo sin que se lo digan.
   municipioCodigo: {
     paso: 'SEDES',
     etiqueta: 'Municipio',
     documentos: ['RUT'],
+    nota: 'el código DANE completo, cinco dígitos: los dos del departamento (casilla 39) pegados a los tres del municipio (casilla 40). El RUT los imprime en casillas separadas',
   },
   telefono: { paso: 'SEDES', etiqueta: 'Teléfono', documentos: ['RUT'] },
   email: {
@@ -115,6 +129,12 @@ export const CAMPOS: Record<string, DefinicionCampo> = {
   // guardar nunca. Leer un nombre que después no se puede guardar es peor que
   // no leerlo. Y para esto está el otro documento: un certificado de existencia
   // y representación legal es, literalmente, el que lo certifica.
+  // Comprobado contra un RUT de verdad, el 20 de septiembre: con `'RUT'` en esta
+  // lista, el modelo devolvió «LUISA MARIA CONTRERAS MARTINEZ» desde las
+  // casillas 31-34, con confianza ALTA. Es la funcionaria de la DIAN que firmó
+  // el formulario —cargo «TECNICO EN INGRESOS PUBLICOS III»—, no la
+  // representante de la empresa. No es que el modelo se equivoque: el documento
+  // no tiene el dato y sí tiene ese nombre.
   representanteNombre: {
     paso: 'SITUACION_LEGAL',
     etiqueta: 'Representante legal',

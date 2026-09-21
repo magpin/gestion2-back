@@ -68,22 +68,25 @@ describe('el catálogo de reportes', () => {
       if (SUMA[columna.tipo]) expect(columna.agrupable).not.toBe(true);
     });
 
-    it.each(COLUMNAS)('%s filtra de una forma coherente', (_nombre, columna) => {
-      if (columna.filtro === 'LISTA') {
-        // Una lista saca sus valores de un lado o del otro, nunca de los dos ni
-        // de ninguno: sin eso la pantalla no sabe qué ofrecer.
-        const cerrada = columna.valores !== undefined;
-        const abierta = columna.catalogo !== undefined;
-        expect(cerrada !== abierta).toBe(true);
-      } else {
-        expect(columna.valores).toBeUndefined();
-        expect(columna.catalogo).toBeUndefined();
-      }
+    it.each(COLUMNAS)(
+      '%s filtra de una forma coherente',
+      (_nombre, columna) => {
+        if (columna.filtro === 'LISTA') {
+          // Una lista saca sus valores de un lado o del otro, nunca de los dos ni
+          // de ninguno: sin eso la pantalla no sabe qué ofrecer.
+          const cerrada = columna.valores !== undefined;
+          const abierta = columna.catalogo !== undefined;
+          expect(cerrada !== abierta).toBe(true);
+        } else {
+          expect(columna.valores).toBeUndefined();
+          expect(columna.catalogo).toBeUndefined();
+        }
 
-      // Un rango sobre texto no tiene sentido; una fecha ya la filtra el rango
-      // obligatorio del origen.
-      if (columna.filtro === 'RANGO') expect(SUMA[columna.tipo]).toBe(true);
-    });
+        // Un rango sobre texto no tiene sentido; una fecha ya la filtra el rango
+        // obligatorio del origen.
+        if (columna.filtro === 'RANGO') expect(SUMA[columna.tipo]).toBe(true);
+      },
+    );
   });
 
   describe('quién ve qué', () => {
@@ -116,7 +119,9 @@ describe('el catálogo de reportes', () => {
     it('no devuelve nada para una clave inventada', () => {
       // Es la línea que separa «elegir columnas» de una inyección de SQL: sin
       // `sql` no hay nada que interpolar.
-      expect(columnaDe('VENTAS', 'total; DROP TABLE venta_documento')).toBeUndefined();
+      expect(
+        columnaDe('VENTAS', 'total; DROP TABLE venta_documento'),
+      ).toBeUndefined();
     });
 
     it('no devuelve una columna de otro origen', () => {

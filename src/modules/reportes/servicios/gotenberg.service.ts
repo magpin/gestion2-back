@@ -1,4 +1,8 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 
 /** Lo que va junto al HTML: fuentes, gráficos, el logo. Nombre → contenido. */
 export type Assets = Record<string, Buffer>;
@@ -69,7 +73,9 @@ export class GotenbergService {
 
     if (!respuesta.ok) {
       const detalle = await respuesta.text().catch(() => '');
-      this.log.error(`Gotenberg rechazó el HTML (${respuesta.status}): ${detalle.slice(0, 300)}`);
+      this.log.error(
+        `Gotenberg rechazó el HTML (${respuesta.status}): ${detalle.slice(0, 300)}`,
+      );
       throw new ServiceUnavailableException('No se pudo armar el PDF.');
     }
 
@@ -79,7 +85,9 @@ export class GotenbergService {
     // que distingue un archivo de un cuerpo vacío, y el que lo abra después no
     // va a tener forma de saber qué pasó.
     if (pdf.subarray(0, 5).toString() !== '%PDF-') {
-      this.log.error(`Gotenberg devolvió ${pdf.length} bytes que no son un PDF.`);
+      this.log.error(
+        `Gotenberg devolvió ${pdf.length} bytes que no son un PDF.`,
+      );
       throw new ServiceUnavailableException('No se pudo armar el PDF.');
     }
 

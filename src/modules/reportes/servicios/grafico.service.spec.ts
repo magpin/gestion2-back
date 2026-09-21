@@ -14,18 +14,22 @@ describe('GraficoService', () => {
   /** La configuración que de verdad sale hacia QuickChart. */
   const enviada = async (config: Record<string, unknown>) => {
     let url = '';
-    globalThis.fetch = jest.fn(async (u: string) => {
+    globalThis.fetch = jest.fn((u: string) => {
       url = u;
-      return {
+      return Promise.resolve({
         ok: true,
-        arrayBuffer: async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]),
-      };
+        arrayBuffer: () =>
+          Promise.resolve(Buffer.from([0x89, 0x50, 0x4e, 0x47])),
+      });
     }) as unknown as typeof fetch;
 
     await servicio.aPng(config, 150, 150);
     const c = new URL(url).searchParams.get('c');
     return JSON.parse(c ?? '{}') as {
-      options?: { legend?: { display?: boolean }; plugins?: Record<string, unknown> };
+      options?: {
+        legend?: { display?: boolean };
+        plugins?: Record<string, unknown>;
+      };
     };
   };
 
@@ -51,27 +55,34 @@ describe('GraficoService', () => {
     const config = await enviada({
       type: 'bar',
       data: {},
-      options: { legend: { display: true }, scales: { yAxes: [{ display: false }] } },
+      options: {
+        legend: { display: true },
+        scales: { yAxes: [{ display: false }] },
+      },
     });
     expect(config.options?.legend?.display).toBe(true);
     expect(config.options).toHaveProperty('scales');
   });
 
   it('devuelve null si QuickChart no contesta, porque un reporte sin gráfico sigue siendo un reporte', async () => {
-    globalThis.fetch = jest.fn(async () => {
-      throw new Error('sin red');
-    }) as unknown as typeof fetch;
+    globalThis.fetch = jest.fn(() => Promise.reject(new Error('sin red')));
 
-    await expect(servicio.aPng({ type: 'pie', data: {} }, 100, 100)).resolves.toBeNull();
+    await expect(
+      servicio.aPng({ type: 'pie', data: {} }, 100, 100),
+    ).resolves.toBeNull();
   });
 
   it('devuelve null si lo que llega no es un PNG, aunque venga con 200', async () => {
-    globalThis.fetch = jest.fn(async () => ({
-      ok: true,
-      arrayBuffer: async () => Buffer.from('<html>error</html>'),
-    })) as unknown as typeof fetch;
+    globalThis.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        arrayBuffer: () => Promise.resolve(Buffer.from('<html>error</html>')),
+      }),
+    ) as unknown as typeof fetch;
 
-    await expect(servicio.aPng({ type: 'pie', data: {} }, 100, 100)).resolves.toBeNull();
+    await expect(
+      servicio.aPng({ type: 'pie', data: {} }, 100, 100),
+    ).resolves.toBeNull();
   });
 
   describe('la tinta', () => {

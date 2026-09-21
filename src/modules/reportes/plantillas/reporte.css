@@ -42,40 +42,21 @@
 }
 
 /* ── Las fuentes ────────────────────────────────────────────────────────────
- * Van como archivos en el mismo `multipart`, así que se referencian por nombre
- * y sin ruta. **No se piden a Google Fonts**: el contenedor de Gotenberg puede
- * no tener salida a internet, y entonces el PDF sale con otra tipografía y no
- * falla — solo sale feo, que es peor porque nadie se entera.
+ * **No están acá.** Las declara `PlantillaService`, porque se referencian
+ * distinto según adónde va la hoja: en el PDF son archivos del mismo
+ * `multipart` y se piden por nombre; en pantalla son una ruta de la API.
+ * Ponerlas en este archivo obligaría a reescribirlo con un reemplazo de texto,
+ * que es la clase de cosa que se rompe el día que alguien cambie una comilla.
+ *
+ * Lo que sí es fijo: **no se piden a Google Fonts**. El contenedor que arma el
+ * PDF puede no tener salida a internet, y entonces la hoja sale con otra
+ * tipografía y no falla — sale fea, que es peor porque nadie se entera.
  */
-@font-face {
-  font-family: 'Inter';
-  font-weight: 400;
-  src: url('inter-400.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'Inter';
-  font-weight: 600;
-  src: url('inter-600.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'Inter';
-  font-weight: 700;
-  src: url('inter-700.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-weight: 400;
-  src: url('mono-400.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-weight: 500;
-  src: url('mono-500.woff2') format('woff2');
-}
 
 * {
   box-sizing: border-box;
 }
+
 
 body {
   margin: 0;
@@ -87,6 +68,47 @@ body {
      de las tablas son fondo. */
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
+}
+
+/*
+ * En pantalla no existe la `@page`, así que el cuerpo sería tan ancho como la
+ * ventana y la hoja se vería distinta de como se imprime. Acá se le da el ancho
+ * útil de la carta —8,5 in menos los dos márgenes— y los mismos márgenes, sobre un
+ * fondo gris: se ve como una hoja, no como una página web.
+ *
+ * Es lo que hace que `ver-plantilla` y la vista previa del paso 7 muestren la
+ * hoja de verdad, y que `Ctrl+P` no sorprenda a nadie.
+ *
+ * **Va después de `body`, no antes**: tienen la misma especificidad y gana la
+ * última. Puesta arriba, el `margin: 0` de `body` la pisaba y la hoja quedaba
+ * pegada al borde izquierdo.
+ */
+@media screen {
+  html {
+    background: #e4e4e4;
+  }
+
+  body {
+    width: 8.5in;
+    margin: 24px auto 40px;
+    padding: 0.54in 0.67in 0.62in;
+    background: #ffffff;
+    box-shadow: 0 18px 50px rgba(23, 23, 23, 0.18), 0 0 0 1px rgba(23, 23, 23, 0.06);
+  }
+
+  /* La hoja apaisada de la cartera: once pulgadas de ancho, no ocho y media. */
+  body.horizontal {
+    width: 11in;
+  }
+
+  /* Donde el PDF corta la página, la pantalla deja ver el fondo: dos hojas
+     separadas y no una tira larga. El visor cuenta estos cortes para saber
+     cuántas páginas tiene la hoja y a dónde saltar con «página siguiente». */
+  .salto {
+    height: 24px;
+    margin: 0.62in -0.67in 0.54in;
+    background: #e4e4e4;
+  }
 }
 
 /* Las cifras, los códigos de cuenta y los números de documento. Es lo que hace
@@ -222,4 +244,357 @@ body {
    un subtotal huérfano en el borde superior de una página no se entiende. */
 .junto {
   break-inside: avoid;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Las piezas del reporte impreso.
+ *
+ * Están acá y no en la plantilla de cada reporte porque los dos las usan: las
+ * cifras de arriba, la tabla con subtotales y las barras proporcionales son el
+ * vocabulario de estas hojas, no de una sola. Salen del diseño de
+ * `docs/reportes-pdf-diseno/`, con sus medidas.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── La fila de cifras ────────────────────────────────────────────────────── */
+
+.cifras {
+  display: flex;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.cifras .tarjeta {
+  flex: 1;
+  /* Sin esto una tarjeta no encoge por debajo de su texto más largo —«1 factura
+     · Almacenes del Sur S.A.S.»— y las cuatro juntas se salen de la hoja. Es el
+     `min-width: auto` que traen los hijos de un flex, y no avisa: en pantalla
+     ancha se ve bien y en el papel se desborda. */
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 14px 16px;
+  border-radius: 0.6rem;
+  background: var(--n-50);
+}
+
+/* La principal va en bloque oscuro y más ancha: es la que alguien busca
+   primero al recibir la hoja, y el contraste la encuentra sin leer. */
+.cifras .tarjeta--principal {
+  flex: 1.4;
+  background: var(--n-900);
+  color: var(--n-0);
+}
+
+.cifras .rotulo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  color: var(--texto-apagado);
+}
+
+.cifras .tarjeta--principal .rotulo,
+.cifras .tarjeta--principal .nota {
+  color: var(--n-300);
+}
+
+.cifras .valor {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.cifras .tarjeta--principal .valor {
+  font-size: 22px;
+}
+
+.cifras .nota {
+  font-size: 9px;
+  color: var(--texto-apagado);
+}
+
+/* El cuadrito de color que ata la cifra con su tramo en las gráficas. Es lo
+   que evita tener que poner una leyenda arriba de cada una. */
+.punto {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.punto--resuelto { background: var(--n-900); }
+.punto--medio { background: var(--n-300); }
+.punto--atencion { background: var(--marca); }
+
+/* ── Bloques y encabezados de sección ─────────────────────────────────────── */
+
+.bloque {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 14px 0;
+  border-top: 1px solid var(--n-300);
+}
+
+.bloque .encabezado {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bloque h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bloque .apunte {
+  font-size: 9px;
+  color: var(--texto-apagado);
+}
+
+.graficas {
+  display: grid;
+  grid-template-columns: 1fr 200px;
+  gap: 20px;
+  align-items: center;
+}
+
+/* La dona lleva su cifra en el medio: Chart.js no la dibuja, y superponerla en
+   HTML sale exacta en vez de aproximada. */
+.dona {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  margin: 0 auto;
+}
+
+.dona .centro {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+
+.dona .centro .grande {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 19px;
+  font-weight: 500;
+}
+
+.dona .centro .chico {
+  font-size: 8.5px;
+  color: var(--texto-apagado);
+}
+
+/* ── Barras proporcionales, por fila ──────────────────────────────────────── */
+
+.barras .fila {
+  display: grid;
+  grid-template-columns: 170px 1fr 105px;
+  gap: 12px;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.barras .nombre {
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* El carril: ocupa la columna entera y la barra vive adentro. Sin él, la
+   barra sería un `width` en porcentaje de nada. */
+.barras .marco {
+  display: block;
+  width: 100%;
+}
+
+.barras .barra {
+  display: flex;
+  gap: 1px;
+  height: 14px;
+  border-radius: 2px;
+  overflow: hidden;
+  /* Un cliente con ventas siempre deja ver su barra: sin esto, el más chico de
+     una lista con un cliente enorme se vuelve invisible y parece un error. */
+  min-width: 2px;
+}
+
+.barras .barra span {
+  display: block;
+  height: 100%;
+}
+
+.barras .monto {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  text-align: right;
+}
+
+.barras .monto .parte {
+  color: var(--texto-apagado);
+}
+
+.leyenda {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 9px;
+  color: var(--texto-apagado);
+}
+
+.leyenda span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* ── La tabla de detalle ──────────────────────────────────────────────────── */
+
+/* Las columnas se declaran una vez y las tres clases de fila las heredan: si
+   la cabecera y las filas se desalinean, la hoja no sirve. */
+.detalle .fila {
+  display: grid;
+  grid-template-columns: 1fr 62px 96px 104px 104px 62px;
+  gap: 10px;
+  align-items: center;
+}
+
+.detalle .cabecera {
+  padding: 6px 9px;
+  background: var(--n-900);
+  color: var(--n-0);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.detalle .grupo {
+  padding: 7px 9px;
+  background: var(--n-50);
+  border-top: 1px solid var(--n-300);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.detalle .renglon {
+  padding: 3px 9px 3px 20px;
+  border-top: 1px solid var(--n-100);
+  font-size: 10px;
+}
+
+/* El total general lleva doble línea, que es como se cierra una cuenta en
+   papel desde antes de que existieran las hojas de cálculo. */
+.detalle .total {
+  padding: 9px;
+  border-top: 2px solid var(--n-900);
+  border-bottom: 2px solid var(--n-900);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.detalle .anulada {
+  color: var(--texto-apagado);
+  text-decoration: line-through;
+}
+
+.detalle .estado {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9.5px;
+}
+
+/* La barrita de cuánto se cobró de esa fila. Sobre gris, para que un cero se
+   vea como un surco vacío y no como una ausencia. */
+.progreso {
+  display: flex;
+  height: 5px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--n-200);
+}
+
+.progreso span {
+  background: var(--n-900);
+}
+
+.notas {
+  margin-top: 12px;
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--texto-apagado);
+}
+
+.salto {
+  break-after: page;
+}
+
+/* ── La franja de rangos ──────────────────────────────────────────────────── */
+
+/* Los cinco tramos de la antigüedad, cada uno ocupando lo que pesa. Es la
+   gráfica más barata que existe —no hay imagen, no hay servicio, no hay red— y
+   la que mejor contesta la pregunta: ¿dónde está la plata? */
+.franja {
+  display: flex;
+  gap: 4px;
+}
+
+.franja .tramo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  /* Sin esto, un tramo chico no encoge por debajo de su rótulo y empuja a los
+     demás: la franja dejaría de ser proporcional justo donde más importa. */
+  min-width: 0;
+}
+
+.franja .marca {
+  height: 9px;
+  border-radius: 2px;
+}
+
+/* Envuelven en vez de cortarse.
+ *
+ * Un tramo del 5 % mide unos treinta píxeles y su cifra no entra en una línea.
+ * Con `ellipsis` salía «2,1 M…», que en una hoja que alguien firma es una cifra
+ * incompleta: peor que dos renglones apretados. Envolviendo, la proporción de
+ * la franja sigue siendo exacta —que es lo que la franja viene a mostrar— y
+ * ningún número queda a medias. */
+.franja .rotulo {
+  font-size: 8.5px;
+  line-height: 1.25;
+  color: var(--texto-apagado);
+}
+
+.franja .monto {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.franja .parte {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8.5px;
+  line-height: 1.2;
+  color: var(--texto-apagado);
+}
+
+/* La cartera lleva una columna más que ventas: el saldo y, al lado, cuánto de
+   ese saldo está vencido. */
+.barras--cartera .fila {
+  grid-template-columns: 185px 1fr 105px 85px;
+}
+
+.barras--cartera .monto {
+  font-weight: 600;
 }

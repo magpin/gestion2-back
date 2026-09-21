@@ -16,10 +16,11 @@
     <title>{{titulo}}</title>
     <style>
       @page { size: {{tamanoHoja}}; margin: {{margenHoja}}; }
+      {{{fuentes}}}
       {{{css}}}
     </style>
   </head>
-  <body>
+  <body class="{{claseHoja}}">
     {{> membrete}}
 
     <h1 class="titulo">{{titulo}}</h1>

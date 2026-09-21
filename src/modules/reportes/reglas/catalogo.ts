@@ -89,7 +89,18 @@ export interface Columna {
   agrupable?: boolean;
   /** Si viene marcada la primera vez. Es el reporte del que se parte. */
   inicial?: boolean;
+  /**
+   * Una cifra que **no se suma** aunque sea plata o cantidad: un saldo de
+   * kardex, un costo unitario, unos días. Sumar el saldo de cada movimiento
+   * da un número que no es nada, y un subtotal que no es nada es peor que
+   * ninguno.
+   */
+  noSuma?: boolean;
 }
+
+/** Si la columna lleva subtotal y total. Lo decide el tipo, salvo que diga `noSuma`. */
+export const sumaColumna = (c: Columna): boolean =>
+  SUMA[c.tipo] && c.noSuma !== true;
 
 export interface Origen {
   clave: ClaveOrigen;
@@ -111,6 +122,12 @@ export interface Origen {
   desde: string;
   /** La columna del rango de fechas obligatorio. */
   fecha: string;
+  /**
+   * Una condición fija que el origen siempre cumple, escrita acá como el
+   * `FROM`. No se elige ni se quita: es lo que hace que «cartera» sea cartera
+   * y no «ventas con otro nombre».
+   */
+  donde?: string;
   columnas: readonly Columna[];
 }
 
@@ -178,17 +195,83 @@ export const ORIGENES: Readonly<Record<ClaveOrigen, Origen>> = {
               JOIN tercero t ON t.id = v.tercero_id`,
     fecha: 'v.fecha',
     columnas: [
-      { clave: 'fecha', etiqueta: 'Fecha', tipo: 'FECHA', sql: 'v.fecha', inicial: true, agrupable: true },
-      { clave: 'numero', etiqueta: 'Número', tipo: 'TEXTO', sql: `CONCAT_WS('-', v.prefijo, v.consecutivo::text)`, inicial: true },
-      { clave: 'tipo', etiqueta: 'Tipo', tipo: 'TEXTO', sql: 'v.tipo', filtro: 'LISTA', valores: TIPOS_VENTA, agrupable: true },
-      { clave: 'estado', etiqueta: 'Estado', tipo: 'TEXTO', sql: 'v.estado', filtro: 'LISTA', valores: ESTADOS_VENTA, agrupable: true },
-      { clave: 'cliente', etiqueta: 'Cliente', tipo: 'TEXTO', sql: NOMBRE_TERCERO, filtro: 'LISTA', catalogo: 'TERCEROS_CLIENTE', agrupable: true, inicial: true },
-      { clave: 'clienteDocumento', etiqueta: 'NIT o cédula', tipo: 'TEXTO', sql: DOCUMENTO_TERCERO },
-      { clave: 'subtotal', etiqueta: 'Subtotal', tipo: 'DINERO', sql: 'v.subtotal', filtro: 'RANGO' },
+      {
+        clave: 'fecha',
+        etiqueta: 'Fecha',
+        tipo: 'FECHA',
+        sql: 'v.fecha',
+        inicial: true,
+        agrupable: true,
+      },
+      {
+        clave: 'numero',
+        etiqueta: 'Número',
+        tipo: 'TEXTO',
+        sql: `CONCAT_WS('-', v.prefijo, v.consecutivo::text)`,
+        inicial: true,
+      },
+      {
+        clave: 'tipo',
+        etiqueta: 'Tipo',
+        tipo: 'TEXTO',
+        sql: 'v.tipo',
+        filtro: 'LISTA',
+        valores: TIPOS_VENTA,
+        agrupable: true,
+      },
+      {
+        clave: 'estado',
+        etiqueta: 'Estado',
+        tipo: 'TEXTO',
+        sql: 'v.estado',
+        filtro: 'LISTA',
+        valores: ESTADOS_VENTA,
+        agrupable: true,
+      },
+      {
+        clave: 'cliente',
+        etiqueta: 'Cliente',
+        tipo: 'TEXTO',
+        sql: NOMBRE_TERCERO,
+        filtro: 'LISTA',
+        catalogo: 'TERCEROS_CLIENTE',
+        agrupable: true,
+        inicial: true,
+      },
+      {
+        clave: 'clienteDocumento',
+        etiqueta: 'NIT o cédula',
+        tipo: 'TEXTO',
+        sql: DOCUMENTO_TERCERO,
+      },
+      {
+        clave: 'subtotal',
+        etiqueta: 'Subtotal',
+        tipo: 'DINERO',
+        sql: 'v.subtotal',
+        filtro: 'RANGO',
+      },
       { clave: 'iva', etiqueta: 'IVA', tipo: 'DINERO', sql: 'v.total_iva' },
-      { clave: 'total', etiqueta: 'Total', tipo: 'DINERO', sql: 'v.total', filtro: 'RANGO', inicial: true },
-      { clave: 'pagado', etiqueta: 'Pagado', tipo: 'DINERO', sql: 'v.monto_pagado' },
-      { clave: 'saldo', etiqueta: 'Saldo', tipo: 'DINERO', sql: 'v.total - v.monto_pagado' },
+      {
+        clave: 'total',
+        etiqueta: 'Total',
+        tipo: 'DINERO',
+        sql: 'v.total',
+        filtro: 'RANGO',
+        inicial: true,
+      },
+      {
+        clave: 'pagado',
+        etiqueta: 'Pagado',
+        tipo: 'DINERO',
+        sql: 'v.monto_pagado',
+      },
+      {
+        clave: 'saldo',
+        etiqueta: 'Saldo',
+        tipo: 'DINERO',
+        sql: 'v.total - v.monto_pagado',
+      },
     ],
   },
 
@@ -202,18 +285,90 @@ export const ORIGENES: Readonly<Record<ClaveOrigen, Origen>> = {
               JOIN tercero t ON t.id = c.tercero_id`,
     fecha: 'c.fecha',
     columnas: [
-      { clave: 'fecha', etiqueta: 'Fecha', tipo: 'FECHA', sql: 'c.fecha', inicial: true, agrupable: true },
-      { clave: 'numero', etiqueta: 'Factura del proveedor', tipo: 'TEXTO', sql: 'c.numero_factura_proveedor', inicial: true },
-      { clave: 'tipo', etiqueta: 'Tipo', tipo: 'TEXTO', sql: 'c.tipo', filtro: 'LISTA', valores: TIPOS_COMPRA, agrupable: true },
-      { clave: 'estado', etiqueta: 'Estado', tipo: 'TEXTO', sql: 'c.estado', filtro: 'LISTA', valores: ESTADOS_COMPRA, agrupable: true },
-      { clave: 'proveedor', etiqueta: 'Proveedor', tipo: 'TEXTO', sql: NOMBRE_TERCERO, filtro: 'LISTA', catalogo: 'TERCEROS_PROVEEDOR', agrupable: true, inicial: true },
-      { clave: 'proveedorDocumento', etiqueta: 'NIT o cédula', tipo: 'TEXTO', sql: DOCUMENTO_TERCERO },
-      { clave: 'subtotal', etiqueta: 'Subtotal', tipo: 'DINERO', sql: 'c.subtotal', filtro: 'RANGO' },
+      {
+        clave: 'fecha',
+        etiqueta: 'Fecha',
+        tipo: 'FECHA',
+        sql: 'c.fecha',
+        inicial: true,
+        agrupable: true,
+      },
+      {
+        clave: 'numero',
+        etiqueta: 'Factura del proveedor',
+        tipo: 'TEXTO',
+        sql: 'c.numero_factura_proveedor',
+        inicial: true,
+      },
+      {
+        clave: 'tipo',
+        etiqueta: 'Tipo',
+        tipo: 'TEXTO',
+        sql: 'c.tipo',
+        filtro: 'LISTA',
+        valores: TIPOS_COMPRA,
+        agrupable: true,
+      },
+      {
+        clave: 'estado',
+        etiqueta: 'Estado',
+        tipo: 'TEXTO',
+        sql: 'c.estado',
+        filtro: 'LISTA',
+        valores: ESTADOS_COMPRA,
+        agrupable: true,
+      },
+      {
+        clave: 'proveedor',
+        etiqueta: 'Proveedor',
+        tipo: 'TEXTO',
+        sql: NOMBRE_TERCERO,
+        filtro: 'LISTA',
+        catalogo: 'TERCEROS_PROVEEDOR',
+        agrupable: true,
+        inicial: true,
+      },
+      {
+        clave: 'proveedorDocumento',
+        etiqueta: 'NIT o cédula',
+        tipo: 'TEXTO',
+        sql: DOCUMENTO_TERCERO,
+      },
+      {
+        clave: 'subtotal',
+        etiqueta: 'Subtotal',
+        tipo: 'DINERO',
+        sql: 'c.subtotal',
+        filtro: 'RANGO',
+      },
       { clave: 'iva', etiqueta: 'IVA', tipo: 'DINERO', sql: 'c.total_iva' },
-      { clave: 'retenciones', etiqueta: 'Retenciones', tipo: 'DINERO', sql: 'c.total_retenciones' },
-      { clave: 'total', etiqueta: 'Total', tipo: 'DINERO', sql: 'c.total', filtro: 'RANGO', inicial: true },
-      { clave: 'neto', etiqueta: 'Neto a pagar', tipo: 'DINERO', sql: 'c.neto_a_pagar', inicial: true },
-      { clave: 'saldo', etiqueta: 'Saldo', tipo: 'DINERO', sql: 'c.neto_a_pagar - c.monto_pagado' },
+      {
+        clave: 'retenciones',
+        etiqueta: 'Retenciones',
+        tipo: 'DINERO',
+        sql: 'c.total_retenciones',
+      },
+      {
+        clave: 'total',
+        etiqueta: 'Total',
+        tipo: 'DINERO',
+        sql: 'c.total',
+        filtro: 'RANGO',
+        inicial: true,
+      },
+      {
+        clave: 'neto',
+        etiqueta: 'Neto a pagar',
+        tipo: 'DINERO',
+        sql: 'c.neto_a_pagar',
+        inicial: true,
+      },
+      {
+        clave: 'saldo',
+        etiqueta: 'Saldo',
+        tipo: 'DINERO',
+        sql: 'c.neto_a_pagar - c.monto_pagado',
+      },
     ],
   },
 
@@ -230,19 +385,76 @@ export const ORIGENES: Readonly<Record<ClaveOrigen, Origen>> = {
     desde: `venta_documento v
               JOIN tercero t ON t.id = v.tercero_id`,
     fecha: 'v.fecha',
+    // Lo que se debe: facturas emitidas con saldo. Una cotización no es una
+    // deuda y una anulada tampoco, y quien arma una cartera no debería tener
+    // que acordarse de sacarlas cada vez.
+    donde: `v.tipo <> 'COTIZACION' AND v.estado <> 'ANULADA' AND v.total - v.monto_pagado > 0`,
     columnas: [
-      { clave: 'cliente', etiqueta: 'Cliente', tipo: 'TEXTO', sql: NOMBRE_TERCERO, filtro: 'LISTA', catalogo: 'TERCEROS_CLIENTE', agrupable: true, inicial: true },
-      { clave: 'clienteDocumento', etiqueta: 'NIT o cédula', tipo: 'TEXTO', sql: DOCUMENTO_TERCERO },
-      { clave: 'fecha', etiqueta: 'Fecha', tipo: 'FECHA', sql: 'v.fecha', inicial: true },
-      { clave: 'numero', etiqueta: 'Número', tipo: 'TEXTO', sql: `CONCAT_WS('-', v.prefijo, v.consecutivo::text)`, inicial: true },
+      {
+        clave: 'cliente',
+        etiqueta: 'Cliente',
+        tipo: 'TEXTO',
+        sql: NOMBRE_TERCERO,
+        filtro: 'LISTA',
+        catalogo: 'TERCEROS_CLIENTE',
+        agrupable: true,
+        inicial: true,
+      },
+      {
+        clave: 'clienteDocumento',
+        etiqueta: 'NIT o cédula',
+        tipo: 'TEXTO',
+        sql: DOCUMENTO_TERCERO,
+      },
+      {
+        clave: 'fecha',
+        etiqueta: 'Fecha',
+        tipo: 'FECHA',
+        sql: 'v.fecha',
+        inicial: true,
+      },
+      {
+        clave: 'numero',
+        etiqueta: 'Número',
+        tipo: 'TEXTO',
+        sql: `CONCAT_WS('-', v.prefijo, v.consecutivo::text)`,
+        inicial: true,
+      },
       { clave: 'total', etiqueta: 'Total', tipo: 'DINERO', sql: 'v.total' },
-      { clave: 'pagado', etiqueta: 'Pagado', tipo: 'DINERO', sql: 'v.monto_pagado' },
-      { clave: 'saldo', etiqueta: 'Saldo', tipo: 'DINERO', sql: 'v.total - v.monto_pagado', filtro: 'RANGO', inicial: true },
+      {
+        clave: 'pagado',
+        etiqueta: 'Pagado',
+        tipo: 'DINERO',
+        sql: 'v.monto_pagado',
+      },
+      {
+        clave: 'saldo',
+        etiqueta: 'Saldo',
+        tipo: 'DINERO',
+        sql: 'v.total - v.monto_pagado',
+        filtro: 'RANGO',
+        inicial: true,
+      },
       // La edad de la deuda es lo que convierte una lista de saldos en cartera.
       // Se calcula contra hoy, no contra el fin del rango: quien la mira quiere
       // saber cuánto lleva esperando, no cuánto llevaba en una fecha pasada.
-      { clave: 'dias', etiqueta: 'Días', tipo: 'CANTIDAD', sql: '(CURRENT_DATE - v.fecha)', filtro: 'RANGO', inicial: true },
-      { clave: 'vencida', etiqueta: 'Vencida a 30 días', tipo: 'TEXTO', sql: `CASE WHEN (CURRENT_DATE - v.fecha) > 30 THEN 'Sí' ELSE 'No' END`, filtro: 'SI_NO', agrupable: true },
+      {
+        clave: 'dias',
+        etiqueta: 'Días',
+        tipo: 'CANTIDAD',
+        sql: '(CURRENT_DATE - v.fecha)',
+        filtro: 'RANGO',
+        inicial: true,
+        noSuma: true,
+      },
+      {
+        clave: 'vencida',
+        etiqueta: 'Vencida a 30 días',
+        tipo: 'TEXTO',
+        sql: `CASE WHEN (CURRENT_DATE - v.fecha) > 30 THEN 'Sí' ELSE 'No' END`,
+        filtro: 'SI_NO',
+        agrupable: true,
+      },
     ],
   },
 
@@ -257,20 +469,88 @@ export const ORIGENES: Readonly<Record<ClaveOrigen, Origen>> = {
               LEFT JOIN producto_categoria cat ON cat.id = p.categoria_id`,
     fecha: 'm.fecha',
     columnas: [
-      { clave: 'fecha', etiqueta: 'Fecha', tipo: 'FECHA', sql: 'm.fecha', inicial: true, agrupable: true },
-      { clave: 'codigo', etiqueta: 'Código', tipo: 'TEXTO', sql: 'p.codigo', inicial: true },
-      { clave: 'producto', etiqueta: 'Producto', tipo: 'TEXTO', sql: 'p.nombre', agrupable: true, inicial: true },
-      { clave: 'categoria', etiqueta: 'Categoría', tipo: 'TEXTO', sql: 'cat.nombre', filtro: 'LISTA', catalogo: 'CATEGORIAS_PRODUCTO', agrupable: true },
-      { clave: 'tipo', etiqueta: 'Movimiento', tipo: 'TEXTO', sql: 'm.tipo', filtro: 'LISTA', valores: TIPOS_MOVIMIENTO_INVENTARIO, agrupable: true },
+      {
+        clave: 'fecha',
+        etiqueta: 'Fecha',
+        tipo: 'FECHA',
+        sql: 'm.fecha',
+        inicial: true,
+        agrupable: true,
+      },
+      {
+        clave: 'codigo',
+        etiqueta: 'Código',
+        tipo: 'TEXTO',
+        sql: 'p.codigo',
+        inicial: true,
+      },
+      {
+        clave: 'producto',
+        etiqueta: 'Producto',
+        tipo: 'TEXTO',
+        sql: 'p.nombre',
+        agrupable: true,
+        inicial: true,
+      },
+      {
+        clave: 'categoria',
+        etiqueta: 'Categoría',
+        tipo: 'TEXTO',
+        sql: 'cat.nombre',
+        filtro: 'LISTA',
+        catalogo: 'CATEGORIAS_PRODUCTO',
+        agrupable: true,
+      },
+      {
+        clave: 'tipo',
+        etiqueta: 'Movimiento',
+        tipo: 'TEXTO',
+        sql: 'm.tipo',
+        filtro: 'LISTA',
+        valores: TIPOS_MOVIMIENTO_INVENTARIO,
+        agrupable: true,
+      },
       { clave: 'motivo', etiqueta: 'Motivo', tipo: 'TEXTO', sql: 'm.motivo' },
-      { clave: 'cantidad', etiqueta: 'Cantidad', tipo: 'CANTIDAD', sql: 'm.cantidad', filtro: 'RANGO', inicial: true },
-      { clave: 'costoUnitario', etiqueta: 'Costo unitario', tipo: 'DINERO', sql: 'm.costo_unitario' },
-      { clave: 'valor', etiqueta: 'Valor', tipo: 'DINERO', sql: 'm.valor_total', filtro: 'RANGO', inicial: true },
+      {
+        clave: 'cantidad',
+        etiqueta: 'Cantidad',
+        tipo: 'CANTIDAD',
+        sql: 'm.cantidad',
+        filtro: 'RANGO',
+        inicial: true,
+      },
+      {
+        clave: 'costoUnitario',
+        etiqueta: 'Costo unitario',
+        tipo: 'DINERO',
+        sql: 'm.costo_unitario',
+        noSuma: true,
+      },
+      {
+        clave: 'valor',
+        etiqueta: 'Valor',
+        tipo: 'DINERO',
+        sql: 'm.valor_total',
+        filtro: 'RANGO',
+        inicial: true,
+      },
       // Los saldos son el kardex: el estado *después* de ese movimiento. No
       // suman entre filas —sumar saldos no significa nada— y por eso van como
       // CANTIDAD y DINERO igual, pero nunca se eligen para agrupar.
-      { clave: 'saldoCantidad', etiqueta: 'Saldo en unidades', tipo: 'CANTIDAD', sql: 'm.saldo_cantidad' },
-      { clave: 'saldoValor', etiqueta: 'Saldo en valor', tipo: 'DINERO', sql: 'm.saldo_valor' },
+      {
+        clave: 'saldoCantidad',
+        etiqueta: 'Saldo en unidades',
+        tipo: 'CANTIDAD',
+        sql: 'm.saldo_cantidad',
+        noSuma: true,
+      },
+      {
+        clave: 'saldoValor',
+        etiqueta: 'Saldo en valor',
+        tipo: 'DINERO',
+        sql: 'm.saldo_valor',
+        noSuma: true,
+      },
     ],
   },
 
@@ -301,13 +581,63 @@ export const ORIGENES: Readonly<Record<ClaveOrigen, Origen>> = {
             LEFT JOIN tercero t ON t.id = mv.tercero_id`,
     fecha: 'mv.fecha',
     columnas: [
-      { clave: 'fecha', etiqueta: 'Fecha', tipo: 'FECHA', sql: 'mv.fecha', inicial: true, agrupable: true },
-      { clave: 'ambito', etiqueta: 'Caja o banco', tipo: 'TEXTO', sql: 'mv.ambito', filtro: 'LISTA', valores: ['Caja', 'Banco'], agrupable: true, inicial: true },
-      { clave: 'cuenta', etiqueta: 'Cuenta', tipo: 'TEXTO', sql: 'mv.cuenta', agrupable: true, inicial: true },
-      { clave: 'tipo', etiqueta: 'Movimiento', tipo: 'TEXTO', sql: 'mv.tipo', filtro: 'LISTA', valores: TIPOS_MOVIMIENTO_TESORERIA, agrupable: true },
-      { clave: 'concepto', etiqueta: 'Concepto', tipo: 'TEXTO', sql: 'mv.concepto', inicial: true },
-      { clave: 'tercero', etiqueta: 'Tercero', tipo: 'TEXTO', sql: NOMBRE_TERCERO, agrupable: true },
-      { clave: 'valor', etiqueta: 'Valor', tipo: 'DINERO', sql: 'mv.valor', filtro: 'RANGO', inicial: true },
+      {
+        clave: 'fecha',
+        etiqueta: 'Fecha',
+        tipo: 'FECHA',
+        sql: 'mv.fecha',
+        inicial: true,
+        agrupable: true,
+      },
+      {
+        clave: 'ambito',
+        etiqueta: 'Caja o banco',
+        tipo: 'TEXTO',
+        sql: 'mv.ambito',
+        filtro: 'LISTA',
+        valores: ['Caja', 'Banco'],
+        agrupable: true,
+        inicial: true,
+      },
+      {
+        clave: 'cuenta',
+        etiqueta: 'Cuenta',
+        tipo: 'TEXTO',
+        sql: 'mv.cuenta',
+        agrupable: true,
+        inicial: true,
+      },
+      {
+        clave: 'tipo',
+        etiqueta: 'Movimiento',
+        tipo: 'TEXTO',
+        sql: 'mv.tipo',
+        filtro: 'LISTA',
+        valores: TIPOS_MOVIMIENTO_TESORERIA,
+        agrupable: true,
+      },
+      {
+        clave: 'concepto',
+        etiqueta: 'Concepto',
+        tipo: 'TEXTO',
+        sql: 'mv.concepto',
+        inicial: true,
+      },
+      {
+        clave: 'tercero',
+        etiqueta: 'Tercero',
+        tipo: 'TEXTO',
+        sql: NOMBRE_TERCERO,
+        agrupable: true,
+      },
+      {
+        clave: 'valor',
+        etiqueta: 'Valor',
+        tipo: 'DINERO',
+        sql: 'mv.valor',
+        filtro: 'RANGO',
+        inicial: true,
+      },
     ],
   },
 
@@ -330,18 +660,93 @@ export const ORIGENES: Readonly<Record<ClaveOrigen, Origen>> = {
               LEFT JOIN empresa_centro_costo cc ON cc.id = al.centro_costo_id`,
     fecha: 'a.fecha',
     columnas: [
-      { clave: 'fecha', etiqueta: 'Fecha', tipo: 'FECHA', sql: 'a.fecha', inicial: true, agrupable: true },
-      { clave: 'asiento', etiqueta: 'Asiento', tipo: 'TEXTO', sql: 'a.numero', inicial: true },
-      { clave: 'estado', etiqueta: 'Estado', tipo: 'TEXTO', sql: 'a.estado', filtro: 'LISTA', valores: ['REGISTRADO', 'ANULADO'], agrupable: true },
-      { clave: 'cuenta', etiqueta: 'Cuenta', tipo: 'TEXTO', sql: 'ec.codigo', filtro: 'LISTA', catalogo: 'CUENTAS_PUC', agrupable: true, inicial: true },
-      { clave: 'cuentaNombre', etiqueta: 'Nombre de la cuenta', tipo: 'TEXTO', sql: 'ec.nombre', agrupable: true },
-      { clave: 'tercero', etiqueta: 'Tercero', tipo: 'TEXTO', sql: NOMBRE_TERCERO, agrupable: true },
-      { clave: 'centroCosto', etiqueta: 'Centro de costo', tipo: 'TEXTO', sql: 'cc.nombre', filtro: 'LISTA', catalogo: 'CENTROS_COSTO', agrupable: true },
+      {
+        clave: 'fecha',
+        etiqueta: 'Fecha',
+        tipo: 'FECHA',
+        sql: 'a.fecha',
+        inicial: true,
+        agrupable: true,
+      },
+      {
+        clave: 'asiento',
+        etiqueta: 'Asiento',
+        tipo: 'TEXTO',
+        sql: 'a.numero',
+        inicial: true,
+      },
+      {
+        clave: 'estado',
+        etiqueta: 'Estado',
+        tipo: 'TEXTO',
+        sql: 'a.estado',
+        filtro: 'LISTA',
+        valores: ['REGISTRADO', 'ANULADO'],
+        agrupable: true,
+      },
+      {
+        clave: 'cuenta',
+        etiqueta: 'Cuenta',
+        tipo: 'TEXTO',
+        sql: 'ec.codigo',
+        filtro: 'LISTA',
+        catalogo: 'CUENTAS_PUC',
+        agrupable: true,
+        inicial: true,
+      },
+      {
+        clave: 'cuentaNombre',
+        etiqueta: 'Nombre de la cuenta',
+        tipo: 'TEXTO',
+        sql: 'ec.nombre',
+        agrupable: true,
+      },
+      {
+        clave: 'tercero',
+        etiqueta: 'Tercero',
+        tipo: 'TEXTO',
+        sql: NOMBRE_TERCERO,
+        agrupable: true,
+      },
+      {
+        clave: 'centroCosto',
+        etiqueta: 'Centro de costo',
+        tipo: 'TEXTO',
+        sql: 'cc.nombre',
+        filtro: 'LISTA',
+        catalogo: 'CENTROS_COSTO',
+        agrupable: true,
+      },
       { clave: 'glosa', etiqueta: 'Glosa', tipo: 'TEXTO', sql: 'a.glosa' },
-      { clave: 'detalle', etiqueta: 'Detalle', tipo: 'TEXTO', sql: 'al.detalle', inicial: true },
-      { clave: 'debito', etiqueta: 'Débito', tipo: 'DINERO', sql: 'al.debito', filtro: 'RANGO', inicial: true },
-      { clave: 'credito', etiqueta: 'Crédito', tipo: 'DINERO', sql: 'al.credito', filtro: 'RANGO', inicial: true },
-      { clave: 'baseGravable', etiqueta: 'Base gravable', tipo: 'DINERO', sql: 'al.base_gravable' },
+      {
+        clave: 'detalle',
+        etiqueta: 'Detalle',
+        tipo: 'TEXTO',
+        sql: 'al.detalle',
+        inicial: true,
+      },
+      {
+        clave: 'debito',
+        etiqueta: 'Débito',
+        tipo: 'DINERO',
+        sql: 'al.debito',
+        filtro: 'RANGO',
+        inicial: true,
+      },
+      {
+        clave: 'credito',
+        etiqueta: 'Crédito',
+        tipo: 'DINERO',
+        sql: 'al.credito',
+        filtro: 'RANGO',
+        inicial: true,
+      },
+      {
+        clave: 'baseGravable',
+        etiqueta: 'Base gravable',
+        tipo: 'DINERO',
+        sql: 'al.base_gravable',
+      },
     ],
   },
 };

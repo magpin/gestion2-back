@@ -62,7 +62,9 @@ export class GraficoService {
    * dona de pesos. Se apagan acá y no en cada llamada, porque es de esas cosas
    * que se olvidan una vez y salen impresas.
    */
-  private conDefectos(config: Record<string, unknown>): Record<string, unknown> {
+  private conDefectos(
+    config: Record<string, unknown>,
+  ): Record<string, unknown> {
     const opciones = (config.options ?? {}) as Record<string, unknown>;
     const plugins = (opciones.plugins ?? {}) as Record<string, unknown>;
     return {
@@ -99,9 +101,13 @@ export class GraficoService {
     });
 
     try {
-      const respuesta = await fetch(`${this.base}/chart?${parametros.toString()}`);
+      const respuesta = await fetch(
+        `${this.base}/chart?${parametros.toString()}`,
+      );
       if (!respuesta.ok) {
-        this.log.warn(`QuickChart rechazó la configuración (${respuesta.status}).`);
+        this.log.warn(
+          `QuickChart rechazó la configuración (${respuesta.status}).`,
+        );
         return null;
       }
       const png = Buffer.from(await respuesta.arrayBuffer());
@@ -109,7 +115,9 @@ export class GraficoService {
       // Igual que con el PDF: un 200 no garantiza una imagen. Los bytes 1 a 3
       // de un PNG son las letras `PNG`.
       if (png.subarray(1, 4).toString() !== 'PNG') {
-        this.log.warn(`QuickChart devolvió ${png.length} bytes que no son un PNG.`);
+        this.log.warn(
+          `QuickChart devolvió ${png.length} bytes que no son un PNG.`,
+        );
         return null;
       }
       return png;

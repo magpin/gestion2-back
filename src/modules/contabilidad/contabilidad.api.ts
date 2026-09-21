@@ -58,6 +58,43 @@ export class ContabilidadApi {
     return periodo !== null && periodo.estado === 'ABIERTO';
   }
 
+  /**
+   * El año y el mes del periodo que contiene una fecha, o `null` si no hay.
+   *
+   * Lo pide `reportes` para resolver «el periodo contable en curso». Usa la
+   * misma definicion que `GET periodos/actual` —el periodo que contiene la
+   * fecha— y no otra: si el reporte llamara «en curso» a un periodo distinto
+   * del que la pantalla de contabilidad muestra como actual, las dos hojas del
+   * mismo contador dirian cosas diferentes.
+   */
+  async periodoEn(
+    ctx: CtxEmpresa,
+    fecha: Date,
+  ): Promise<{ anio: number; mes: number; estado: 'ABIERTO' | 'CERRADO' } | null> {
+    const periodo = await this.periodos.porFecha(ctx, fecha);
+    return periodo === null
+      ? null
+      : { anio: periodo.anio, mes: periodo.mes, estado: periodo.estado };
+  }
+
+  /**
+   * El ultimo periodo que se cerro, o `null` si nunca se cerro ninguno.
+   *
+   * Lo pide `reportes` para «el cierre del periodo anterior»: la cartera a la
+   * fecha en que el contador dio por bueno un mes. No es lo mismo que «el
+   * cierre del mes pasado» —si agosto sigue abierto, el ultimo cerrado es
+   * julio—, y la diferencia es justamente la que importa en una foto de saldos.
+   */
+  async ultimoPeriodoCerrado(
+    ctx: CtxEmpresa,
+  ): Promise<{ anio: number; mes: number } | null> {
+    // `listar` los devuelve del mas nuevo al mas viejo, asi que el primero
+    // cerrado es el ultimo que se cerro.
+    const periodos = await this.periodos.listar(ctx);
+    const cerrado = periodos.find((p) => p.estado === 'CERRADO');
+    return cerrado === undefined ? null : { anio: cerrado.anio, mes: cerrado.mes };
+  }
+
   /** El asiento que genero un documento, para mostrarlo al lado. */
   async asientoDe(
     ctx: CtxEmpresa,

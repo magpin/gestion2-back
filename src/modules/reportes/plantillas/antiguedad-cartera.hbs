@@ -1,0 +1,99 @@
+{{!--
+  «Antigüedad de saldos de cartera», el cuerpo.
+
+  Una sola hoja, **horizontal**: son ocho o cien clientes con cinco tramos cada
+  uno, y en vertical la barra queda tan angosta que los tramos chicos
+  desaparecen. El tamaño lo pone la `@page` de la plantilla base.
+
+  A diferencia de ventas, no hay detalle factura por factura ni bloque de
+  firmas: esto es una foto del saldo a una fecha, no un documento que se
+  entrega firmado. Sale de `docs/reportes-pdf-diseno/AntiguedadDeCartera.dc.html`.
+--}}
+
+<section class="cifras">
+  <div class="tarjeta tarjeta--principal">
+    <span class="rotulo">Cartera total</span>
+    <span class="valor">{{resumen.total}}</span>
+    <span class="nota">{{resumen.clientes}} clientes</span>
+  </div>
+  <div class="tarjeta">
+    <span class="rotulo"><span class="punto punto--resuelto"></span>Al día</span>
+    <span class="valor">{{resumen.alDia}}</span>
+    <span class="nota">{{resumen.alDiaPorciento}} % del total</span>
+  </div>
+  <div class="tarjeta">
+    <span class="rotulo"><span class="punto punto--medio"></span>Vencida</span>
+    <span class="valor">{{resumen.vencida}}</span>
+    <span class="nota">{{resumen.vencidaPorciento}} % del total</span>
+  </div>
+  <div class="tarjeta">
+    <span class="rotulo"><span class="punto punto--atencion"></span>Más de 90 días</span>
+    <span class="valor">{{resumen.masDe90}}</span>
+    <span class="nota">{{resumen.masDe90Detalle}}</span>
+  </div>
+</section>
+
+<section class="bloque">
+  <div class="encabezado">
+    <h2>Saldo por rango de vencimiento</h2>
+    <span class="apunte">plazo asumido: {{plazo}} días desde la emisión</span>
+  </div>
+  {{!-- Cada tramo ocupa lo que pesa. Va como `flex` y no como ancho en
+        porcentaje: así los cinco llenan la franja exactamente, sin que sobre
+        ni falte un píxel por redondeo. Un tramo en cero desaparece, que es lo
+        correcto: una franja vacía con su rótulo diría que hay algo ahí. --}}
+  <div class="franja">
+    {{#each tramos}}
+      {{#if centavos}}
+        <div class="tramo" style="flex:{{peso}}">
+          <span class="marca" style="background:{{color}}"></span>
+          <span class="rotulo">{{etiqueta}}</span>
+          {{!-- En renglones aparte y no «22,4 M · 56 %» en uno solo: un tramo
+                del 5 % mide treinta píxeles, y todo junto envuelve donde caiga
+                —con el «·» colgando al final de una línea—. Separados, el
+                tramo más angosto se lee igual que el más ancho. --}}
+          <span class="monto">{{monto}}</span>
+          <span class="parte">{{parte}}</span>
+        </div>
+      {{/if}}
+    {{/each}}
+  </div>
+</section>
+
+<section class="bloque">
+  <div class="encabezado">
+    <h2>Saldo por cliente</h2>
+    <span class="apunte">del mayor al menor</span>
+  </div>
+  <div class="leyenda">
+    {{#each tramos}}
+      <span><span class="punto" style="background:{{color}}"></span>{{etiqueta}}</span>
+    {{/each}}
+  </div>
+
+  <div class="barras barras--cartera">
+    {{#each clientes}}
+      <div class="fila">
+        <span class="nombre">{{cliente}}</span>
+        <span class="marco">
+          <span class="barra" style="width:{{ancho}}%">
+            {{#each pedazos}}<span style="width:{{parte}}%;background:{{color}}"></span>{{/each}}
+          </span>
+        </span>
+        <span class="monto">{{saldo}}</span>
+        <span class="apunte{{#if vencido}} atencion{{/if}}">{{estado}}</span>
+      </div>
+    {{/each}}
+  </div>
+</section>
+
+{{!-- La hoja declara la convención que usó. Sin esto, «vencida» es una palabra
+      sin definición en un documento contable, y dos personas la leerían
+      distinto. --}}
+<p class="notas">
+  Montos en pesos colombianos. Se incluyen las facturas con saldo por cobrar;
+  las pagadas y las anuladas quedan fuera. Los días vencidos se cuentan desde la
+  emisión más {{plazo}} días: <strong>el sistema no guarda el plazo pactado con
+  cada cliente</strong>, así que se asume el mismo para todos.
+  {{#if elaboro}}Generado con los permisos de {{elaboro}}{{#if rol}} ({{rol}}){{/if}}.{{/if}}
+</p>

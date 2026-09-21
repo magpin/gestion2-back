@@ -1,0 +1,174 @@
+{{!--
+  «Ventas del mes por cliente», el cuerpo.
+
+  Dos páginas: el resumen con sus gráficas, y el detalle factura por factura.
+  El corte entre las dos es un `break-after` explícito y no un accidente del
+  alto: el resumen tiene que caber entero en una hoja para poder mirarse de un
+  vistazo, y el detalle empieza limpio en la siguiente.
+
+  Salió de `docs/reportes-pdf-diseno/VentasPorCliente-pag{1,2}.dc.html`. Las
+  medidas del diseño están en `reporte.css`; acá va solo la estructura.
+--}}
+
+{{!-- ── Página 1: el resumen ──────────────────────────────────────────── --}}
+
+<section class="cifras">
+  <div class="tarjeta tarjeta--principal">
+    <span class="rotulo">Total facturado</span>
+    <span class="valor">{{resumen.totalFacturado}}</span>
+    <span class="nota">{{resumen.facturas}} facturas · {{resumen.clientes}} clientes</span>
+  </div>
+  <div class="tarjeta">
+    <span class="rotulo"><span class="punto punto--resuelto"></span>Cobrado</span>
+    <span class="valor">{{resumen.cobrado}}</span>
+    <span class="nota">{{resumen.cobradoPorciento}} % del total</span>
+  </div>
+  <div class="tarjeta">
+    <span class="rotulo"><span class="punto punto--medio"></span>Por cobrar</span>
+    <span class="valor">{{resumen.porCobrar}}</span>
+    <span class="nota">{{resumen.porCobrarPorciento}} % del total</span>
+  </div>
+  <div class="tarjeta">
+    <span class="rotulo"><span class="punto punto--atencion"></span>Vencido</span>
+    <span class="valor">{{resumen.vencido}}</span>
+    <span class="nota">{{resumen.vencidoDetalle}}</span>
+  </div>
+</section>
+
+<section class="bloque">
+  <div class="graficas">
+    <div>
+      <div class="encabezado">
+        <h2>Ventas por {{#if porMes}}mes{{else}}día{{/if}}</h2>
+        {{!-- El eje va en millones y la gráfica tiene que decirlo: un «15» sin
+              unidad al lado de un total de «$ 68.575.000» no se entiende. --}}
+        <span class="apunte">millones de pesos{{#if pico}} · {{pico.texto}}{{/if}}</span>
+      </div>
+      {{#if graficos.porDia}}
+        <img src="{{graficos.porDia}}" width="430" alt="">
+      {{else}}
+        <p class="apunte">La gráfica no se pudo dibujar. Las cifras y el detalle no dependen de ella.</p>
+      {{/if}}
+    </div>
+
+    <div>
+      <div class="encabezado"><h2>Estado de cobro</h2></div>
+      {{#if graficos.estado}}
+        {{!-- La cifra del medio va en HTML encima de la imagen: Chart.js no la
+              dibuja, y superponerla sale exacta en vez de aproximada. --}}
+        <div class="dona">
+          <img src="{{graficos.estado}}" width="150" height="150" alt="">
+          <div class="centro">
+            <span class="grande">{{resumen.cobradoPorciento}} %</span>
+            <span class="chico">cobrado</span>
+          </div>
+        </div>
+      {{/if}}
+    </div>
+  </div>
+</section>
+
+<section class="bloque">
+  <div class="encabezado">
+    <h2>Ventas por cliente</h2>
+    <span class="apunte">del mayor al menor</span>
+  </div>
+  <div class="leyenda">
+    <span><span class="punto punto--resuelto"></span>Cobrado</span>
+    <span><span class="punto punto--medio"></span>Por cobrar</span>
+    <span><span class="punto punto--atencion"></span>Vencido</span>
+  </div>
+  <div class="barras">
+    {{#each grupos}}
+      <div class="fila">
+        <span class="nombre">{{cliente}}</span>
+        {{!-- Dos proporciones, y las dos importan: el **largo** de la barra
+              dice cuánto compra este cliente contra el que más compra, y los
+              **tramos** de adentro cómo está su cobro. Si el largo fuera
+              siempre el mismo, la gráfica solo contaría lo segundo y el
+              «del mayor al menor» no se vería. --}}
+        <span class="marco">
+          <span class="barra" style="width:{{ancho}}%">
+            {{#if tramos.cobrado}}<span style="width:{{tramos.cobrado}}%;background:#171717"></span>{{/if}}
+            {{#if tramos.porCobrar}}<span style="width:{{tramos.porCobrar}}%;background:#b8b8b8"></span>{{/if}}
+            {{#if tramos.vencido}}<span style="width:{{tramos.vencido}}%;background:#f25623"></span>{{/if}}
+          </span>
+        </span>
+        <span class="monto">{{totalCorto}} <span class="parte">· {{participacion}}</span></span>
+      </div>
+    {{/each}}
+  </div>
+</section>
+
+<div class="salto"></div>
+
+{{!-- ── Página 2: el detalle ──────────────────────────────────────────── --}}
+
+<section class="bloque" style="border-top:none;padding-top:0">
+  <div class="encabezado">
+    <h2 style="font-size:15px">Detalle de facturas</h2>
+    <div class="leyenda">
+      <span><span class="punto punto--resuelto"></span>Pagada</span>
+      <span><span class="punto punto--medio"></span>Pendiente o parcial</span>
+      <span><span class="punto punto--atencion"></span>Vencida</span>
+    </div>
+  </div>
+
+  <div class="detalle">
+    <div class="fila cabecera">
+      <span>Cliente · factura</span>
+      <span>Fecha</span>
+      <span>Estado</span>
+      <span class="derecha">Total</span>
+      <span class="derecha">Por cobrar</span>
+      <span>Cobrado</span>
+    </div>
+
+    {{#each grupos}}
+      {{!-- El grupo y sus facturas no se parten entre hojas: un subtotal solo
+            en el borde de una página no se entiende. --}}
+      <div class="junto">
+        <div class="fila grupo">
+          <span>{{cliente}}</span>
+          <span></span>
+          <span></span>
+          <span class="cifra derecha">{{total}}</span>
+          <span class="cifra derecha">{{porCobrar}}</span>
+          <span class="progreso"><span style="width:{{cobradoPorciento}}%"></span></span>
+        </div>
+
+        {{#each facturas}}
+          <div class="fila renglon{{#if anulada}} anulada{{/if}}">
+            <span class="cifra">{{numero}}</span>
+            <span class="cifra">{{fecha}}</span>
+            <span class="estado">
+              <span class="punto {{punto}}"></span>{{etiqueta}}
+            </span>
+            <span class="cifra derecha">{{total}}</span>
+            <span class="cifra derecha">{{porCobrar}}</span>
+            <span class="progreso"><span style="width:{{cobradoPorciento}}%"></span></span>
+          </div>
+        {{/each}}
+      </div>
+    {{/each}}
+
+    <div class="fila total">
+      <span>Total general · {{totalGeneral.facturas}} facturas</span>
+      <span></span>
+      <span></span>
+      <span class="cifra derecha">{{totalGeneral.total}}</span>
+      <span class="cifra derecha">{{totalGeneral.porCobrar}}</span>
+      <span class="progreso"><span style="width:{{totalGeneral.cobradoPorciento}}%"></span></span>
+    </div>
+  </div>
+
+  {{!-- Lo que la hoja tiene que declarar de sí misma. Las dos primeras frases
+        explican qué se está mirando; la tercera es la que permite entender por
+        qué dos personas pueden sacar el mismo reporte y ver cifras distintas. --}}
+  <p class="notas">
+    Montos en pesos colombianos, IVA incluido. Las facturas anuladas aparecen
+    tachadas y no suman. «Vencida» es una factura con saldo emitida hace más de
+    {{diasParaVencer}} días: el sistema no guarda la fecha de vencimiento pactada.
+    {{#if elaboro}}Generado con los permisos de {{elaboro}}{{#if rol}} ({{rol}}){{/if}}.{{/if}}
+  </p>
+</section>

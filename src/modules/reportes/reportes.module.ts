@@ -1,8 +1,18 @@
 import { Module } from '@nestjs/common';
 
+import { ContabilidadModule } from '../contabilidad/contabilidad.module';
+import { ArmadorController } from './controladores/armador.controller';
+import { ReportesController } from './controladores/reportes.controller';
+import { CarteraReporteService } from './servicios/cartera-reporte.service';
+import { CorridaService } from './servicios/corrida.service';
+import { ExcelService } from './servicios/excel.service';
+import { FechasReporteService } from './servicios/fechas.service';
+import { ArmadorService } from './servicios/armador.service';
 import { GotenbergService } from './servicios/gotenberg.service';
 import { GraficoService } from './servicios/grafico.service';
+import { MembreteService } from './servicios/membrete.service';
 import { PlantillaService } from './servicios/plantilla.service';
+import { VentasReporteService } from './servicios/ventas-reporte.service';
 
 /**
  * `reportes` — convierte datos en una hoja que alguien firma.
@@ -24,7 +34,20 @@ import { PlantillaService } from './servicios/plantilla.service';
  * no la tecnología. El día que además salga en Excel, sigue llamándose igual.
  */
 @Module({
-  providers: [GotenbergService, GraficoService, PlantillaService],
-  exports: [GotenbergService, GraficoService, PlantillaService],
+  imports: [ContabilidadModule],
+  controllers: [ReportesController, ArmadorController],
+  providers: [
+    GotenbergService,
+    GraficoService,
+    MembreteService,
+    PlantillaService,
+    VentasReporteService,
+    CarteraReporteService,
+    CorridaService,
+    ExcelService,
+    FechasReporteService,
+    ArmadorService,
+  ],
+  exports: [VentasReporteService, CarteraReporteService],
 })
 export class ReportesModule {}

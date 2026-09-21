@@ -15,6 +15,7 @@ import { InventarioModule } from './modules/inventario/inventario.module';
 import { LecturaDocumentosModule } from './modules/lectura-documentos/lectura-documentos.module';
 import { NucleoModule } from './modules/nucleo/nucleo.module';
 import { PlataformaModule } from './modules/plataforma/plataforma.module';
+import { ReportesModule } from './modules/reportes/reportes.module';
 import { TesoreriaModule } from './modules/tesoreria/tesoreria.module';
 import { VentasModule } from './modules/ventas/ventas.module';
 
@@ -48,6 +49,7 @@ import { VentasModule } from './modules/ventas/ventas.module';
     PlataformaModule,
     TesoreriaModule,
     LecturaDocumentosModule,
+    ReportesModule,
   ],
   controllers: [SaludController],
   providers: [

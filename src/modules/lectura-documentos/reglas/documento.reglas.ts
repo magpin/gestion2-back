@@ -218,8 +218,16 @@ export interface DatoDescartado {
   motivo: string;
 }
 
-/** Cuánto de la casilla se conserva: es texto de un tercero y va a la pantalla. */
-const LARGO_CASILLA = 12;
+/**
+ * Cuánto de la casilla se conserva: es texto de un tercero y va a la pantalla.
+ *
+ * Doce cortaba «Representante legal» en «Representant», y un rótulo partido a
+ * la mitad de una palabra se lee como un error de tipeo nuestro, no como la
+ * cita recortada de un documento ajeno. Veinticuatro deja entrar los rótulos
+ * del RUT enteros —«Actividad económica», «Representante legal»— y sigue siendo
+ * una celda de una línea.
+ */
+const LARGO_CASILLA = 24;
 
 /**
  * Convierte lo que devolvió el modelo en datos que el módulo puede mostrar.
@@ -395,6 +403,16 @@ function confianzaDe(crudo: unknown): Confianza {
  */
 function casillaLimpia(crudo: unknown): string | undefined {
   if (typeof crudo !== 'string') return undefined;
-  const limpia = crudo.replace(/\s+/g, ' ').trim().slice(0, LARGO_CASILLA);
-  return limpia === '' ? undefined : limpia;
+  const limpia = crudo.replace(/\s+/g, ' ').trim();
+  if (limpia === '') return undefined;
+  if (limpia.length <= LARGO_CASILLA) return limpia;
+
+  // Se corta en el último espacio que quepa, para no partir una palabra. Si el
+  // corte ya cae justo al terminar una —el carácter siguiente es un espacio—
+  // no hay nada que retroceder; y si la primera palabra por sí sola no cabe,
+  // ahí sí se corta a la cuenta, que es lo menos malo.
+  const recorte = limpia.slice(0, LARGO_CASILLA);
+  if (limpia[LARGO_CASILLA] === ' ') return recorte;
+  const espacio = recorte.lastIndexOf(' ');
+  return espacio > 0 ? recorte.slice(0, espacio) : recorte;
 }

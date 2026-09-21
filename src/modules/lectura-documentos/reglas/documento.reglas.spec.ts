@@ -136,7 +136,38 @@ describe('validar', () => {
       'RUT',
     );
 
-    expect(datos[0].fuente.casilla).toBe('53 y también');
+    expect(datos[0].fuente.casilla).toBe('53 y también todo este');
+  });
+
+  it('el recorte no parte una palabra por la mitad', () => {
+    const { datos } = validar(
+      crudo({
+        campo: 'representanteNombre',
+        valor: 'María Fernanda Gómez',
+        confianza: 'ALTA',
+        casilla: 'Representante legal y suplentes',
+      }),
+      'RUT',
+    );
+
+    // «Representante legal y» y no «Representante legal y su»: un rótulo
+    // partido a la mitad de una palabra parece un error de tipeo nuestro.
+    expect(datos[0].fuente.casilla).toBe('Representante legal y');
+  });
+
+  it('una sola palabra más larga que el tope se corta a la cuenta', () => {
+    const { datos } = validar(
+      crudo({
+        campo: 'razonSocial',
+        valor: 'Tecnodigital SAS',
+        confianza: 'ALTA',
+        casilla: 'Responsabilidadesycalidadesyatributos',
+      }),
+      'RUT',
+    );
+
+    // No hay espacio al que retroceder. Cortar es lo menos malo.
+    expect(datos[0].fuente.casilla).toBe('Responsabilidadesycalida');
   });
 
   it('sin casilla, la fuente es solo el documento', () => {

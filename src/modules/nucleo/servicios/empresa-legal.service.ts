@@ -120,6 +120,24 @@ export class EmpresaLegalService {
     dto: AbrirResponsabilidadRutDto,
   ): Promise<Record<string, unknown>> {
     return this.tx.enContexto(ctx, async (t) => {
+      // Declarar hoy un código que ya se declaró hoy es declarar lo mismo, no un
+      // cambio: se devuelve la fila que ya está y no se toca nada.
+      //
+      // Sin esto reventaba, y feo. `cerrarAnterior` cierra la fila abierta con
+      // `fecha_inicio - 1`, y si esa fila había empezado hoy, el cierre queda
+      // **antes** de su propio inicio: viola `ck_responsabilidad_rut_vigencia` y
+      // el error de Postgres salía crudo a la pantalla —«viola la restricción
+      // check ck_responsabilidad_rut_vigencia»— en la lista de lo que quedó
+      // pendiente. Se ve confirmando dos veces el mismo RUT, y también a mano:
+      // abrir el 48, corregirse y volver a abrirlo el mismo día.
+      const [yaAbierta] = await t.query<Array<Record<string, unknown>>>(
+        `SELECT * FROM empresa_responsabilidad_rut
+          WHERE empresa_id = $1 AND codigo = $2 AND fecha_fin IS NULL
+            AND fecha_inicio = $3::date`,
+        [ctx.empresaId, dto.codigo, dto.fechaInicio],
+      );
+      if (yaAbierta !== undefined) return yaAbierta;
+
       await this.cerrarAnterior(
         t,
         `UPDATE empresa_responsabilidad_rut SET fecha_fin = $3::date - 1

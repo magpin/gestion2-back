@@ -71,7 +71,7 @@ function revisar(res, descripcion) {
       razonSocial: 'Prueba Frontend S.A.S.',
       nit: '900123456',
       dv: '8',
-      sectorEconomico: 'COMERCIO',
+      sectores: ['COMERCIO'],
       grupoNiif: 'GRUPO_2',
       fechaInicioOperaciones: '2020-01-01',
     },

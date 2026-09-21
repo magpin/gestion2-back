@@ -20,7 +20,7 @@ const lineas = [
   'Registro Unico Tributario - RUT',
   'Formulario 001',
   '',
-  'Casilla 5  Numero de Identificacion Tributaria NIT: 900123456',
+  'Casilla 5  Numero de Identificacion Tributaria NIT: 901234567',
   'Casilla 6  DV: 7',
   'Casilla 12 Direccion seccional: Impuestos de Medellin',
   '',

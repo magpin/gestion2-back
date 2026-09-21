@@ -126,11 +126,24 @@ export class ExtractoReglaService {
     });
   }
 
-  /** La contra cuenta recibe asientos: tiene que existir, estar activa y ser auxiliar. */
+  /**
+   * La contra cuenta recibe asientos: tiene que existir, estar activa y ser
+   * auxiliar. Y no puede exigir tercero, centro de costo ni base gravable: una
+   * regla registra sus líneas sin ninguno de los tres, y el trigger del
+   * asiento (`0022_asiento.sql`) la rechazaría el día que se use, no hoy.
+   */
   private async exigirContraCuenta(cuentaId: string, t: Tx): Promise<void> {
-    const cuenta = fila<{ activa: boolean; es_auxiliar: boolean }>(
+    const cuenta = fila<{
+      activa: boolean;
+      es_auxiliar: boolean;
+      exige_tercero: boolean;
+      exige_centro_costo: boolean;
+      exige_base_gravable: boolean;
+    }>(
       await t.query(
-        `SELECT activa, es_auxiliar FROM empresa_cuenta WHERE id = $1`,
+        `SELECT activa, es_auxiliar, exige_tercero, exige_centro_costo,
+                exige_base_gravable
+           FROM empresa_cuenta WHERE id = $1`,
         [cuentaId],
       ),
     );
@@ -140,6 +153,18 @@ export class ExtractoReglaService {
     if (!cuenta.activa || !cuenta.es_auxiliar) {
       throw new BadRequestException(
         'La cuenta de la regla tiene que estar activa y ser auxiliar: ahí se registra el gasto o el ingreso.',
+      );
+    }
+    const exige = cuenta.exige_tercero
+      ? 'tercero'
+      : cuenta.exige_centro_costo
+        ? 'centro de costo'
+        : cuenta.exige_base_gravable
+          ? 'base gravable'
+          : null;
+    if (exige !== null) {
+      throw new BadRequestException(
+        `La cuenta de la regla exige ${exige}, y una regla registra sus líneas sin él. Elige otra auxiliar.`,
       );
     }
   }

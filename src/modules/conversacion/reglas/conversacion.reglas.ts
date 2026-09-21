@@ -94,3 +94,33 @@ export function costoUsd(uso: UsoConversacion): number {
     1_000_000
   );
 }
+
+/**
+ * Cuántos turnos por persona en una ventana de tiempo (paso 4: 20 por minuto).
+ * Cada turno es plata, y un bucle en el navegador no puede vaciar la cuenta.
+ *
+ * En memoria: alcanza con un solo servidor. Con varios, cada uno cuenta lo
+ * suyo y el límite real se multiplica; ese día va a una tabla o a Redis.
+ */
+export class VentanaDeTurnos {
+  private readonly marcas = new Map<string, number[]>();
+
+  constructor(
+    private readonly maximo = 20,
+    private readonly ventanaMs = 60_000,
+  ) {}
+
+  /** Anota un turno si cabe en la ventana. `false` si ya no cabe: no lo anota. */
+  permitir(clave: string, ahora: number): boolean {
+    const vigentes = (this.marcas.get(clave) ?? []).filter(
+      (m) => ahora - m < this.ventanaMs,
+    );
+    if (vigentes.length >= this.maximo) {
+      this.marcas.set(clave, vigentes);
+      return false;
+    }
+    vigentes.push(ahora);
+    this.marcas.set(clave, vigentes);
+    return true;
+  }
+}

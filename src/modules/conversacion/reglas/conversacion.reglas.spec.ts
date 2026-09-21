@@ -3,6 +3,7 @@ import {
   entradaTotal,
   hiloParaModelo,
   superaTope,
+  VentanaDeTurnos,
   type TurnoGuardado,
 } from './conversacion.reglas';
 
@@ -90,5 +91,32 @@ describe('el tope y el costo', () => {
   it('el costo cobra el caché leído a una décima y el escrito a 1,25', () => {
     // 1.000×5 + 500×25 + 57.000×0,5 + 2.000×6,25 = 58.500 millonésimas
     expect(costoUsd(uso)).toBeCloseTo(0.0585, 6);
+  });
+});
+
+describe('VentanaDeTurnos', () => {
+  it('deja pasar hasta el máximo dentro de la ventana, y ni uno más', () => {
+    const v = new VentanaDeTurnos(3, 60_000);
+    expect([0, 1, 2, 3].map((s) => v.permitir('ana', s * 1000))).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ]);
+  });
+
+  it('cuando el turno más viejo sale de la ventana, vuelve a caber uno', () => {
+    const v = new VentanaDeTurnos(2, 60_000);
+    v.permitir('ana', 0);
+    v.permitir('ana', 10_000);
+    expect(v.permitir('ana', 59_999)).toBe(false);
+    expect(v.permitir('ana', 60_000)).toBe(true);
+  });
+
+  it('cada persona tiene su propia cuenta', () => {
+    const v = new VentanaDeTurnos(1, 60_000);
+    expect(v.permitir('ana', 0)).toBe(true);
+    expect(v.permitir('luis', 0)).toBe(true);
+    expect(v.permitir('ana', 1)).toBe(false);
   });
 });

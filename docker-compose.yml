@@ -68,6 +68,33 @@ services:
       echo 'bucket listo';
       "
 
+  # ── Los dos que arman un PDF ───────────────────────────────────────────────
+  # Van acá y no adentro del backend a propósito: la imagen de la API es
+  # `node:24-alpine`, y meterle Chromium obligaría a cambiarla a Debian-slim y a
+  # pedirle más memoria a cada instancia. Así el PDF escala aparte y si se cae,
+  # se cae el PDF y no la API.
+  #
+  # **Sin puerto público en producción.** Acá se mapean para poder probarlos a
+  # mano desde el host, donde el backend corre fuera de Docker.
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped
+    # El 3000 de adentro no se puede mapear al 3000 de afuera: ahí está el
+    # frontend.
+    ports:
+      - "3010:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  quickchart:
+    image: ianw/quickchart
+    restart: unless-stopped
+    ports:
+      - "3400:3400"
+
   api:
     build:
       context: .
@@ -76,6 +103,8 @@ services:
       db:
         condition: service_healthy
       minio:
+        condition: service_healthy
+      gotenberg:
         condition: service_healthy
     environment:
       DB_HOST: db
@@ -96,6 +125,11 @@ services:
       S3_BUCKET: ${MINIO_BUCKET:-gestion}
       S3_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      # Los dos sidecars del PDF. Adentro de la red se llaman por su nombre y
+      # por su puerto interno, no por el mapeado: `3000` es el de Gotenberg
+      # adentro del contenedor, aunque afuera se vea en el 3010.
+      GOTENBERG_URL: http://gotenberg:3000
+      QUICKCHART_URL: http://quickchart:3400
       # Lo que el navegador puede alcanzar. Adentro es `minio`, afuera es
       # `localhost`: una URL firmada se abre desde el navegador, no desde la API.
       S3_ENDPOINT_PUBLICO: ${S3_ENDPOINT_PUBLICO:-http://localhost:9000}

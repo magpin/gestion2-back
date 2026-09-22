@@ -14,25 +14,34 @@ import {
   Min,
 } from 'class-validator';
 
+const PLANES = ['BASICO', 'PROFESIONAL', 'CONTADOR', 'EMPRESARIAL'];
+
 /**
- * Dar de alta a un cliente son dos datos: correo y contraseña.
+ * Dar de alta a un cliente: su nombre, su administrador y el plan.
  *
  * Nada de la empresa se pregunta acá. El NIT, el marco NIIF y la fecha de inicio
  * de operaciones los sabe el contador del cliente, no quien vende el sistema, y
  * pedirlos en la venta obliga a adivinarlos o a dejarlos mal puestos. El director
  * crea su empresa cuando entra.
- *
- * El nombre y el identificador de la cuenta se derivan del correo: son etiquetas
- * internas que el propio cliente cambia después, y pedirlas sería inventar
- * trabajo para quien vende.
  */
 export class CrearCuentaDto {
   @IsEmail()
   email!: string;
 
+  /**
+   * Opcional: si no viene, se genera una para dictar (`Hq7r-T4kw-9vXz`) y se
+   * devuelve una sola vez en la respuesta.
+   */
+  @IsOptional()
   @IsString()
   @Length(12, 200)
-  password!: string;
+  password?: string;
+
+  /** El nombre del cliente. Si no viene, el del administrador. */
+  @IsOptional()
+  @IsString()
+  @Length(3, 120)
+  nombreCuenta?: string;
 
   /** Opcional: si no viene, se usa la parte del correo antes de la arroba. */
   @IsOptional()
@@ -41,9 +50,10 @@ export class CrearCuentaDto {
   nombreAdministrador?: string;
 
   @IsOptional()
-  @IsIn(['BASICO', 'PROFESIONAL', 'CONTADOR', 'EMPRESARIAL'])
+  @IsIn(PLANES)
   plan?: string;
 
+  /** Si no vienen, los del plan en el catálogo. */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -57,20 +67,53 @@ export class CrearCuentaDto {
   maxUsuarios?: number;
 }
 
-export class EditarCuentaDto {
+/**
+ * Cambiar de plan trae los cupos del plan nuevo. Si la cuenta ya usa más de
+ * lo que el plan permite, se rechaza con el detalle, salvo que quien cambia
+ * lo acepte: lo que ya existe sigue, pero no se puede crear más.
+ */
+export class CambiarPlanDto {
+  @IsIn(PLANES)
+  plan!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  aceptarExceso?: boolean;
+}
+
+/** Suspender o cancelar pide motivo: es lo que se lee después en la bitácora. */
+export class CambiarEstadoDto {
+  @IsIn(['ACTIVO', 'SUSPENDIDO', 'MOROSO', 'CANCELADO'])
+  estado!: string;
+
   @IsOptional()
   @IsString()
+  @Length(3, 300)
+  motivo?: string;
+}
+
+export class AjustarCuposDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  maxEmpresas?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  maxUsuarios?: number;
+}
+
+export class RenombrarCuentaDto {
+  @IsString()
   @Length(3, 120)
-  nombre?: string;
+  nombre!: string;
+}
 
-  @IsOptional()
-  @IsIn(['BASICO', 'PROFESIONAL', 'CONTADOR', 'EMPRESARIAL'])
-  plan?: string;
-
-  @IsOptional()
-  @IsIn(['ACTIVO', 'SUSPENDIDO', 'MOROSO', 'CANCELADO'])
-  estado?: string;
-
+/** Los cupos con los que nace una cuenta de ese plan. */
+export class EditarPlanDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -111,7 +154,6 @@ export class CrearEmpresaEnCuentaDto {
   @Matches(/^[0-9]$/)
   dv!: string;
 
-  @IsIn(['COMERCIO', 'SERVICIOS', 'MANUFACTURA', 'MIXTO'])
   /**
    * A que se dedica, en grueso. Puede ser mas de uno, y puede no venir ninguno:
    * quien vende el sistema no siempre lo sabe, y adivinarlo es peor que dejarlo
@@ -137,9 +179,11 @@ export class CrearUsuarioEnCuentaDto {
   @Length(3, 200)
   nombreCompleto!: string;
 
+  /** Opcional: si no viene, se genera una para dictar y se devuelve una vez. */
+  @IsOptional()
   @IsString()
   @Length(12, 200)
-  password!: string;
+  password?: string;
 
   @IsOptional()
   @IsBoolean()

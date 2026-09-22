@@ -22,12 +22,21 @@ export class EstadoConfiguracionService {
   async estado(ctx: CtxEmpresa, tx?: Tx): Promise<EstadoConfiguracion> {
     return this.tx.enContexto(
       ctx,
-      async (t) => calcularEstado(await this.hechos(t, ctx)),
+      async (t) => calcularEstado(await this.hechos(t, ctx.empresaId)),
       tx,
     );
   }
 
-  private async hechos(t: Tx, ctx: CtxEmpresa): Promise<HechosConfiguracion> {
+  /**
+   * El mismo cálculo sobre una conexión que ya puede leer la empresa sin
+   * contexto: la de aprovisionamiento, con la que la consola de plataforma ve
+   * el avance de muchas empresas. Es la misma regla, no una copia.
+   */
+  async estadoCon(t: Tx, empresaId: string): Promise<EstadoConfiguracion> {
+    return calcularEstado(await this.hechos(t, empresaId));
+  }
+
+  private async hechos(t: Tx, empresaId: string): Promise<HechosConfiguracion> {
     const [fila] = await t.query<Array<Record<string, unknown>>>(
       `SELECT
          e.razon_social,
@@ -87,7 +96,7 @@ export class EstadoConfiguracionService {
        FROM empresa e
        LEFT JOIN empresa_configuracion_contable cc ON cc.empresa_id = e.id
        WHERE e.id = $1`,
-      [ctx.empresaId],
+      [empresaId],
     );
 
     // La resolución va aparte: necesita comparar contra la fecha de hoy y su
@@ -107,7 +116,7 @@ export class EstadoConfiguracionService {
          FROM empresa_resolucion_dian
         WHERE empresa_id = $1 AND tipo_documento = 'FACTURA_VENTA' AND activa
         LIMIT 1`,
-      [ctx.empresaId],
+      [empresaId],
     );
 
     return {

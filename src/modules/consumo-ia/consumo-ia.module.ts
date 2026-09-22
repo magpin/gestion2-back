@@ -2,6 +2,7 @@ import { Controller, Get, Module, Query, UseGuards } from '@nestjs/common';
 
 import { Publico } from '../../common/auth/decoradores';
 import { ClaveConsumoGuard } from './clave-consumo.guard';
+import { ConsumoIaApi } from './consumo-ia.api';
 import { ConsumoIaService } from './servicios/consumo-ia.service';
 
 /**
@@ -57,9 +58,12 @@ export class ConsumoIaController {
  * Módulo propio y no dentro de `plataforma`: ese módulo se limita a propósito
  * a cuentas, empresas y usuarios. Este solo lee cifras de uso de la IA, por la
  * conexión de aprovisionamiento.
+ *
+ * Exporta `ConsumoIaApi`, que usa la consola de plataforma.
  */
 @Module({
   controllers: [ConsumoIaController],
-  providers: [ConsumoIaService, ClaveConsumoGuard],
+  providers: [ConsumoIaService, ClaveConsumoGuard, ConsumoIaApi],
+  exports: [ConsumoIaApi],
 })
 export class ConsumoIaModule {}

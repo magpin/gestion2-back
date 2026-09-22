@@ -127,6 +127,6 @@ export class DocumentosController {
     if (documento.estado === 'LEIDO' || documento.estado === 'FALLO') {
       throw new NotFoundException('Esa lectura ya terminó.');
     }
-    return { detenida: this.extractor.detener(id) };
+    return { detenida: await this.extractor.detener(ctx, documento) };
   }
 }

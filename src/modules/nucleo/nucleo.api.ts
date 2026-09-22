@@ -160,6 +160,18 @@ export class NucleoApi {
   }
 
   /**
+   * El mismo estado, sobre una conexión que lee sin contexto de empresa. Solo
+   * la usa la consola de plataforma, con la de aprovisionamiento, para ver
+   * quién se quedó a medias en la configuración.
+   */
+  async estadoConfiguracionCon(
+    t: Tx,
+    empresaId: string,
+  ): Promise<EstadoConfiguracion> {
+    return this.estadoConfig.estadoCon(t, empresaId);
+  }
+
+  /**
    * Una cuenta del plan de la empresa, para asentar contra ella.
    *
    * `null` si no existe o está inactiva. Las banderas que trae —`exigeTercero`,

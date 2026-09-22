@@ -49,6 +49,7 @@ export const SQL_RESPUESTAS = `
    WHERE t.autor = 'ASISTENTE' AND t.uso IS NOT NULL
      AND (t.creado_en AT TIME ZONE 'America/Bogota')::date BETWEEN $1::date AND $2::date
      AND ($3::uuid IS NULL OR t.empresa_id = $3::uuid)
+     AND ($4::uuid IS NULL OR e.tenant_id = $4::uuid)
    ORDER BY t.creado_en
    LIMIT ${TOPE_FILAS}`;
 
@@ -62,6 +63,7 @@ export const SQL_LECTURAS = `
      AND (coalesce(d.leido_en, d.creado_en) AT TIME ZONE 'America/Bogota')::date
          BETWEEN $1::date AND $2::date
      AND ($3::uuid IS NULL OR d.empresa_id = $3::uuid)
+     AND ($4::uuid IS NULL OR e.tenant_id = $4::uuid)
    LIMIT ${TOPE_FILAS}`;
 
 /**
@@ -83,6 +85,7 @@ export const SQL_DETALLE_RESPUESTAS = `
    WHERE t.autor = 'ASISTENTE' AND t.uso IS NOT NULL
      AND (t.creado_en AT TIME ZONE 'America/Bogota')::date BETWEEN $1::date AND $2::date
      AND ($3::uuid IS NULL OR t.empresa_id = $3::uuid)
+     AND ($4::uuid IS NULL OR e.tenant_id = $4::uuid)
    LIMIT ${TOPE_FILAS}`;
 
 /** Las lecturas con su id y su hora, para listarlas una por una. */
@@ -97,19 +100,40 @@ export const SQL_DETALLE_LECTURAS = `
      AND (coalesce(d.leido_en, d.creado_en) AT TIME ZONE 'America/Bogota')::date
          BETWEEN $1::date AND $2::date
      AND ($3::uuid IS NULL OR d.empresa_id = $3::uuid)
+     AND ($4::uuid IS NULL OR e.tenant_id = $4::uuid)
    LIMIT ${TOPE_FILAS}`;
 
-/** Las empresas que usaron la IA alguna vez: para el filtro. */
+/**
+ * Las empresas que usaron la IA alguna vez, con su cuenta: para los filtros y
+ * para sumar el gasto por cuenta.
+ */
 export const SQL_EMPRESAS = `
-  SELECT e.id, e.razon_social AS nombre
+  SELECT e.id, e.razon_social AS nombre, e.tenant_id AS "cuentaId", c.nombre AS cuenta
     FROM empresa e
+    JOIN tenant c ON c.id = e.tenant_id
    WHERE EXISTS (SELECT 1 FROM conversacion_turno t WHERE t.empresa_id = e.id AND t.uso IS NOT NULL)
       OR EXISTS (SELECT 1 FROM documento_leido d WHERE d.empresa_id = e.id)
    ORDER BY e.razon_social`;
 
+export interface EmpresaConConsumo {
+  id: string;
+  nombre: string;
+  cuentaId: string;
+  cuenta: string;
+}
+
+/** Los filtros del tablero. `cuentaId` lo usa solo la consola de plataforma. */
+export interface FiltroConsumo {
+  desde?: string;
+  hasta?: string;
+  empresaId?: string;
+  cuentaId?: string;
+}
+
 export interface RespuestaTablero extends Tablero {
-  empresas: { id: string; nombre: string }[];
+  empresas: EmpresaConConsumo[];
   empresaId: string | null;
+  cuentaId: string | null;
   /** Si el período llegó al tope de filas: las cifras están cortas. */
   truncado: boolean;
 }
@@ -129,27 +153,17 @@ export class ConsumoIaService {
     private readonly provision: DataSource | null,
   ) {}
 
-  async tablero(e: {
-    desde?: string;
-    hasta?: string;
-    empresaId?: string;
-  }): Promise<RespuestaTablero> {
+  async tablero(e: FiltroConsumo): Promise<RespuestaTablero> {
     const { desde, hasta } = rango(e.desde, e.hasta);
-    const empresaId = empresaDe(e.empresaId);
+    const empresaId = uuidDe(e.empresaId);
+    const cuentaId = uuidDe(e.cuentaId);
     const db = this.conexion();
+    const filtros = [desde, hasta, empresaId, cuentaId];
 
     const [respuestas, lecturas, empresas] = await Promise.all([
-      db.query<Record<string, unknown>[]>(SQL_RESPUESTAS, [
-        desde,
-        hasta,
-        empresaId,
-      ]),
-      db.query<Record<string, unknown>[]>(SQL_LECTURAS, [
-        desde,
-        hasta,
-        empresaId,
-      ]),
-      db.query<{ id: string; nombre: string }[]>(SQL_EMPRESAS),
+      db.query<Record<string, unknown>[]>(SQL_RESPUESTAS, filtros),
+      db.query<Record<string, unknown>[]>(SQL_LECTURAS, filtros),
+      db.query<EmpresaConConsumo[]>(SQL_EMPRESAS),
     ]);
 
     return {
@@ -161,6 +175,7 @@ export class ConsumoIaService {
       ),
       empresas,
       empresaId,
+      cuentaId,
       truncado:
         respuestas.length >= TOPE_FILAS || lecturas.length >= TOPE_FILAS,
     };
@@ -171,16 +186,15 @@ export class ConsumoIaService {
    * «Detalle» del tablero. `?categoria=AYUDA|CONSULTA|PROPUESTA|LECTURA`,
    * `?orden=FECHA|COSTO` y `?pagina=`.
    */
-  async detalle(e: {
-    desde?: string;
-    hasta?: string;
-    empresaId?: string;
-    categoria?: string;
-    orden?: string;
-    pagina?: string;
-  }): Promise<Detalle & { truncado: boolean }> {
+  async detalle(
+    e: FiltroConsumo & {
+      categoria?: string;
+      orden?: string;
+      pagina?: string;
+    },
+  ): Promise<Detalle & { truncado: boolean }> {
     const { desde, hasta } = rango(e.desde, e.hasta);
-    const empresaId = empresaDe(e.empresaId);
+    const filtros = [desde, hasta, uuidDe(e.empresaId), uuidDe(e.cuentaId)];
     const categoria = e.categoria ?? null;
     if (categoria !== null && !(categoria in ETIQUETA_CATEGORIA)) {
       throw new BadRequestException(
@@ -194,16 +208,8 @@ export class ConsumoIaService {
     const db = this.conexion();
 
     const [respuestas, lecturas] = await Promise.all([
-      db.query<Record<string, unknown>[]>(SQL_DETALLE_RESPUESTAS, [
-        desde,
-        hasta,
-        empresaId,
-      ]),
-      db.query<Record<string, unknown>[]>(SQL_DETALLE_LECTURAS, [
-        desde,
-        hasta,
-        empresaId,
-      ]),
+      db.query<Record<string, unknown>[]>(SQL_DETALLE_RESPUESTAS, filtros),
+      db.query<Record<string, unknown>[]>(SQL_DETALLE_LECTURAS, filtros),
     ]);
 
     return {
@@ -276,8 +282,8 @@ export function rango(
   return { desde: d, hasta: h };
 }
 
-/** El id de empresa del filtro, o null si no viene o no es un uuid. */
-const empresaDe = (id: string | undefined): string | null =>
+/** El id del filtro, o null si no viene o no es un uuid. */
+const uuidDe = (id: string | undefined): string | null =>
   id !== undefined && /^[0-9a-f-]{36}$/i.test(id) ? id : null;
 
 /** Los tokens de un `uso` guardado, con ceros donde falte una clave. */

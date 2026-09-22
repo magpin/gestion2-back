@@ -1,6 +1,7 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
+import { PausaIaService } from '../../../common/ia/pausa-ia.service';
 import { AlmacenamientoApi } from '../../almacenamiento/almacenamiento.api';
 import { nombreDocumento } from '../reglas/documento.reglas';
 import {
@@ -40,6 +41,8 @@ export class ExtractorService {
     private readonly almacenamiento: AlmacenamientoApi,
     private readonly progreso: ProgresoService,
     @Inject(EXTRACTOR_PUERTO) private readonly extractor: ExtractorPuerto,
+    // Opcional: las pruebas arman el servicio sin él. En la app siempre está.
+    @Optional() private readonly pausa?: PausaIaService,
   ) {}
 
   /** `false` cuando falta la clave: el modo IA entonces no se ofrece. */
@@ -51,6 +54,7 @@ export class ExtractorService {
     ctx: CtxEmpresa,
     datos: { tipo: TipoDocumento; clave: string },
   ): Promise<Documento> {
+    await this.pausa?.exigirActiva(ctx.tenantId, 'LECTURA');
     const documento = await this.documentos.registrar(ctx, {
       tipo: datos.tipo,
       clave: datos.clave,
@@ -78,6 +82,7 @@ export class ExtractorService {
    */
   async analizar(ctx: CtxEmpresa, clave: string): Promise<ResultadoAnalisis> {
     exigirClaveDeLaEmpresa(ctx, clave);
+    await this.pausa?.exigirActiva(ctx.tenantId, 'LECTURA');
     const archivo = await this.almacenamiento.descargar(clave);
     const analisis = await this.extractor.analizar(archivo);
     if (analisis.tipo !== null) {
@@ -92,9 +97,31 @@ export class ExtractorService {
     };
   }
 
-  /** Corta una lectura en curso. `false` si ya había terminado. */
-  detener(documentoId: string): boolean {
-    return this.progreso.detener(documentoId);
+  /**
+   * Corta una lectura en curso.
+   *
+   * Si nadie la está leyendo —el proceso que la leía murió con un reinicio del
+   * servidor—, la fila quedó en `EN_COLA` o `LEYENDO` para siempre y no hay
+   * corte en memoria que apretar. Entonces se cierra acá: sin esto, «Detener»
+   * no hacía nada y la burbuja seguía girando.
+   */
+  async detener(ctx: CtxEmpresa, documento: Documento): Promise<boolean> {
+    if (this.progreso.detener(documento.id)) return true;
+    const motivo =
+      'La lectura se interrumpió antes de terminar. Subí el archivo de nuevo.';
+    await this.documentos.marcarFallo(ctx, documento.id, {
+      clase: 'DETENIDO',
+      motivo,
+    });
+    this.progreso.emitir(ctx.empresaId, {
+      etapa: 'ERROR',
+      documento: documento.tipo,
+      documentoId: documento.id,
+      mensaje: motivo,
+      datos: [],
+    });
+    this.log.warn(`Lectura huérfana ${documento.id} cerrada al detenerla.`);
+    return true;
   }
 
   /**

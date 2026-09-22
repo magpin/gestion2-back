@@ -173,10 +173,18 @@ export class AutenticacionService {
       'Correo o contrasena incorrectos',
     );
 
-    if (
-      !(await this.passwords.verificar(admin.hash_password, password)) ||
-      !admin.activo
-    ) {
+    const coincide = await this.passwords.verificar(
+      admin.hash_password,
+      password,
+    );
+    if (!coincide) {
+      // La consola de plataforma muestra los intentos fallidos de cada
+      // administrador. Solo la fecha: ni la contraseña probada ni un pedazo.
+      await this.tx.sinContexto((tx) =>
+        tx.query('INSERT INTO login_fallido (admin_id) VALUES ($1)', [admin.id]),
+      );
+    }
+    if (!coincide || !admin.activo) {
       throw generico;
     }
 
@@ -344,11 +352,23 @@ export class AutenticacionService {
     });
   }
 
+  /**
+   * El último acceso, y una fila por día en `usuario_acceso_dia`: la consola de
+   * plataforma cuenta cuántos entraron ayer o esta semana, y el último acceso
+   * solo no alcanza para eso.
+   */
   private async marcarAcceso(ctx: Ctx): Promise<void> {
-    await this.tx.enContexto(ctx, (t) =>
-      t.query('UPDATE usuario SET ultimo_acceso_en = now() WHERE id = $1', [
-        ctx.usuarioId,
-      ]),
-    );
+    await this.tx.enContexto(ctx, async (t) => {
+      await t.query(
+        'UPDATE usuario SET ultimo_acceso_en = now() WHERE id = $1',
+        [ctx.usuarioId],
+      );
+      await t.query(
+        `INSERT INTO usuario_acceso_dia (usuario_id, tenant_id, dia)
+         VALUES ($1, $2, (now() AT TIME ZONE 'America/Bogota')::date)
+         ON CONFLICT DO NOTHING`,
+        [ctx.usuarioId, ctx.tenantId],
+      );
+    });
   }
 }

@@ -12,6 +12,7 @@ import type {
   ResultadoRespuesta,
 } from '../proveedores/conversador.puerto';
 import type { ConsultaHecha, ConsultasService } from './consultas.service';
+import { PausaIaService } from '../../../common/ia/pausa-ia.service';
 import { ConversacionService } from './conversacion.service';
 
 const ana: CtxEmpresa = {
@@ -424,6 +425,24 @@ describe('ConversacionService — lo que frena antes de llamar al modelo', () =>
       status: 503,
     });
     expect(base.turnos).toHaveLength(0);
+  });
+
+  it('con el asistente en pausa desde la consola, 503 y nada guardado', async () => {
+    const base = baseFalsa();
+    const { conversador, responder } = conversadorFalso(COMPLETO, true, []);
+    const { consultas } = consultasFalsas();
+    const pausa = new PausaIaService({
+      sinContexto: (fn: (t: unknown) => unknown) =>
+        fn({ query: () => Promise.resolve([{ '?column?': 1 }]) }),
+    } as unknown as TxService);
+    const s = new ConversacionService(base.tx, conversador, consultas, pausa);
+
+    await expect(s.preparar(ana, 'hola')).rejects.toMatchObject({
+      status: 503,
+      message: expect.stringMatching(/en pausa/) as unknown,
+    });
+    expect(base.turnos).toHaveLength(0);
+    expect(responder).not.toHaveBeenCalled();
   });
 
   it('la pregunta 21 del minuto es un 429', async () => {

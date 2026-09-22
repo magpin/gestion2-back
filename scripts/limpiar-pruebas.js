@@ -38,6 +38,7 @@ const PATRONES = [
 // que todavía tiene hijos vivos se reintenta en la vuelta siguiente.
 const TABLAS_TENANT = [
   ['plataforma_bitacora', 'tenant_id = ANY($1)'],
+  ['usuario_acceso_dia', 'tenant_id = ANY($1)'],
   ['usuario_empresa_rol', 'tenant_id = ANY($1)'],
   ['usuario_rol_tenant', 'tenant_id = ANY($1)'],
   ['empresa', 'tenant_id = ANY($1)'],

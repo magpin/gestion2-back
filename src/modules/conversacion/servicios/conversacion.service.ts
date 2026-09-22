@@ -6,10 +6,12 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import { fila, filas } from '../../../common/db/filas';
+import { PausaIaService } from '../../../common/ia/pausa-ia.service';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import {
   CONVERSADOR,
@@ -126,6 +128,8 @@ export class ConversacionService {
     private readonly tx: TxService,
     @Inject(CONVERSADOR) private readonly conversador: ConversadorPuerto,
     private readonly consultas: ConsultasService,
+    // Opcional: las pruebas arman el servicio sin él. En la app siempre está.
+    @Optional() private readonly pausa?: PausaIaService,
   ) {}
 
   get disponible(): boolean {
@@ -226,6 +230,9 @@ export class ConversacionService {
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
+    // La pausa de la consola va antes de todo lo que gasta: con el
+    // asistente en pausa no se guarda ni la pregunta.
+    await this.pausa?.exigirActiva(ctx.tenantId, 'CHAT');
     if (
       !this.ventana.permitir(`${ctx.empresaId}:${ctx.usuarioId}`, Date.now())
     ) {

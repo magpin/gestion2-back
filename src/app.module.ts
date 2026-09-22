@@ -5,6 +5,7 @@ import { AuthModule } from './common/auth/auth.module';
 import { JwtGuard } from './common/auth/jwt.guard';
 import { RolesGuard } from './common/auth/roles.guard';
 import { DbModule } from './common/db/db.module';
+import { PausaIaModule } from './common/ia/pausa-ia.service';
 import { AlmacenamientoModule } from './modules/almacenamiento/almacenamiento.module';
 import { RetencionesModule } from './modules/retenciones/retenciones.module';
 import { ErrorPostgresFilter } from './common/db/error-postgres.filter';
@@ -40,6 +41,7 @@ import { VentasModule } from './modules/ventas/ventas.module';
 @Module({
   imports: [
     DbModule,
+    PausaIaModule,
     AlmacenamientoModule,
     RetencionesModule,
     AuthModule,

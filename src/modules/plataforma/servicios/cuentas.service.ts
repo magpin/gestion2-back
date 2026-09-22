@@ -1,38 +1,80 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
-  UnauthorizedException,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import ExcelJS from 'exceljs';
 import { DataSource, type EntityManager } from 'typeorm';
 
 import { PasswordService } from '../../../common/cripto/password.service';
 import { fila } from '../../../common/db/filas';
 import { DATA_SOURCE_PROVISION } from '../../../common/db/db.module';
-import { ENTORNO, type Entorno } from '../../../config/env';
+import { hoyEnColombia } from '../../../common/fecha';
 import type { CtxPlataforma } from '../../../common/ctx';
+import { ConsumoIaApi } from '../../consumo-ia/consumo-ia.api';
+import { NucleoApi } from '../../nucleo/nucleo.api';
 import type {
+  AjustarCuposDto,
+  CambiarEstadoDto,
+  CambiarPlanDto,
   CrearCuentaDto,
   CrearEmpresaEnCuentaDto,
   CrearUsuarioEnCuentaDto,
-  EditarCuentaDto,
 } from '../dto/cuentas.dto';
+import { contrasenaParaDictar } from '../reglas/contrasena';
+import {
+  excesoFrente,
+  FILTROS,
+  listarCuentas,
+  ORDENES,
+  seleccionar,
+  type Cuenta,
+  type EstadoCuenta,
+  type Filtro,
+  type Orden,
+  type PaginaCuentas,
+  type Seleccion,
+} from '../reglas/cuentas';
+import { inicioDeMes } from '../reglas/inicio';
+import { iso, registrar } from './bitacora';
+import { CobrosService } from './cobros.service';
 
-export interface ResumenCuenta {
-  id: string;
-  nombre: string;
-  slug: string;
-  plan: string;
-  estado: string;
-  maxEmpresas: number;
-  maxUsuarios: number;
-  empresas: number;
-  usuarios: number;
-  creadoEn: string;
+/** El avance de la configuración inicial de una empresa, para la consola. */
+export interface AvanceConfiguracion {
+  completados: number;
+  total: number;
+  porcentaje: number;
+  completa: boolean;
+  /** Los pasos obligatorios que no están listos, por su nombre. */
+  pendientes: string[];
 }
+
+export interface ConsultaCuentas {
+  q?: string;
+  filtro?: string;
+  orden?: string;
+  dir?: string;
+  pagina?: string;
+}
+
+/**
+ * Todas las cuentas con lo que la consola muestra de cada una. Son cientos, no
+ * millones: se traen de una vez y se filtran en `reglas/cuentas`.
+ */
+const SQL_CUENTAS = `
+  SELECT t.id, t.nombre, t.slug, t.plan, t.estado,
+         t.max_empresas, t.max_usuarios, t.creado_en,
+         (SELECT count(*)::int FROM empresa e WHERE e.tenant_id = t.id AND e.activo) AS empresas,
+         (SELECT count(*)::int FROM usuario u WHERE u.tenant_id = t.id AND u.activo)  AS usuarios,
+         (SELECT max(u.ultimo_acceso_en) FROM usuario u WHERE u.tenant_id = t.id)      AS ultimo_acceso,
+         coalesce((SELECT max(b.ocurrido_en) FROM plataforma_bitacora b
+                    WHERE b.tenant_id = t.id AND b.accion = 'CAMBIAR_ESTADO'),
+                  t.creado_en)                                                         AS estado_desde
+    FROM tenant t
+   WHERE $1::uuid IS NULL OR t.id = $1::uuid`;
 
 /**
  * La administración del producto.
@@ -42,8 +84,11 @@ export interface ResumenCuenta {
  * servicio la superficie más delicada del sistema. Por eso el alcance está
  * cerrado por diseño:
  *
- *  - solo toca `tenant`, `empresa`, `usuario` y sus permisos;
- *  - no lee ni una tabla contable —ni asientos, ni facturas, ni terceros—;
+ *  - solo escribe en `tenant`, `empresa`, `usuario` y sus permisos;
+ *  - no lee ni una tabla contable —ni asientos, ni facturas, ni terceros—. Lo
+ *    más cerca que llega es el avance de la configuración, que `nucleo` calcula
+ *    con la ficha de la empresa y su plan de cuentas;
+ *  - de la IA solo lee cifras, y por `ConsumoIaApi`;
  *  - no puede emitir un token con empresa, así que no hay puerta hacia esos datos;
  *  - todo lo que cambia queda en `plataforma_bitacora`.
  *
@@ -55,91 +100,229 @@ export class CuentasService {
   constructor(
     @Inject(DATA_SOURCE_PROVISION)
     private readonly provision: DataSource | null,
-    @Inject(ENTORNO) private readonly env: Entorno,
     private readonly passwords: PasswordService,
-    private readonly jwt: JwtService,
+    private readonly nucleo: NucleoApi,
+    private readonly consumo: ConsumoIaApi,
+    private readonly cobros: CobrosService,
   ) {}
 
   // -------------------------------------------------------------------------
-  // Cuentas
+  // Lectura
   // -------------------------------------------------------------------------
 
-  async listar(q?: string): Promise<ResumenCuenta[]> {
-    const filtro = q && q.trim() !== '' ? `%${q.trim()}%` : null;
+  /** Todas las cuentas, con el gasto de IA del mes. */
+  async todas(id: string | null = null): Promise<Cuenta[]> {
+    const hoy = hoyEnColombia();
+    const [filas, gasto] = await Promise.all([
+      this.conexion().query<Array<Record<string, unknown>>>(SQL_CUENTAS, [id]),
+      this.consumo.gastoPorEmpresa(inicioDeMes(hoy), hoy, id ?? undefined),
+    ]);
 
-    const filas = await this.conexion().query<Array<Record<string, unknown>>>(
-      `SELECT t.id, t.nombre, t.slug, t.plan, t.estado,
-              t.max_empresas, t.max_usuarios, t.creado_en,
-              (SELECT count(*)::int FROM empresa e WHERE e.tenant_id = t.id AND e.activo) AS empresas,
-              (SELECT count(*)::int FROM usuario u WHERE u.tenant_id = t.id AND u.activo)  AS usuarios
-         FROM tenant t
-        WHERE $1::text IS NULL
-           OR fn_normalizar(t.nombre) LIKE fn_normalizar($1)
-           OR t.slug ILIKE $1
-        ORDER BY t.creado_en DESC`,
-      [filtro],
-    );
+    const iaPorCuenta = new Map<string, number>();
+    for (const g of gasto) {
+      iaPorCuenta.set(
+        g.cuentaId,
+        (iaPorCuenta.get(g.cuentaId) ?? 0) + g.costoUsd,
+      );
+    }
 
-    return filas.map((f) => this.mapear(f));
+    return filas.map((f) => ({
+      id: f.id as string,
+      nombre: f.nombre as string,
+      slug: f.slug as string,
+      plan: f.plan as string,
+      estado: f.estado as EstadoCuenta,
+      maxEmpresas: f.max_empresas as number,
+      maxUsuarios: f.max_usuarios as number,
+      empresas: f.empresas as number,
+      usuarios: f.usuarios as number,
+      creadoEn: iso(f.creado_en) as string,
+      ultimoAcceso: iso(f.ultimo_acceso),
+      estadoDesde: iso(f.estado_desde) as string,
+      iaMesUsd: iaPorCuenta.get(f.id as string) ?? 0,
+    }));
+  }
+
+  async listar(c: ConsultaCuentas): Promise<PaginaCuentas> {
+    return listarCuentas(await this.buscadas(c.q), {
+      ...seleccionDe(c),
+      pagina: Number(c.pagina) || 1,
+    });
+  }
+
+  /** Las que coinciden con la búsqueda, por nombre o identificador. */
+  private async buscadas(texto: string | undefined): Promise<Cuenta[]> {
+    const q = normalizar(texto ?? '');
+    const todas = await this.todas();
+    return q === ''
+      ? todas
+      : todas.filter(
+          (x) => normalizar(x.nombre).includes(q) || x.slug.includes(q),
+        );
+  }
+
+  /** Las cuentas del filtro, todas y no solo una página, en un Excel. */
+  async exportar(c: ConsultaCuentas): Promise<Buffer> {
+    const todas = seleccionar(await this.buscadas(c.q), seleccionDe(c));
+
+    const libro = new ExcelJS.Workbook();
+    const hoja = libro.addWorksheet('Cuentas');
+    hoja.columns = [
+      { header: 'Cuenta', key: 'nombre', width: 36 },
+      { header: 'Plan', key: 'plan', width: 14 },
+      { header: 'Estado', key: 'estado', width: 12 },
+      { header: 'Empresas', key: 'empresas', width: 10 },
+      { header: 'Cupo de empresas', key: 'maxEmpresas', width: 10 },
+      { header: 'Usuarios', key: 'usuarios', width: 10 },
+      { header: 'Cupo de usuarios', key: 'maxUsuarios', width: 10 },
+      { header: 'IA del mes (US$)', key: 'iaMesUsd', width: 14 },
+      { header: 'Último acceso', key: 'ultimoAcceso', width: 18 },
+      { header: 'Alta', key: 'creadoEn', width: 12 },
+    ];
+    hoja.getRow(1).font = { bold: true };
+    for (const x of todas) {
+      hoja.addRow({
+        ...x,
+        iaMesUsd: Math.round(x.iaMesUsd * 100) / 100,
+        ultimoAcceso: x.ultimoAcceso ? new Date(x.ultimoAcceso) : null,
+        creadoEn: new Date(x.creadoEn),
+      });
+    }
+    hoja.getColumn('iaMesUsd').numFmt = '#,##0.00';
+    hoja.getColumn('ultimoAcceso').numFmt = 'dd/mm/yyyy hh:mm';
+    hoja.getColumn('creadoEn').numFmt = 'dd/mm/yyyy';
+    return Buffer.from(await libro.xlsx.writeBuffer());
   }
 
   async detalle(id: string) {
     const ds = this.conexion();
-
-    const [cuenta] = await ds.query(
-      `SELECT t.id, t.nombre, t.slug, t.plan, t.estado, t.max_empresas, t.max_usuarios, t.creado_en,
-              (SELECT count(*)::int FROM empresa e WHERE e.tenant_id = t.id AND e.activo) AS empresas,
-              (SELECT count(*)::int FROM usuario u WHERE u.tenant_id = t.id AND u.activo)  AS usuarios
-         FROM tenant t WHERE t.id = $1`,
-      [id],
-    );
-
+    const [cuenta] = await this.todas(id);
     if (cuenta === undefined) {
       throw new NotFoundException('Cuenta no encontrada');
     }
 
-    const empresas = await ds.query(
-      `SELECT e.id, e.razon_social, e.nit, e.dv, e.activo,
-              COALESCE((SELECT array_agg(s.sector ORDER BY s.sector)
-                          FROM empresa_sector s WHERE s.empresa_id = e.id),
-                       ARRAY[]::text[]) AS sectores,
-              cc.grupo_niif,
-              (SELECT count(*)::int FROM empresa_sede s WHERE s.empresa_id = e.id AND s.activo) AS sedes
-         FROM empresa e
-         LEFT JOIN empresa_configuracion_contable cc ON cc.empresa_id = e.id
-        WHERE e.tenant_id = $1
-        ORDER BY e.razon_social`,
-      [id],
+    const hoy = hoyEnColombia();
+    const [empresas, usuarios, bitacora, plan, gasto] = await Promise.all([
+      ds.query<Array<Record<string, unknown>>>(
+        `SELECT e.id, e.razon_social, e.nit, e.dv, e.activo,
+                COALESCE((SELECT array_agg(s.sector ORDER BY s.sector)
+                            FROM empresa_sector s WHERE s.empresa_id = e.id),
+                         ARRAY[]::text[]) AS sectores,
+                cc.grupo_niif,
+                (SELECT count(*)::int FROM empresa_sede s WHERE s.empresa_id = e.id AND s.activo) AS sedes
+           FROM empresa e
+           LEFT JOIN empresa_configuracion_contable cc ON cc.empresa_id = e.id
+          WHERE e.tenant_id = $1
+          ORDER BY e.razon_social`,
+        [id],
+      ),
+      ds.query<Array<Record<string, unknown>>>(
+        `SELECT u.id, u.email, u.nombre_completo, u.activo, u.ultimo_acceso_en,
+                (SELECT count(*)::int > 0 FROM usuario_rol_tenant urt
+                  WHERE urt.usuario_id = u.id AND urt.revocado_en IS NULL) AS es_admin,
+                COALESCE(
+                  (SELECT array_agg(DISTINCT uer.rol_codigo)
+                     FROM usuario_empresa_rol uer
+                    WHERE uer.usuario_id = u.id AND uer.revocado_en IS NULL),
+                  ARRAY[]::text[]
+                ) AS roles
+           FROM usuario u
+          WHERE u.tenant_id = $1
+          ORDER BY u.activo DESC, u.nombre_completo`,
+        [id],
+      ),
+      ds.query<Array<Record<string, unknown>>>(
+        `SELECT b.id, b.accion, b.detalle, b.ocurrido_en, coalesce(a.nombre_completo, 'El sistema') AS admin
+           FROM plataforma_bitacora b
+           LEFT JOIN plataforma_admin a ON a.id = b.admin_id
+          WHERE b.tenant_id = $1
+          ORDER BY b.ocurrido_en DESC
+          LIMIT 20`,
+        [id],
+      ),
+      ds.query<Array<Record<string, unknown>>>(
+        `SELECT clave, nombre, max_empresas, max_usuarios, precio_mensual, tope_ia_usd, al_llegar_tope
+           FROM plan_catalogo WHERE clave = $1`,
+        [cuenta.plan],
+      ),
+      this.consumo.gastoPorEmpresa(inicioDeMes(hoy), hoy, id),
+    ]);
+
+    const iaDe = new Map(gasto.map((g) => [g.empresaId, g.costoUsd]));
+    const avances = await Promise.all(
+      empresas.map((e) => this.avance(e.id as string)),
     );
 
-    const usuarios = await ds.query(
-      `SELECT u.id, u.email, u.nombre_completo, u.activo, u.ultimo_acceso_en,
-              (SELECT count(*)::int > 0 FROM usuario_rol_tenant urt
-                WHERE urt.usuario_id = u.id AND urt.revocado_en IS NULL) AS es_admin,
-              COALESCE(
-                (SELECT array_agg(DISTINCT uer.rol_codigo)
-                   FROM usuario_empresa_rol uer
-                  WHERE uer.usuario_id = u.id AND uer.revocado_en IS NULL),
-                ARRAY[]::text[]
-              ) AS roles
-         FROM usuario u
-        WHERE u.tenant_id = $1
-        ORDER BY u.nombre_completo`,
-      [id],
-    );
+    const cobro = (await this.cobros.resumenes(hoy)).get(id) ?? null;
 
-    const bitacora = await ds.query(
-      `SELECT b.accion, b.detalle, b.ocurrido_en, a.nombre_completo AS admin
-         FROM plataforma_bitacora b
-         JOIN plataforma_admin a ON a.id = b.admin_id
-        WHERE b.tenant_id = $1
-        ORDER BY b.ocurrido_en DESC
-        LIMIT 20`,
-      [id],
-    );
-
-    return { cuenta: this.mapear(cuenta), empresas, usuarios, bitacora };
+    return {
+      cuenta,
+      plan: plan[0] === undefined ? null : aPlan(plan[0]),
+      cobro:
+        cobro === null
+          ? null
+          : {
+              precio: cobro.precio,
+              precioPactado: cobro.precioPactado,
+              diaCorte: cobro.diaCorte,
+              proximoCobro: cobro.proximoCobro,
+              saldo: cobro.estado.saldo,
+              vencido: cobro.estado.vencido,
+              diasMora: cobro.estado.diasMora,
+              ultimoPago: cobro.ultimoPago,
+            },
+      empresas: empresas.map((e, i) => ({
+        id: e.id as string,
+        razonSocial: e.razon_social as string,
+        nit: e.nit as string,
+        dv: e.dv as string,
+        activo: e.activo as boolean,
+        sectores: e.sectores as string[],
+        grupoNiif: (e.grupo_niif as string | null) ?? null,
+        sedes: e.sedes as number,
+        configuracion: avances[i],
+        iaMesUsd: iaDe.get(e.id as string) ?? 0,
+      })),
+      usuarios: usuarios.map((u) => ({
+        id: u.id as string,
+        email: u.email as string,
+        nombreCompleto: u.nombre_completo as string,
+        activo: u.activo as boolean,
+        ultimoAcceso: iso(u.ultimo_acceso_en),
+        esAdmin: u.es_admin as boolean,
+        roles: u.roles as string[],
+      })),
+      bitacora: bitacora.map((b) => ({
+        id: b.id as string,
+        accion: b.accion as string,
+        detalle: b.detalle as Record<string, unknown>,
+        ocurridoEn: iso(b.ocurrido_en) as string,
+        admin: b.admin as string,
+      })),
+    };
   }
+
+  /** El avance de una empresa, con la misma regla que ve su director. */
+  async avance(empresaId: string): Promise<AvanceConfiguracion> {
+    const e = await this.nucleo.estadoConfiguracionCon(
+      this.conexion().manager,
+      empresaId,
+    );
+    const obligatorios = e.pasos.filter((p) => p.obligatorio);
+    return {
+      completados: e.completados,
+      total: e.totalObligatorios,
+      porcentaje: e.porcentaje,
+      completa: e.completa,
+      pendientes: obligatorios
+        .filter((p) => p.estado !== 'LISTO')
+        .map((p) => p.nombre),
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // La cuenta
+  // -------------------------------------------------------------------------
 
   /**
    * Crea la cuenta y su primer usuario. Nada más.
@@ -147,29 +330,38 @@ export class CuentasService {
    * De la empresa no se pregunta nada: el NIT, el marco NIIF y la fecha de inicio
    * de operaciones los sabe el contador del cliente, no quien vende el sistema.
    * El director la crea cuando entra, y ahí queda como su DIRECTOR.
+   *
+   * Si no viene contraseña, se genera una para dictar y se devuelve **una sola
+   * vez**: no queda en la bitácora ni en ningún otro lado.
    */
   async crearCuenta(admin: CtxPlataforma, dto: CrearCuentaDto) {
-    const hash = await this.passwords.hashear(dto.password);
+    const generada = dto.password === undefined;
+    const password = dto.password ?? contrasenaParaDictar();
+    const hash = await this.passwords.hashear(password);
     const local = dto.email.split('@')[0];
-    const nombre = dto.nombreAdministrador ?? local;
+    const nombreAdmin = dto.nombreAdministrador ?? local;
+    const nombreCuenta = dto.nombreCuenta ?? nombreAdmin;
+    const planClave = dto.plan ?? 'BASICO';
 
     return this.conexion().transaction(async (t) => {
+      const plan = await this.planDe(t, planClave);
+
       const [tenant] = await t.query<Array<{ id: string }>>(
         `INSERT INTO tenant (nombre, slug, plan, max_empresas, max_usuarios)
          VALUES ($1, $2, $3, $4, $5) RETURNING id`,
         [
-          nombre,
+          nombreCuenta,
           await this.slugLibre(t, local),
-          dto.plan ?? 'BASICO',
-          dto.maxEmpresas ?? 1,
-          dto.maxUsuarios ?? 3,
+          planClave,
+          dto.maxEmpresas ?? plan.maxEmpresas,
+          dto.maxUsuarios ?? plan.maxUsuarios,
         ],
       );
 
       const [usuario] = await t.query<Array<{ id: string }>>(
         `INSERT INTO usuario (tenant_id, email, nombre_completo, hash_password)
          VALUES ($1, $2, $3, $4) RETURNING id`,
-        [tenant.id, dto.email, nombre, hash],
+        [tenant.id, dto.email, nombreAdmin, hash],
       );
 
       // ADMIN_TENANT y no DIRECTOR: `DIRECTOR` se ejerce dentro de una
@@ -181,11 +373,19 @@ export class CuentasService {
         [usuario.id, tenant.id],
       );
 
-      await this.registrar(t, admin, 'CREAR_CUENTA', tenant.id, {
+      await registrar(t, admin, 'CREAR_CUENTA', tenant.id, {
+        nombre: nombreCuenta,
         email: dto.email,
+        plan: planClave,
       });
 
-      return { tenantId: tenant.id, usuarioId: usuario.id, email: dto.email };
+      return {
+        tenantId: tenant.id,
+        usuarioId: usuario.id,
+        email: dto.email,
+        nombreAdministrador: nombreAdmin,
+        password: generada ? password : undefined,
+      };
     });
   }
 
@@ -211,48 +411,125 @@ export class CuentasService {
       // El slug exige al menos tres caracteres.
       const propuesto =
         candidato.length >= 3 ? candidato : `${candidato}-cuenta`;
-      const filas = await t.query('SELECT 1 FROM tenant WHERE slug = $1', [
-        propuesto,
-      ]);
+      const filas = await t.query<unknown[]>(
+        'SELECT 1 FROM tenant WHERE slug = $1',
+        [propuesto],
+      );
       if (filas.length === 0) return propuesto;
     }
     return `${base}-${Date.now()}`;
   }
 
-  async editar(admin: CtxPlataforma, id: string, dto: EditarCuentaDto) {
+  /**
+   * El plan nuevo trae sus cupos. Si la cuenta ya usa más, se responde 409
+   * con el detalle y no se cambia nada, salvo `aceptarExceso`.
+   */
+  async cambiarPlan(admin: CtxPlataforma, id: string, dto: CambiarPlanDto) {
     return this.conexion().transaction(async (t) => {
-      const editada = fila<Record<string, unknown>>(
-        await t.query(
-          `UPDATE tenant SET
-            plan         = COALESCE($2, plan),
-            estado       = COALESCE($3, estado),
-            max_empresas = COALESCE($4, max_empresas),
-            max_usuarios = COALESCE($5, max_usuarios)
-          WHERE id = $1
-          RETURNING *`,
-          [
-            id,
-            dto.plan ?? null,
-            dto.estado ?? null,
-            dto.maxEmpresas ?? null,
-            dto.maxUsuarios ?? null,
-          ],
-        ),
-      );
+      const antes = await this.bloquear(t, id);
+      const plan = await this.planDe(t, dto.plan);
+      const exceso = excesoFrente(antes, plan);
 
-      if (editada === undefined) {
-        throw new NotFoundException('Cuenta no encontrada');
+      if (exceso.length > 0 && dto.aceptarExceso !== true) {
+        throw new ConflictException({
+          message: 'La cuenta usa más de lo que permite el plan nuevo.',
+          exceso,
+        });
       }
 
-      await this.registrar(
-        t,
-        admin,
-        dto.estado ? 'CAMBIAR_ESTADO' : 'CAMBIAR_PLAN',
-        id,
-        { ...dto },
+      await t.query(
+        `UPDATE tenant SET plan = $2, max_empresas = $3, max_usuarios = $4 WHERE id = $1`,
+        [id, dto.plan, plan.maxEmpresas, plan.maxUsuarios],
       );
+      await registrar(t, admin, 'CAMBIAR_PLAN', id, {
+        antes: {
+          plan: antes.plan,
+          maxEmpresas: antes.maxEmpresas,
+          maxUsuarios: antes.maxUsuarios,
+        },
+        despues: {
+          plan: dto.plan,
+          maxEmpresas: plan.maxEmpresas,
+          maxUsuarios: plan.maxUsuarios,
+        },
+        ...(exceso.length > 0 ? { exceso } : {}),
+      });
+      return { ok: true };
+    });
+  }
 
-      return editada;
+  /**
+   * Suspender o cancelar pide motivo. Suspender no borra nada: sus usuarios
+   * dejan de emitir hasta que se reactive.
+   */
+  async cambiarEstado(admin: CtxPlataforma, id: string, dto: CambiarEstadoDto) {
+    if (
+      (dto.estado === 'SUSPENDIDO' || dto.estado === 'CANCELADO') &&
+      (dto.motivo ?? '').trim() === ''
+    ) {
+      throw new BadRequestException('Suspender o cancelar pide un motivo.');
+    }
+    return this.conexion().transaction(async (t) => {
+      const antes = await this.bloquear(t, id);
+      if (antes.estado === dto.estado) {
+        throw new BadRequestException('La cuenta ya está en ese estado.');
+      }
+      await t.query('UPDATE tenant SET estado = $2 WHERE id = $1', [
+        id,
+        dto.estado,
+      ]);
+      await registrar(t, admin, 'CAMBIAR_ESTADO', id, {
+        antes: antes.estado,
+        despues: dto.estado,
+        ...(dto.motivo ? { motivo: dto.motivo.trim() } : {}),
+      });
+      return { ok: true };
+    });
+  }
+
+  /** Los cupos no bajan de lo que la cuenta ya usa. */
+  async ajustarCupos(admin: CtxPlataforma, id: string, dto: AjustarCuposDto) {
+    return this.conexion().transaction(async (t) => {
+      const antes = await this.bloquear(t, id);
+      const despues = {
+        maxEmpresas: dto.maxEmpresas ?? antes.maxEmpresas,
+        maxUsuarios: dto.maxUsuarios ?? antes.maxUsuarios,
+      };
+      const exceso = excesoFrente(antes, despues);
+      if (exceso.length > 0) {
+        throw new BadRequestException({
+          message:
+            'Los cupos no pueden quedar por debajo de lo que la cuenta ya usa.',
+          exceso,
+        });
+      }
+      await t.query(
+        'UPDATE tenant SET max_empresas = $2, max_usuarios = $3 WHERE id = $1',
+        [id, despues.maxEmpresas, despues.maxUsuarios],
+      );
+      await registrar(t, admin, 'AJUSTAR_CUPOS', id, {
+        antes: {
+          maxEmpresas: antes.maxEmpresas,
+          maxUsuarios: antes.maxUsuarios,
+        },
+        despues,
+      });
+      return { ok: true };
+    });
+  }
+
+  async renombrar(admin: CtxPlataforma, id: string, nombre: string) {
+    return this.conexion().transaction(async (t) => {
+      const antes = await this.bloquear(t, id);
+      await t.query('UPDATE tenant SET nombre = $2 WHERE id = $1', [
+        id,
+        nombre.trim(),
+      ]);
+      await registrar(t, admin, 'RENOMBRAR_CUENTA', id, {
+        antes: antes.nombre,
+        despues: nombre.trim(),
+      });
+      return { ok: true };
     });
   }
 
@@ -286,7 +563,7 @@ export class CuentasService {
       }
 
       const empresaId = await this.insertarEmpresa(t, tenantId, duenio.id, dto);
-      await this.registrar(t, admin, 'CREAR_EMPRESA', tenantId, {
+      await registrar(t, admin, 'CREAR_EMPRESA', tenantId, {
         razonSocial: dto.razonSocial,
         nit: dto.nit,
       });
@@ -300,25 +577,21 @@ export class CuentasService {
     tenantId: string,
     dto: CrearUsuarioEnCuentaDto,
   ) {
-    const hash = await this.passwords.hashear(dto.password);
+    const generada = dto.password === undefined;
+    const password = dto.password ?? contrasenaParaDictar();
+    const hash = await this.passwords.hashear(password);
 
     return this.conexion().transaction(async (t) => {
-      const [cupo] = await t.query<
-        Array<{ max_usuarios: number; usados: string }>
-      >(
-        `SELECT t.max_usuarios,
-                (SELECT count(*) FROM usuario u WHERE u.tenant_id = t.id AND u.activo) AS usados
-           FROM tenant t WHERE t.id = $1`,
-        [tenantId],
-      );
+      await this.verificarCupoUsuarios(t, tenantId);
 
-      if (cupo === undefined) {
-        throw new NotFoundException('Cuenta no encontrada');
-      }
-      if (Number(cupo.usados) >= cupo.max_usuarios) {
-        throw new BadRequestException(
-          `El plan permite ${cupo.max_usuarios} usuario(s) activo(s).`,
+      if (dto.empresaId) {
+        const [empresa] = await t.query<unknown[]>(
+          'SELECT 1 FROM empresa WHERE id = $1 AND tenant_id = $2',
+          [dto.empresaId, tenantId],
         );
+        if (empresa === undefined) {
+          throw new BadRequestException('La empresa no es de esta cuenta.');
+        }
       }
 
       const [usuario] = await t.query<Array<{ id: string }>>(
@@ -343,15 +616,156 @@ export class CuentasService {
         );
       }
 
-      await this.registrar(t, admin, 'CREAR_USUARIO', tenantId, {
+      await registrar(t, admin, 'CREAR_USUARIO', tenantId, {
         email: dto.email,
+        ...(dto.esAdminCuenta ? { administrador: true } : {}),
+        ...(dto.rol ? { rol: dto.rol } : {}),
       });
 
-      return { usuarioId: usuario.id, email: dto.email };
+      return {
+        usuarioId: usuario.id,
+        email: dto.email,
+        password: generada ? password : undefined,
+      };
+    });
+  }
+
+  /**
+   * Una contraseña nueva para dictar por teléfono. La anterior deja de servir
+   * en ese momento. Se devuelve **una sola vez**.
+   */
+  async restablecer(admin: CtxPlataforma, tenantId: string, usuarioId: string) {
+    const password = contrasenaParaDictar();
+    const hash = await this.passwords.hashear(password);
+    return this.conexion().transaction(async (t) => {
+      const u = await this.usuarioDe(t, tenantId, usuarioId);
+      await t.query('UPDATE usuario SET hash_password = $2 WHERE id = $1', [
+        usuarioId,
+        hash,
+      ]);
+      await registrar(t, admin, 'RESTABLECER_PASSWORD', tenantId, {
+        email: u.email,
+      });
+      return { email: u.email, nombreCompleto: u.nombre_completo, password };
+    });
+  }
+
+  /**
+   * Un usuario desactivado no entra y deja libre su cupo. El último
+   * administrador activo no se puede desactivar: la cuenta quedaría sin nadie
+   * que la administre.
+   */
+  async desactivar(admin: CtxPlataforma, tenantId: string, usuarioId: string) {
+    return this.conexion().transaction(async (t) => {
+      const u = await this.usuarioDe(t, tenantId, usuarioId);
+      if (!u.activo) {
+        throw new BadRequestException('El usuario ya está desactivado.');
+      }
+      if (u.es_admin) {
+        const [otros] = await t.query<Array<{ n: number }>>(
+          `SELECT count(*)::int AS n FROM usuario x
+             JOIN usuario_rol_tenant urt ON urt.usuario_id = x.id AND urt.revocado_en IS NULL
+            WHERE x.tenant_id = $1 AND x.activo AND x.id <> $2`,
+          [tenantId, usuarioId],
+        );
+        if (otros.n === 0) {
+          throw new ConflictException(
+            'Es el único administrador activo de la cuenta. Primero hay que nombrar otro.',
+          );
+        }
+      }
+      await t.query('UPDATE usuario SET activo = false WHERE id = $1', [
+        usuarioId,
+      ]);
+      await registrar(t, admin, 'DESACTIVAR_USUARIO', tenantId, {
+        email: u.email,
+      });
+      return { ok: true };
+    });
+  }
+
+  async reactivar(admin: CtxPlataforma, tenantId: string, usuarioId: string) {
+    return this.conexion().transaction(async (t) => {
+      const u = await this.usuarioDe(t, tenantId, usuarioId);
+      if (u.activo) {
+        throw new BadRequestException('El usuario ya está activo.');
+      }
+      await this.verificarCupoUsuarios(t, tenantId);
+      await t.query('UPDATE usuario SET activo = true WHERE id = $1', [
+        usuarioId,
+      ]);
+      await registrar(t, admin, 'REACTIVAR_USUARIO', tenantId, {
+        email: u.email,
+      });
+      return { ok: true };
     });
   }
 
   // -------------------------------------------------------------------------
+
+  /** La cuenta, bloqueada para el resto de la transacción. */
+  private async bloquear(t: EntityManager, id: string) {
+    const f = fila<Record<string, unknown>>(
+      await t.query(
+        `SELECT t.nombre, t.plan, t.estado, t.max_empresas, t.max_usuarios,
+                (SELECT count(*)::int FROM empresa e WHERE e.tenant_id = t.id AND e.activo) AS empresas,
+                (SELECT count(*)::int FROM usuario u WHERE u.tenant_id = t.id AND u.activo)  AS usuarios
+           FROM tenant t WHERE t.id = $1 FOR UPDATE`,
+        [id],
+      ),
+    );
+    if (f === undefined) {
+      throw new NotFoundException('Cuenta no encontrada');
+    }
+    return {
+      nombre: f.nombre as string,
+      plan: f.plan as string,
+      estado: f.estado as string,
+      maxEmpresas: f.max_empresas as number,
+      maxUsuarios: f.max_usuarios as number,
+      empresas: f.empresas as number,
+      usuarios: f.usuarios as number,
+    };
+  }
+
+  private async planDe(t: EntityManager, clave: string) {
+    const [p] = await t.query<Array<Record<string, unknown>>>(
+      `SELECT clave, nombre, max_empresas, max_usuarios, precio_mensual, tope_ia_usd, al_llegar_tope
+         FROM plan_catalogo WHERE clave = $1`,
+      [clave],
+    );
+    if (p === undefined) {
+      throw new BadRequestException('El plan no existe.');
+    }
+    return aPlan(p);
+  }
+
+  private async usuarioDe(
+    t: EntityManager,
+    tenantId: string,
+    usuarioId: string,
+  ) {
+    const [u] = await t.query<
+      Array<{
+        email: string;
+        nombre_completo: string;
+        activo: boolean;
+        es_admin: boolean;
+      }>
+    >(
+      `SELECT u.email, u.nombre_completo, u.activo,
+              EXISTS (SELECT 1 FROM usuario_rol_tenant urt
+                       WHERE urt.usuario_id = u.id AND urt.revocado_en IS NULL) AS es_admin
+         FROM usuario u
+        WHERE u.id = $1 AND u.tenant_id = $2
+        FOR UPDATE`,
+      [usuarioId, tenantId],
+    );
+    if (u === undefined) {
+      throw new NotFoundException('Usuario no encontrado en esta cuenta');
+    }
+    return u;
+  }
 
   private async insertarEmpresa(
     t: EntityManager,
@@ -359,8 +773,6 @@ export class CuentasService {
     usuarioId: string,
     e: CrearEmpresaEnCuentaDto,
   ): Promise<string> {
-    await this.verificarCupoEmpresas(t, tenantId);
-
     const [empresa] = await t.query<Array<{ id: string }>>(
       `INSERT INTO empresa
          (tenant_id, tipo_persona, razon_social, nombre_comercial, nit, dv)
@@ -405,37 +817,24 @@ export class CuentasService {
     t: EntityManager,
     tenantId: string,
   ): Promise<void> {
-    const [cupo] = await t.query<
-      Array<{ max_empresas: number; usadas: string }>
-    >(
-      `SELECT t.max_empresas,
-              (SELECT count(*) FROM empresa e WHERE e.tenant_id = t.id AND e.activo) AS usadas
-         FROM tenant t WHERE t.id = $1`,
-      [tenantId],
-    );
-    if (cupo === undefined) {
-      throw new NotFoundException('Cuenta no encontrada');
-    }
-    if (Number(cupo.usadas) >= cupo.max_empresas) {
+    const c = await this.bloquear(t, tenantId);
+    if (c.empresas >= c.maxEmpresas) {
       throw new BadRequestException(
-        `El plan permite ${cupo.max_empresas} empresa(s). Ampliar el plan primero.`,
+        `El plan permite ${c.maxEmpresas} empresa(s). Ampliar el cupo primero.`,
       );
     }
   }
 
-  /** El rastro solo agrega. Un registro que se puede reescribir no sirve. */
-  private async registrar(
+  private async verificarCupoUsuarios(
     t: EntityManager,
-    admin: CtxPlataforma,
-    accion: string,
-    tenantId: string | null,
-    detalle: Record<string, unknown>,
+    tenantId: string,
   ): Promise<void> {
-    await t.query(
-      `INSERT INTO plataforma_bitacora (admin_id, accion, tenant_id, detalle)
-       VALUES ($1, $2, $3, $4)`,
-      [admin.adminId, accion, tenantId, JSON.stringify(detalle)],
-    );
+    const c = await this.bloquear(t, tenantId);
+    if (c.usuarios >= c.maxUsuarios) {
+      throw new BadRequestException(
+        `El plan permite ${c.maxUsuarios} usuario(s) activo(s). Ampliar el cupo primero.`,
+      );
+    }
   }
 
   private conexion(): DataSource {
@@ -446,19 +845,49 @@ export class CuentasService {
     }
     return this.provision;
   }
+}
 
-  private mapear(f: Record<string, unknown>): ResumenCuenta {
-    return {
-      id: f.id as string,
-      nombre: f.nombre as string,
-      slug: f.slug as string,
-      plan: f.plan as string,
-      estado: f.estado as string,
-      maxEmpresas: f.max_empresas as number,
-      maxUsuarios: f.max_usuarios as number,
-      empresas: f.empresas as number,
-      usuarios: f.usuarios as number,
-      creadoEn: String(f.creado_en),
-    };
-  }
+function seleccionDe(c: ConsultaCuentas): Seleccion {
+  return {
+    filtro: (FILTROS as readonly string[]).includes(c.filtro ?? '')
+      ? (c.filtro as Filtro)
+      : 'TODAS',
+    orden: (ORDENES as readonly string[]).includes(c.orden ?? '')
+      ? (c.orden as Orden)
+      : 'alta',
+    dir: c.dir === 'asc' ? 'asc' : 'desc',
+    ahora: new Date(),
+  };
+}
+
+/** Sin tildes ni mayúsculas, para buscar como escribe la gente. */
+export const normalizar = (s: string): string =>
+  s
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '');
+
+export interface PlanCatalogo {
+  clave: string;
+  nombre: string;
+  maxEmpresas: number;
+  maxUsuarios: number;
+  /** Nulos hasta la fase 2: la consola dice «sin configurar». */
+  precioMensual: number | null;
+  topeIaUsd: number | null;
+  alLlegarTope: 'AVISAR' | 'FRENAR' | null;
+}
+
+export function aPlan(p: Record<string, unknown>): PlanCatalogo {
+  const n = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  return {
+    clave: p.clave as string,
+    nombre: p.nombre as string,
+    maxEmpresas: p.max_empresas as number,
+    maxUsuarios: p.max_usuarios as number,
+    precioMensual: n(p.precio_mensual),
+    topeIaUsd: n(p.tope_ia_usd),
+    alLlegarTope: (p.al_llegar_tope as 'AVISAR' | 'FRENAR' | null) ?? null,
+  };
 }

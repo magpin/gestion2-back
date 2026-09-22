@@ -12,6 +12,11 @@
 // Uso:
 //   node scripts/limpiar-pruebas.js              muestra qué borraría
 //   node scripts/limpiar-pruebas.js --confirmar  lo borra
+//   node scripts/limpiar-pruebas.js --patron "e2e-%" --confirmar
+//                                              solo ese patron (las pruebas
+//                                              de punta a punta lo usan al
+//                                              terminar, para borrar lo suyo
+//                                              y nada mas)
 require('dotenv').config();
 const { Client } = require('pg');
 
@@ -39,6 +44,9 @@ const PATRONES = [
 const TABLAS_TENANT = [
   ['plataforma_bitacora', 'tenant_id = ANY($1)'],
   ['usuario_acceso_dia', 'tenant_id = ANY($1)'],
+  ['suscripcion_pago', 'tenant_id = ANY($1)'],
+  ['suscripcion_cargo', 'tenant_id = ANY($1)'],
+  ['ia_pausa', 'tenant_id = ANY($1)'],
   ['usuario_empresa_rol', 'tenant_id = ANY($1)'],
   ['usuario_rol_tenant', 'tenant_id = ANY($1)'],
   ['empresa', 'tenant_id = ANY($1)'],
@@ -65,7 +73,10 @@ async function borrarPorEmpresa(c, ids) {
         if (r.rowCount > 0) console.log(`    ${String(r.rowCount).padStart(5)}  ${tabla}`);
         await c.query('RELEASE SAVEPOINT tabla');
       } catch (e) {
-        if (e.code !== '23503') throw e; // solo una FK justifica reintentar
+        // 23503: la fila tiene hijos. 23001: la llave es RESTRICT, que es lo
+        // que pasa con producto -> empresa_cuenta. Las dos se arreglan
+        // borrando primero la otra tabla, así que las dos se reintentan.
+        if (e.code !== '23503' && e.code !== '23001') throw e;
         await c.query('ROLLBACK TO SAVEPOINT tabla');
         siguen.push(tabla);
       }
@@ -79,6 +90,14 @@ async function borrarPorEmpresa(c, ids) {
 
 (async () => {
   const confirmar = process.argv.includes('--confirmar');
+  // Con `--patron` se borra solo eso: sirve para que una corrida de pruebas
+  // limpie lo suyo sin llevarse lo que dejaron otros scripts.
+  const i = process.argv.indexOf('--patron');
+  const patrones = i === -1 ? PATRONES : [process.argv[i + 1]];
+  if (i !== -1 && !patrones[0]) {
+    console.error('  Falta el patron: --patron "e2e-%"');
+    process.exit(1);
+  }
 
   const c = new Client({
     host: process.env.DB_HOST,
@@ -89,10 +108,10 @@ async function borrarPorEmpresa(c, ids) {
   });
   await c.connect();
 
-  const condicion = PATRONES.map((_, i) => `slug LIKE $${i + 1}`).join(' OR ');
+  const condicion = patrones.map((_, n) => `slug LIKE $${n + 1}`).join(' OR ');
   const { rows } = await c.query(
     `SELECT id, slug, nombre FROM tenant WHERE ${condicion} ORDER BY creado_en`,
-    PATRONES,
+    patrones,
   );
 
   if (rows.length === 0) {
@@ -114,6 +133,18 @@ async function borrarPorEmpresa(c, ids) {
 
   try {
     await c.query('BEGIN');
+    // El kardex y los asientos tienen candados que impiden borrarlos: son
+    // hechos, no datos editables, y esa regla protege la contabilidad de
+    // verdad. Acá se apagan **solo dentro de esta transaccion** y solo para
+    // cuentas de prueba. La API no puede hacer esto: no tiene DELETE ni corre
+    // con el dueño de la base.
+    try {
+      await c.query("SET LOCAL session_replication_role = 'replica'");
+    } catch {
+      console.log(
+        '    (sin permiso para apagar los candados: una empresa con kardex no se podra borrar)',
+      );
+    }
     await borrarPorEmpresa(c, ids);
     for (const [tabla, donde] of TABLAS_TENANT) {
       const r = await c.query(`DELETE FROM ${tabla} WHERE ${donde}`, [ids]);

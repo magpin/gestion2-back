@@ -89,10 +89,16 @@ export class CobrosService
   }
 
   /**
-   * Genera los cargos que falten y aplica la mora a todas las cuentas. Si otra
-   * instancia está revisando, no hace nada.
+   * Genera los cargos que falten y aplica la mora. Con `tenantId` revisa solo
+   * esa cuenta: es lo que hace falta al abrir su suscripción, para que una
+   * cuenta recién creada no muestre «sin cargos» hasta la revisión siguiente.
+   *
+   * Si otra instancia está revisando, no hace nada.
    */
-  async revisar(hoy = hoyEnColombia()): Promise<{
+  async revisar(
+    hoy = hoyEnColombia(),
+    tenantId?: string,
+  ): Promise<{
     cargos: number;
     aMorosa: number;
     aActiva: number;
@@ -112,7 +118,9 @@ export class CobrosService
                 coalesce(t.precio_pactado, p.precio_mensual) AS precio
            FROM tenant t
            LEFT JOIN plan_catalogo p ON p.clave = t.plan
-          WHERE t.estado IN ('ACTIVO', 'MOROSO')`,
+          WHERE t.estado IN ('ACTIVO', 'MOROSO')
+            AND ($1::uuid IS NULL OR t.id = $1::uuid)`,
+        [tenantId ?? null],
       );
 
       let cargos = 0;
@@ -298,6 +306,8 @@ export class CobrosService
   /** La pestaña Suscripción: el resumen, los cargos y los pagos. */
   async suscripcion(tenantId: string, hoy = hoyEnColombia()) {
     const ds = this.conexion();
+    // Idempotente: deja al día los cargos de esta cuenta antes de mostrarlos.
+    await this.revisar(hoy, tenantId);
     const resumen = (await this.resumenes(hoy)).get(tenantId);
     if (resumen === undefined)
       throw new NotFoundException('Cuenta no encontrada');

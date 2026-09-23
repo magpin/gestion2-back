@@ -1,10 +1,15 @@
+import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
   IsIn,
+  IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
+  Min,
+  ValidateNested,
 } from 'class-validator';
 
 import type { TipoDocumento } from '../proveedores/extractor.puerto';
@@ -76,4 +81,54 @@ export class ConfirmarDto {
   @ArrayNotEmpty()
   @IsString({ each: true })
   campos?: string[];
+}
+
+/** Qué es un renglón que el cruce no pudo resolver. Uno de los dos, no los dos. */
+export class RenglonResueltoDto {
+  @IsInt()
+  @Min(1)
+  orden!: number;
+
+  @IsOptional()
+  @IsUUID()
+  productoId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  cuentaId?: string;
+}
+
+/**
+ * Registrar la compra de una factura leída.
+ *
+ * Mismo principio que `ConfirmarDto`: **los montos no viajan**. La cantidad, el
+ * costo y la tarifa salen de lo que se leyó del documento, y acá viene solo lo
+ * que una persona decidió — a quién apunta cada renglón que quedó sin resolver,
+ * quién es el proveedor si no se encontró, y con qué número se registra.
+ *
+ * Poder mandar un monto sería poder registrar una compra por un valor que
+ * ningún documento dice, con la trazabilidad de uno que sí.
+ */
+export class RegistrarCompraLeidaDto {
+  /** Si el documento no traía número: una cuenta de cobro no lo trae. */
+  @IsOptional()
+  @IsString()
+  @Length(1, 40)
+  numero?: string;
+
+  /** Si el proveedor no se encontró por NIT. */
+  @IsOptional()
+  @IsUUID()
+  terceroId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RenglonResueltoDto)
+  renglones?: RenglonResueltoDto[];
+
+  /** Contado exige rol CAJA o DIRECTOR y sus medios: lo rechaza `POST /compras`. */
+  @IsOptional()
+  @IsIn(['CREDITO', 'CONTADO'])
+  formaPago?: 'CREDITO' | 'CONTADO';
 }

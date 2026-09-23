@@ -7,9 +7,10 @@ import {
   ContabilidadApi,
   type VistaAsiento,
 } from '../contabilidad/contabilidad.api';
-import type { PagarDto } from './dto/compra.dto';
+import type { CrearCompraDto, PagarDto } from './dto/compra.dto';
 import {
   CompraService,
+  type CompraDocumentoDetalle,
   type CompraDocumentoResumen,
 } from './servicios/compra.service';
 
@@ -91,6 +92,22 @@ export class ComprasApi {
       const asientos = await this.contabilidad.asientosDeLaTransaccion(t);
       return { documento, asientos };
     });
+  }
+
+  /**
+   * Registra una compra. **La misma puerta que el endpoint manual**: las
+   * mismas validaciones, el mismo asiento, el mismo kardex.
+   *
+   * Existe para que `lectura-documentos` pueda registrar lo que una persona
+   * confirmó de una factura leída, sin abrirse un camino propio a la base. Es
+   * el mismo criterio con el que ese módulo aplica un RUT por `NucleoApi`: si
+   * hubiera dos caminos, habría dos verdades sobre qué es una compra válida.
+   */
+  async registrar(
+    ctx: CtxEmpresa,
+    dto: CrearCompraDto,
+  ): Promise<CompraDocumentoDetalle> {
+    return this.compras.crear(ctx, dto);
   }
 
   /** El pago de verdad, en la transacción de quien llama. */

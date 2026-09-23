@@ -86,7 +86,9 @@ describe('comprobar — el código suma, el modelo transcribe', () => {
     expect(cuadra(comprobar(f))).toBe(false);
   });
 
-  it('una factura sin IVA cuadra en subtotal y total, no en el IVA', () => {
+  // Un arriendo sin IVA imprime un cero legítimo. Tratarlo como dato faltante
+  // dejaba toda factura exenta en «no cuadra» para siempre.
+  it('una factura sin IVA cuadra entera: el cero del IVA es un dato', () => {
     const f = factura({
       renglones: [
         {
@@ -102,9 +104,16 @@ describe('comprobar — el código suma, el modelo transcribe', () => {
       ],
       impreso: { subtotal: 1_500_000, iva: 0, retencion: 0, total: 1_500_000 },
     });
-    const c = comprobar(f);
-    expect(c[0].cuadra).toBe(true);
-    expect(c[2].cuadra).toBe(true);
+    expect(cuadra(comprobar(f))).toBe(true);
+  });
+
+  // Y la distinción al revés: un subtotal en cero sí es «el documento no lo
+  // dice», porque toda factura trae subtotal y total.
+  it('un subtotal en cero sigue contando como que falta', () => {
+    const f = factura({
+      impreso: { subtotal: 0, iva: 19_000, retencion: 0, total: 119_000 },
+    });
+    expect(comprobar(f)[0].cuadra).toBe(false);
   });
 });
 

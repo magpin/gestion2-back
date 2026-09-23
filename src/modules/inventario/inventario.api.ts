@@ -69,6 +69,29 @@ export class InventarioApi {
     }));
   }
 
+  /**
+   * Los productos activos que coinciden con la búsqueda, **con su id**.
+   *
+   * Hermano de `existencias`, que devuelve casi lo mismo sin el id porque va a
+   * una respuesta del chat. Acá el id es el punto: quien llama está cruzando el
+   * renglón de una factura para armar una compra, y necesita poder apuntarle.
+   */
+  async buscarProductos(
+    ctx: CtxEmpresa,
+    busqueda: string,
+  ): Promise<Array<{ id: string; codigo: string; nombre: string }>> {
+    const p = Object.assign(new PaginacionDto(), {
+      tamano: EXISTENCIAS_POR_BUSQUEDA,
+      q: busqueda,
+    });
+    const pagina = await this.productos.listar(ctx, p, {});
+    return pagina.datos.map((r) => ({
+      id: r.id,
+      codigo: r.codigo,
+      nombre: r.nombre,
+    }));
+  }
+
   /** Los datos de un producto para ponerlo en un documento. `null` si no existe. */
   async producto(
     ctx: CtxEmpresa,

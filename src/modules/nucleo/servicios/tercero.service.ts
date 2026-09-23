@@ -262,6 +262,33 @@ export class TerceroService {
   }
 
   /** Lo que necesita otro módulo para poner un tercero en un documento. */
+  /**
+   * Los terceros activos cuyo número de documento contiene lo buscado.
+   *
+   * Pocas filas: un NIT no se repite. El tope existe igual, porque una búsqueda
+   * de dos dígitos traería media tabla.
+   */
+  async porNumeroDocumento(
+    ctx: CtxEmpresa,
+    numeroDocumento: string,
+  ): Promise<TerceroResumen[]> {
+    const digitos = numeroDocumento.replace(/\D/g, '');
+    if (digitos === '') return [];
+    return this.tx.enContexto(ctx, async (t) => {
+      const filas = await t.query<Array<Record<string, unknown>>>(
+        `SELECT id, tipo_documento, numero_documento, dv, razon_social,
+                primer_nombre, segundo_nombre, primer_apellido, segundo_apellido,
+                es_cliente, es_proveedor, responsable_iva, declarante_renta, activo
+           FROM tercero
+          WHERE activo AND numero_documento LIKE $1
+          ORDER BY numero_documento
+          LIMIT 20`,
+        [`%${digitos}%`],
+      );
+      return filas.map((f) => this.resumir(f));
+    });
+  }
+
   async buscarTercero(
     ctx: CtxEmpresa,
     id: string,

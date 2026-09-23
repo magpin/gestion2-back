@@ -29,7 +29,21 @@ export interface Documento {
   tipo: TipoDocumento;
   estado: EstadoDocumento;
   claveAlmacenamiento: string;
+  /**
+   * Los campos sueltos de un documento de configuración. **Vacío en una
+   * factura**, que no tiene campos sueltos: lo suyo está en `extraido`.
+   */
   datos: DatoExtraido[];
+  /**
+   * Lo guardado tal cual, sin interpretar. En los tres de configuración es el
+   * mismo arreglo que `datos`; en una factura es el objeto con la cabecera, los
+   * renglones y el cruce (migración 0061).
+   *
+   * Existe porque `datos` filtra por `Array.isArray`, y sin esto una factura
+   * leída salía de acá vacía: la forma que la base admite son dos, y quien
+   * sabe cuál es cada una es quien conoce el tipo.
+   */
+  extraido: unknown;
   error: string | null;
   creadoEn: string;
   leidoEn: string | null;
@@ -96,15 +110,43 @@ export class DocumentoService {
   }
 
   /** El último intento de cada tipo: lo que muestra la tarjeta de documentos. */
+  /**
+   * El último intento de cada documento de configuración: es lo que la tarjeta
+   * necesita para dibujarse después de un F5.
+   *
+   * **Las facturas quedan afuera**, y no es un filtro de conveniencia: hay un
+   * RUT y hay muchas facturas. `DISTINCT ON (tipo)` es la consulta correcta
+   * para lo primero y devolvería una sola factura para lo segundo, que es el
+   * mismo supuesto que la migración 0061 sacó del índice único.
+   */
   async listar(ctx: CtxEmpresa): Promise<Documento[]> {
     return this.tx.enContexto(ctx, async (t) => {
       const encontradas = filas<FilaDocumento>(
         await t.query(
           `SELECT DISTINCT ON (tipo) *
              FROM documento_leido
-            WHERE empresa_id = $1
+            WHERE empresa_id = $1 AND tipo <> 'FACTURA_COMPRA'
             ORDER BY tipo, creado_en DESC`,
           [ctx.empresaId],
+        ),
+      );
+      return encontradas.map(aDocumento);
+    });
+  }
+
+  /**
+   * Las últimas facturas leídas, las más nuevas primero. Todas, no una por
+   * tipo: son muchas y cada una es su propio caso.
+   */
+  async listarFacturas(ctx: CtxEmpresa, tope = 50): Promise<Documento[]> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const encontradas = filas<FilaDocumento>(
+        await t.query(
+          `SELECT * FROM documento_leido
+            WHERE empresa_id = $1 AND tipo = 'FACTURA_COMPRA'
+            ORDER BY creado_en DESC
+            LIMIT $2`,
+          [ctx.empresaId, tope],
         ),
       );
       return encontradas.map(aDocumento);
@@ -193,6 +235,7 @@ function aDocumento(f: FilaDocumento): Documento {
     estado: f.estado,
     claveAlmacenamiento: f.clave_almacenamiento,
     datos: Array.isArray(f.extraido) ? (f.extraido as DatoExtraido[]) : [],
+    extraido: f.extraido ?? null,
     error: f.error,
     creadoEn: comoTexto(f.creado_en),
     leidoEn: f.leido_en === null ? null : comoTexto(f.leido_en),

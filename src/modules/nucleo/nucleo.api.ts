@@ -183,6 +183,21 @@ export class NucleoApi {
     return this.plan.cuentaPorId(ctx, id, tx);
   }
 
+  /**
+   * Los terceros cuyo número de documento contiene lo buscado.
+   *
+   * Contiene y no es igual, a propósito: el NIT puede estar guardado con el
+   * dígito de verificación aparte y venir pegado en el documento. Quién es el
+   * mismo NIT lo decide quien llama —`mismoNit` en `cruce.reglas.ts`—; acá solo
+   * se acota la lista.
+   */
+  async terceroPorDocumento(
+    ctx: CtxEmpresa,
+    numeroDocumento: string,
+  ): Promise<TerceroResumen[]> {
+    return this.terceros.porNumeroDocumento(ctx, numeroDocumento);
+  }
+
   /** Los datos de un tercero para ponerlo en un documento. */
   async buscarTercero(
     ctx: CtxEmpresa,

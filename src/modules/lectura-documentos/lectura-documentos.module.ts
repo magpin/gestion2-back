@@ -1,14 +1,19 @@
 import { Module } from '@nestjs/common';
 
 import { AlmacenamientoModule } from '../almacenamiento/almacenamiento.module';
+import { ComprasModule } from '../compras/compras.module';
+import { InventarioModule } from '../inventario/inventario.module';
 import { NucleoModule } from '../nucleo/nucleo.module';
 import { ConfirmacionController } from './controladores/confirmacion.controller';
 import { DocumentosController } from './controladores/documentos.controller';
 import { ExtraccionController } from './controladores/extraccion.controller';
+import { FacturasLeidasController } from './controladores/facturas-leidas.controller';
 import { LecturaDocumentosApi } from './lectura-documentos.api';
 import { ClaudeProveedor } from './proveedores/claude.proveedor';
 import { EXTRACTOR_PUERTO } from './proveedores/extractor.puerto';
+import { ConfirmacionFacturaService } from './servicios/confirmacion-factura.service';
 import { ConfirmacionService } from './servicios/confirmacion.service';
+import { CruceService } from './servicios/cruce.service';
 import { DocumentoService } from './servicios/documento.service';
 import { ExtractorService } from './servicios/extractor.service';
 import { ProgresoService } from './servicios/progreso.service';
@@ -27,17 +32,25 @@ import { ProgresoService } from './servicios/progreso.service';
  * extracción la haga un OCR se cambie una línea acá y nada más.
  */
 @Module({
-  imports: [AlmacenamientoModule, NucleoModule],
+  imports: [
+    AlmacenamientoModule,
+    NucleoModule,
+    InventarioModule,
+    ComprasModule,
+  ],
   controllers: [
     DocumentosController,
     ExtraccionController,
     ConfirmacionController,
+    FacturasLeidasController,
   ],
   providers: [
     DocumentoService,
     ProgresoService,
     ExtractorService,
     ConfirmacionService,
+    ConfirmacionFacturaService,
+    CruceService,
     { provide: EXTRACTOR_PUERTO, useClass: ClaudeProveedor },
     LecturaDocumentosApi,
   ],

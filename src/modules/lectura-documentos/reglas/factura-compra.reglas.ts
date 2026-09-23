@@ -201,9 +201,13 @@ export function comprobar(factura: FacturaCompraLeida): Comprobacion[] {
   const total = redondear(subtotal + iva - (factura.impreso.retencion ?? 0));
 
   return [
-    comparar('Los renglones suman el subtotal', subtotal, factura.impreso.subtotal),
+    comparar('Los renglones suman el subtotal', subtotal, factura.impreso.subtotal, {
+      exigeImpreso: true,
+    }),
     comparar('El IVA de los renglones da el IVA impreso', iva, factura.impreso.iva),
-    comparar('Subtotal más IVA menos retención da el total', total, factura.impreso.total),
+    comparar('Subtotal más IVA menos retención da el total', total, factura.impreso.total, {
+      exigeImpreso: true,
+    }),
   ];
 }
 
@@ -212,15 +216,28 @@ export function cuadra(comprobaciones: Comprobacion[]): boolean {
   return comprobaciones.every((c) => c.cuadra);
 }
 
-function comparar(que: string, calculado: number, impreso: number): Comprobacion {
+/**
+ * `exigeImpreso` distingue **«el documento no lo dice»** de **«dice cero»**, y
+ * la diferencia no es teórica: un arriendo sin IVA imprime un cero legítimo, y
+ * tratarlo como un dato faltante dejaba toda factura exenta en «no cuadra»
+ * para siempre. Lo destapó la prueba del arriendo.
+ *
+ * Un subtotal o un total en cero sí es que no está: **toda** factura los trae,
+ * y sin ellos no hay contra qué comparar. Dar por bueno lo que no se pudo
+ * verificar es lo contrario de para qué existe esto.
+ */
+function comparar(
+  que: string,
+  calculado: number,
+  impreso: number,
+  opciones: { exigeImpreso?: boolean } = {},
+): Comprobacion {
+  const falta = opciones.exigeImpreso === true && impreso === 0;
   return {
     que,
     calculado,
     impreso,
-    // Un total impreso en cero es «el documento no lo dice», y sin él no hay
-    // comprobación: se cuenta como que no cuadra. Dar por bueno lo que no se
-    // pudo verificar es exactamente lo contrario de para qué existe esto.
-    cuadra: impreso !== 0 && Math.abs(calculado - impreso) <= TOLERANCIA,
+    cuadra: !falta && Math.abs(calculado - impreso) <= TOLERANCIA,
   };
 }
 

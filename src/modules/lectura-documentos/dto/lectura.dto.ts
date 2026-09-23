@@ -5,6 +5,7 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -76,6 +77,9 @@ export class AnalizarDocumentoDto {
  * manual —los mismos endpoints de siempre—.
  *
  * Sin `campos`, se aplica todo lo aplicable de ese documento.
+ *
+ * `correcciones`: lo que la persona cambió de lo leído —sobre todo lo dudoso—,
+ * campo por valor. Un dato corregido deja de ser dudoso: lo decidió ella.
  */
 export class ConfirmarDto {
   @IsOptional()
@@ -83,6 +87,10 @@ export class ConfirmarDto {
   @ArrayNotEmpty()
   @IsString({ each: true })
   campos?: string[];
+
+  @IsOptional()
+  @IsObject()
+  correcciones?: Record<string, string>;
 }
 
 /** Qué es un renglón que el cruce no pudo resolver. Uno de los dos, no los dos. */

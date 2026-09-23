@@ -102,15 +102,29 @@ describe('planear', () => {
       });
     });
 
-    it('sin municipio no hay sede, y el teléfono queda pendiente con ella', () => {
+    it('sin municipio no hay sede, y no se reporta como pendiente', () => {
+      // La Cámara trae la dirección sin municipio: la sede sale del RUT, y si
+      // falta, el paso de sedes lo pregunta. Decir «falta» sobre algo que ya
+      // estaba guardado era lo que confundía.
       const { acciones, sinAplicar } = planearCon([
         dato('direccion', 'Cra 7 # 71-21'),
         dato('telefono', '3001112233'),
       ]);
 
       expect(accion(acciones, 'SEDE_PRINCIPAL')).toBeUndefined();
-      expect(motivoDe(sinAplicar, 'direccion')).toContain('Falta la dirección');
-      expect(motivoDe(sinAplicar, 'telefono')).toContain('Falta la dirección');
+      expect(sinAplicar).toEqual([]);
+    });
+
+    it('el tipo de documento del representante se entiende como lo imprime la Cámara', () => {
+      const { acciones } = planearCon([
+        dato('representanteNombre', 'Wildeman Gutiérrez'),
+        dato('representanteTipoDocumento', 'C.C.'),
+        dato('representanteNumeroDocumento', '71745717'),
+      ]);
+
+      expect(accion(acciones, 'REPRESENTANTE')).toMatchObject({
+        dto: { tipoDocumento: 'CC' },
+      });
     });
 
     it('un municipio que no tiene cinco dígitos no pasa', () => {

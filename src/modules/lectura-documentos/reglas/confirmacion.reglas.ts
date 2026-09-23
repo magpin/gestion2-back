@@ -12,8 +12,10 @@ import type { DatoExtraido } from '../proveedores/extractor.puerto';
  *
  * Dos cosas que no se negocian:
  *
- * 1. **Lo `DUDOSA` no se aplica nunca.** Se pregunta. Acá se convierte en un
- *    renglón de «esto quedó sin aplicar, y por esto».
+ * 1. **Lo `DUDOSA` no se aplica solo.** Se pregunta: acá se convierte en un
+ *    renglón de «esto quedó sin aplicar, y por esto». Si después la persona lo
+ *    elige explícitamente —vio el valor y dijo «está bien»—, se aplica: ya no
+ *    es una lectura dudosa, es un dato que ella confirmó.
  * 2. **Un grupo incompleto no se aplica a medias.** Un representante legal sin
  *    número de documento no es medio representante: es una pregunta.
  */
@@ -35,14 +37,13 @@ const TIPOS_FISCALES: readonly TipoDocumentoFiscal[] = [
  * DIAN. El modelo a veces devuelve el texto —«FACTURA ELECTRÓNICA DE VENTA»— y
  * eso dejaba la resolución entera sin aplicar, porque va completa o no va.
  */
-export function tipoFiscalDe(valor: string | undefined): TipoDocumentoFiscal | undefined {
+export function tipoFiscalDe(
+  valor: string | undefined,
+): TipoDocumentoFiscal | undefined {
   if (valor === undefined) return undefined;
-  const t = valor
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toUpperCase()
-    .trim();
-  if ((TIPOS_FISCALES as readonly string[]).includes(t)) return t as TipoDocumentoFiscal;
+  const t = valor.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
+  if ((TIPOS_FISCALES as readonly string[]).includes(t))
+    return t as TipoDocumentoFiscal;
   if (t.includes('CONTINGENCIA')) return 'FACTURA_CONTINGENCIA';
   if (t.includes('AJUSTE')) return 'NOTA_AJUSTE_DOC_SOPORTE';
   if (t.includes('NOTA') && t.includes('CREDITO')) return 'NOTA_CREDITO';
@@ -52,6 +53,27 @@ export function tipoFiscalDe(valor: string | undefined): TipoDocumentoFiscal | u
   if (/\bPOS\b|TIQUETE/.test(t)) return 'POS';
   if (t.includes('FACTURA')) return 'FACTURA_VENTA';
   return undefined;
+}
+
+/**
+ * El tipo de documento de identidad como lo espera el catálogo, venga como
+ * venga. La Cámara imprime «C.C.» y el catálogo dice «CC»: por el punto se
+ * rechazaba el representante entero.
+ */
+export function tipoIdentidadDe(valor: string | undefined): string | undefined {
+  if (valor === undefined) return undefined;
+  const t = valor
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z]/g, '');
+  if (t === '') return undefined;
+  if (t === 'CC' || t.startsWith('CEDULADECIUDADANIA')) return 'CC';
+  if (t === 'CE' || t.startsWith('CEDULADEEXTRANJERIA')) return 'CE';
+  if (t === 'TI' || t.startsWith('TARJETADEIDENTIDAD')) return 'TI';
+  if (t === 'PA' || t.startsWith('PASAPORTE')) return 'PA';
+  if (t.startsWith('NIT')) return 'NIT';
+  return t;
 }
 
 export type Accion =
@@ -145,7 +167,9 @@ export function planear(
   for (const dato of datos) {
     if (seleccion !== undefined && !seleccion.includes(dato.campo)) continue;
 
-    if (dato.confianza !== 'ALTA') {
+    // Lo dudoso no se aplica solo. Pero si la persona lo eligió explícitamente
+    // —vio el valor y dijo «está bien»—, ya no es dudoso: lo confirmó ella.
+    if (dato.confianza !== 'ALTA' && seleccion === undefined) {
       sinAplicar.push(renglon(dato, DUDOSO));
       continue;
     }
@@ -207,14 +231,10 @@ export function planear(
         }),
       },
     });
-  } else {
-    faltoElGrupo(
-      valores,
-      camposSede,
-      sinAplicar,
-      'Falta la dirección o el municipio para registrar la sede.',
-    );
   }
+  // Una dirección sin municipio —la Cámara la trae así— no se reporta como
+  // pendiente: la sede sale del RUT, y si falta, el paso de sedes lo pregunta.
+  // Decir «falta» sobre algo que ya quedó guardado era lo que confundía.
 
   // ── Paso 3: la situación legal ────────────────────────────────────────────
   const ciiu = codigoDe(tomar('codigoCiiu'), 4);
@@ -263,7 +283,9 @@ export function planear(
     'representanteCargo',
   ]);
   const nombreRep = texto(tomar('representanteNombre'));
-  const tipoDocRep = texto(tomar('representanteTipoDocumento'));
+  const tipoDocRep = tipoIdentidadDe(
+    texto(tomar('representanteTipoDocumento')),
+  );
   const numeroDocRep = texto(tomar('representanteNumeroDocumento'));
   if (
     nombreRep !== undefined &&
@@ -362,7 +384,7 @@ export function planear(
       tipo: 'RESOLUCION',
       campos: camposResolucion,
       dto: {
-        tipoDocumento: tipoFiscal as TipoDocumentoFiscal,
+        tipoDocumento: tipoFiscal,
         numeroResolucion,
         ...(texto(tomar('prefijo')) !== undefined && {
           prefijo: texto(tomar('prefijo')),

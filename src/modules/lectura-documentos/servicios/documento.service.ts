@@ -68,6 +68,8 @@ export interface Documento {
   confirmacion: {
     aplicados: string[];
     sinAplicar: Array<{ campo: string; etiqueta: string; motivo: string }>;
+    /** Lo que la persona cambió de lo leído, campo por valor. */
+    correcciones?: Record<string, string>;
   } | null;
 }
 
@@ -351,6 +353,7 @@ export class DocumentoService {
     resultado: {
       aplicados: string[];
       sinAplicar: Array<{ campo: string; etiqueta: string; motivo: string }>;
+      correcciones?: Record<string, string>;
     },
   ): Promise<void> {
     await this.tx.enContexto(ctx, (t) =>
@@ -436,8 +439,7 @@ function aDocumento(f: FilaDocumento): Documento {
     creadoEn: comoTexto(f.creado_en),
     leidoEn: f.leido_en === null ? null : comoTexto(f.leido_en),
     motivoDescarte: f.motivo_descarte ?? null,
-    confirmadoEn:
-      f.confirmado_en == null ? null : comoTexto(f.confirmado_en),
+    confirmadoEn: f.confirmado_en == null ? null : comoTexto(f.confirmado_en),
     confirmacion: (f.confirmacion as Documento['confirmacion']) ?? null,
   };
 }

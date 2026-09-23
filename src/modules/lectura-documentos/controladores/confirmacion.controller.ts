@@ -14,9 +14,10 @@ import { ConfirmacionService } from '../servicios/confirmacion.service';
  * persona lo pide.
  *
  * Va bajo el documento —`documentos/:id/confirmar`— y no suelto, porque los
- * valores salen de ese documento y no de la petición: lo que llega es qué campos
- * se aprobaron. Un navegador no puede aplicar un valor que nadie leyó de un
- * archivo, y la trazabilidad queda completa: este dato salió de ese documento.
+ * valores salen de ese documento: lo que llega es qué campos se aprobaron y,
+ * si la persona corrigió alguno —sobre todo lo leído dudoso—, su corrección.
+ * Lo corregido queda escrito aparte en la lectura: se ve qué dijo el papel y
+ * qué decidió la persona.
  */
 @Controller('configuracion/ia')
 @ExigeEmpresa()
@@ -30,6 +31,6 @@ export class ConfirmacionController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ConfirmarDto,
   ) {
-    return this.confirmacion.confirmar(ctx, id, dto.campos);
+    return this.confirmacion.confirmar(ctx, id, dto.campos, dto.correcciones);
   }
 }

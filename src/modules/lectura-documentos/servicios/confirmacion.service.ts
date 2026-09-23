@@ -1,8 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
+import { fila } from '../../../common/db/filas';
+import { TxService } from '../../../common/db/tx.service';
 import { hoyEnColombia } from '../../../common/fecha';
 import { NucleoApi } from '../../nucleo/nucleo.api';
+import type { DatoExtraido } from '../proveedores/extractor.puerto';
 import type { Accion, SinAplicar } from '../reglas/confirmacion.reglas';
 import { planear } from '../reglas/confirmacion.reglas';
 import { DocumentoService } from './documento.service';
@@ -40,21 +43,29 @@ export class ConfirmacionService {
   constructor(
     private readonly documentos: DocumentoService,
     private readonly nucleo: NucleoApi,
+    private readonly tx: TxService,
   ) {}
 
   /**
-   * Los valores **no vienen de la petición**: salen de lo que quedó guardado
-   * cuando se leyó el documento. De la petición vienen los campos aprobados.
+   * Los valores salen de lo que quedó guardado cuando se leyó el documento. De
+   * la petición vienen los campos aprobados y, si la persona cambió algo —sobre
+   * todo lo leído dudoso—, sus correcciones: ella decide.
    */
   async confirmar(
     ctx: CtxEmpresa,
     documentoId: string,
     seleccion?: string[],
+    correcciones?: Record<string, string>,
   ): Promise<ResultadoConfirmacion> {
     const documento = await this.documentos.porId(ctx, documentoId);
-    const { acciones, sinAplicar } = planear(documento.datos, {
+    const datos = conCorrecciones(documento.datos, correcciones);
+    const { acciones, sinAplicar } = planear(datos, {
       hoy: hoyEnColombia(),
-      seleccion,
+      // Lo corregido cuenta como elegido: la persona lo vio y lo decidió.
+      seleccion:
+        seleccion === undefined && correcciones === undefined
+          ? undefined
+          : [...new Set([...(seleccion ?? []), ...Object.keys(correcciones ?? {})])],
     });
 
     const aplicados: string[] = [];
@@ -81,9 +92,18 @@ export class ConfirmacionService {
     );
     // Queda escrito (0068): volver a la pantalla no puede volver a pedir que se
     // confirme lo que ya se guardó.
+    // Confirmar de nuevo lo que había quedado pendiente suma a lo anterior:
+    // lo ya aplicado sigue aplicado.
+    const antes =
+      seleccion === undefined && correcciones === undefined
+        ? null
+        : documento.confirmacion;
     await this.documentos.guardarConfirmacion(ctx, documentoId, {
-      aplicados,
+      aplicados: [...new Set([...(antes?.aplicados ?? []), ...aplicados])],
       sinAplicar,
+      // Lo que la persona cambió de lo leído queda escrito: el dato ya no es lo
+      // que decía el papel, y eso se tiene que poder ver después.
+      correcciones: { ...(antes?.correcciones ?? {}), ...(correcciones ?? {}) },
     });
 
     return { aplicados, sinAplicar };
@@ -99,9 +119,30 @@ export class ConfirmacionService {
         await this.nucleo.fijarSedePrincipal(ctx, accion.dto);
         return;
 
-      case 'ACTIVIDAD':
+      case 'ACTIVIDAD': {
+        // La actividad principal sale del RUT. Si ya hay una vigente, la de la
+        // Cámara no la reemplaza: la misma ya está, y cambiar de principal es
+        // un acto aparte. Registrarla otra vez la rechazaba la base, y el dato
+        // quedaba «pendiente» cuando ya estaba guardado.
+        const vigente = await this.tx.enContexto(ctx, async (t) =>
+          fila<{ codigo_ciiu: string }>(
+            await t.query(
+              `SELECT codigo_ciiu FROM empresa_actividad_economica
+                WHERE empresa_id = $1 AND es_principal AND fecha_fin IS NULL
+                LIMIT 1`,
+              [ctx.empresaId],
+            ),
+          ),
+        );
+        if (vigente !== undefined) {
+          if (vigente.codigo_ciiu === accion.dto.codigoCiiu) return;
+          throw new Error(
+            `La actividad principal ya es la ${vigente.codigo_ciiu}, la del RUT. Si cambió, se cambia en situación legal.`,
+          );
+        }
         await this.nucleo.abrirActividad(ctx, accion.dto);
         return;
+      }
 
       case 'RESPONSABILIDADES_RUT':
         // Una fila por código: así las cierra y las abre el endpoint manual, y
@@ -127,6 +168,46 @@ export class ConfirmacionService {
         return;
     }
   }
+}
+
+/**
+ * Lo leído con lo que la persona corrigió encima. El dato corregido queda con
+ * confianza alta —lo decidió ella— y, si el leído era una lista, la corrección
+ * se separa por comas. Un campo corregido que no se había leído se agrega.
+ *
+ * Los valores vienen del navegador, como en cualquier formulario manual: los
+ * valida lo mismo que valida a mano —las reglas de \`planear\` y \`nucleo\`—.
+ */
+function conCorrecciones(
+  datos: DatoExtraido[],
+  correcciones?: Record<string, string>,
+): DatoExtraido[] {
+  if (correcciones === undefined) return datos;
+  const limpias = Object.entries(correcciones)
+    .filter(([, v]) => typeof v === 'string')
+    .map(([campo, v]) => [campo, v.trim().slice(0, 300)] as const)
+    .filter(([, v]) => v !== '');
+  const resultado = datos.map((d) => {
+    const nuevo = limpias.find(([campo]) => campo === d.campo);
+    if (nuevo === undefined) return d;
+    return {
+      ...d,
+      valor: Array.isArray(d.valor)
+        ? nuevo[1].split(',').map((x) => x.trim()).filter(Boolean)
+        : nuevo[1],
+      confianza: 'ALTA' as const,
+    };
+  });
+  for (const [campo, valor] of limpias) {
+    if (!resultado.some((d) => d.campo === campo)) {
+      resultado.push({
+        campo,
+        valor,
+        confianza: 'ALTA',
+      } as DatoExtraido);
+    }
+  }
+  return resultado;
 }
 
 /**

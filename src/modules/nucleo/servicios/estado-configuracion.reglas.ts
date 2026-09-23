@@ -61,6 +61,11 @@ export interface EstadoConfiguracion {
   completa: boolean;
   /** El paso al que hay que llevar al usuario. Null si no queda nada. */
   siguiente: ClavePaso | null;
+  /**
+   * Con qué modo se está configurando. Quien eligió IA se queda en IA hasta
+   * terminar: los pasos manuales lo sacaban del modo.
+   */
+  modo: 'IA' | 'MANUAL' | null;
 }
 
 /** Lo que el servicio lee de la base. Sin interpretar. */
@@ -68,6 +73,8 @@ export interface HechosConfiguracion {
   empresa: {
     razonSocial: string;
     tipoPersona: 'JURIDICA' | 'NATURAL';
+    /** Con qué modo se eligió configurarla (0068). `null`: no se eligió. */
+    modoConfiguracion?: 'IA' | 'MANUAL' | null;
     /** Puede estar vacio: al dar de alta no se exige marcar ninguno. */
     sectores: string[];
     /** Secciones CIIU de las actividades vigentes. Respaldan a los sectores. */
@@ -375,5 +382,6 @@ export function calcularEstado(h: HechosConfiguracion): EstadoConfiguracion {
     porcentaje: Math.round((completados / obligatorios.length) * 100),
     completa: completados === obligatorios.length,
     siguiente: siguiente?.clave ?? null,
+    modo: h.empresa.modoConfiguracion ?? null,
   };
 }

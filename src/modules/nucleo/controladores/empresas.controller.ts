@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -22,6 +23,7 @@ import {
   CrearSedeDto,
   EditarEmpresaDto,
   EditarSedeDto,
+  ModoConfiguracionDto,
 } from '../dto/empresa.dto';
 import { EmpresaService } from '../servicios/empresa.service';
 import { EstadoConfiguracionService } from '../servicios/estado-configuracion.service';
@@ -65,6 +67,28 @@ export class EmpresasController {
   @Get('actual/estado-configuracion')
   estadoConfiguracion(@ActorEmpresa() ctx: CtxEmpresa) {
     return this.estado.estado(ctx);
+  }
+
+  /**
+   * Con qué modo se configura la empresa (0068). **IA no se abandona** hasta
+   * terminar: volver a manual a mitad sacaba del modo IA y lo dejaba en un bucle
+   * que volvía a pedir confirmar lo ya guardado.
+   */
+  @ExigeEmpresa()
+  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR')
+  @Post('actual/modo-configuracion')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async elegirModo(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Body() dto: ModoConfiguracionDto,
+  ): Promise<void> {
+    const estado = await this.estado.estado(ctx);
+    if (estado.modo === 'IA' && dto.modo === 'MANUAL' && !estado.completa) {
+      throw new BadRequestException(
+        'Esta empresa se está configurando con IA: se termina en ese modo.',
+      );
+    }
+    await this.empresas.fijarModoConfiguracion(ctx, dto.modo);
   }
 
   @ExigeEmpresa()

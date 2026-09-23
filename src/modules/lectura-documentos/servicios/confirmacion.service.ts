@@ -79,6 +79,12 @@ export class ConfirmacionService {
     this.log.log(
       `Confirmado ${documento.tipo} (${documentoId}): ${aplicados.length} campos aplicados, ${sinAplicar.length} sin aplicar.`,
     );
+    // Queda escrito (0068): volver a la pantalla no puede volver a pedir que se
+    // confirme lo que ya se guardó.
+    await this.documentos.guardarConfirmacion(ctx, documentoId, {
+      aplicados,
+      sinAplicar,
+    });
 
     return { aplicados, sinAplicar };
   }

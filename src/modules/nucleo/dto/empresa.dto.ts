@@ -155,3 +155,9 @@ export class EditarSedeDto {
   @IsBoolean()
   esPrincipal?: boolean;
 }
+
+/** Con qué modo se configura la empresa: con IA o a mano (0068). */
+export class ModoConfiguracionDto {
+  @IsIn(['IA', 'MANUAL'])
+  modo!: 'IA' | 'MANUAL';
+}

@@ -62,6 +62,13 @@ export interface Documento {
   leidoEn: string | null;
   /** Por qué una persona la dejó sin registrar (0067). Solo en DESCARTADO. */
   motivoDescarte: string | null;
+  /** Cuándo una persona confirmó lo leído (0068). `null`: todavía no. */
+  confirmadoEn: string | null;
+  /** Lo que pasó al confirmar: lo aplicado y lo que quedó sin aplicar. */
+  confirmacion: {
+    aplicados: string[];
+    sinAplicar: Array<{ campo: string; etiqueta: string; motivo: string }>;
+  } | null;
 }
 
 interface FilaDocumento {
@@ -80,6 +87,8 @@ interface FilaDocumento {
   creado_en: Date | string;
   leido_en: Date | string | null;
   motivo_descarte?: string | null;
+  confirmado_en?: Date | string | null;
+  confirmacion?: unknown;
 }
 
 /** El prefijo del bucket donde viven los documentos de una empresa. */
@@ -335,6 +344,24 @@ export class DocumentoService {
    * alguien abre el historial de su asiento. Si ya la tenía no se pisa: la
    * huella es de lo que se leyó, no de lo que haya hoy en el bucket.
    */
+  /** Lo que pasó al confirmar la lectura (0068): para no volver a pedirlo. */
+  async guardarConfirmacion(
+    ctx: CtxEmpresa,
+    id: string,
+    resultado: {
+      aplicados: string[];
+      sinAplicar: Array<{ campo: string; etiqueta: string; motivo: string }>;
+    },
+  ): Promise<void> {
+    await this.tx.enContexto(ctx, (t) =>
+      t.query(
+        `UPDATE documento_leido SET confirmado_en = now(), confirmacion = $2::jsonb
+          WHERE id = $1`,
+        [id, JSON.stringify(resultado)],
+      ),
+    );
+  }
+
   async guardarHuella(
     ctx: CtxEmpresa,
     id: string,
@@ -409,6 +436,9 @@ function aDocumento(f: FilaDocumento): Documento {
     creadoEn: comoTexto(f.creado_en),
     leidoEn: f.leido_en === null ? null : comoTexto(f.leido_en),
     motivoDescarte: f.motivo_descarte ?? null,
+    confirmadoEn:
+      f.confirmado_en == null ? null : comoTexto(f.confirmado_en),
+    confirmacion: (f.confirmacion as Documento['confirmacion']) ?? null,
   };
 }
 

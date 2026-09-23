@@ -184,6 +184,19 @@ export class EmpresaService {
     });
   }
 
+  /** Con qué modo se configura la empresa (0068). La regla de no volver la pone el controlador. */
+  async fijarModoConfiguracion(
+    ctx: CtxEmpresa,
+    modo: 'IA' | 'MANUAL',
+  ): Promise<void> {
+    await this.tx.enContexto(ctx, (t) =>
+      t.query('UPDATE empresa SET modo_configuracion = $2 WHERE id = $1', [
+        ctx.empresaId,
+        modo,
+      ]),
+    );
+  }
+
   async desactivar(ctx: CtxEmpresa, id: string): Promise<void> {
     await this.tx.enContexto(ctx, (t) =>
       t.query('UPDATE empresa SET activo = false WHERE id = $1', [id]),

@@ -303,42 +303,6 @@ export class AutenticacionService {
     );
   }
 
-  /**
-   * Los roles vigentes de **otra** persona en una empresa, y su nombre. Una
-   * persona desactivada no tiene roles. Lo usa el asistente: una regla de
-   * autonomía actúa con los roles de quien la activó, mirados al actuar
-   * (paso 8 de `asistente-conversacion.md`).
-   */
-  async rolesVigentesDe(
-    ctx: Ctx,
-    usuarioId: string,
-    empresaId: string,
-  ): Promise<{ nombre: string; roles: RolCodigo[] }> {
-    return this.tx.enContexto(ctx, async (t) => {
-      const filas = await t.query<
-        Array<{
-          nombre_completo: string;
-          activo: boolean;
-          rol_codigo: RolCodigo | null;
-        }>
-      >(
-        `SELECT u.nombre_completo, u.activo, uer.rol_codigo
-           FROM usuario u
-           LEFT JOIN usuario_empresa_rol uer
-             ON uer.usuario_id = u.id AND uer.empresa_id = $2 AND uer.revocado_en IS NULL
-          WHERE u.id = $1`,
-        [usuarioId, empresaId],
-      );
-      if (filas.length === 0) return { nombre: '', roles: [] };
-      return {
-        nombre: filas[0].nombre_completo,
-        roles: filas[0].activo
-          ? filas.flatMap((f) => (f.rol_codigo === null ? [] : [f.rol_codigo]))
-          : [],
-      };
-    });
-  }
-
   private async datosUsuario(
     ctx: Ctx,
   ): Promise<{ id: string; nombre: string; email: string }> {

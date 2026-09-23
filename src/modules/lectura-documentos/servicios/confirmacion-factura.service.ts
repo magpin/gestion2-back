@@ -1,10 +1,13 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
+import { TxService } from '../../../common/db/tx.service';
 import { ComprasApi } from '../../compras/compras.api';
 import { cuadra } from '../reglas/factura-compra.reglas';
+import { queAprender } from '../reglas/memoria.reglas';
 import type { FacturaCruzada } from './cruce.service';
 import { DocumentoService } from './documento.service';
+import { MemoriaService } from './memoria.service';
 
 /**
  * Registra la compra de una factura leída, cuando una persona lo confirma.
@@ -43,6 +46,8 @@ export class ConfirmacionFacturaService {
   constructor(
     private readonly documentos: DocumentoService,
     private readonly compras: ComprasApi,
+    private readonly memoria: MemoriaService,
+    private readonly tx: TxService,
   ) {}
 
   async confirmar(
@@ -52,7 +57,9 @@ export class ConfirmacionFacturaService {
   ) {
     const documento = await this.documentos.porId(ctx, documentoId);
     if (documento.tipo !== 'FACTURA_COMPRA') {
-      throw new BadRequestException('Ese documento no es una factura de compra.');
+      throw new BadRequestException(
+        'Ese documento no es una factura de compra.',
+      );
     }
 
     const cruzada = documento.extraido as FacturaCruzada | null;
@@ -68,7 +75,10 @@ export class ConfirmacionFacturaService {
     if (!cuadra(cruzada.comprobaciones)) {
       const cuales = cruzada.comprobaciones
         .filter((c) => !c.cuadra)
-        .map((c) => `${c.que.toLowerCase()} (sumé ${c.calculado}, dice ${c.impreso})`)
+        .map(
+          (c) =>
+            `${c.que.toLowerCase()} (sumé ${c.calculado}, dice ${c.impreso})`,
+        )
         .join('; ');
       throw new BadRequestException(
         `Las cuentas de la factura no dan: ${cuales}. Registrala a mano.`,
@@ -96,22 +106,45 @@ export class ConfirmacionFacturaService {
         ? numero
         : `${cruzada.factura.prefijo}-${numero}`;
 
-    const compra = await this.compras.registrar(ctx, {
-      terceroId,
-      fecha: cruzada.factura.fecha,
-      numeroFacturaProveedor: conPrefijo,
-      lineas,
-      // Crédito salvo que digan otra cosa: contado exige rol CAJA o DIRECTOR y
-      // los medios de pago, que no salen de la factura.
-      formaPago: respuestas.formaPago ?? 'CREDITO',
-    },
-    // De qué documento salió. Va por acá y no en el cuerpo de la petición:
-    // si viniera del navegador, cualquiera podría decir que una compra
-    // digitada salió de un documento que María leyó.
-    { documentoLeidoId: documentoId });
+    // Lo que una persona contestó, para no volver a preguntarlo. Solo eso: lo
+    // que el cruce encontró solo no se aprende nunca.
+    const aprendizajes = queAprender(
+      cruzada.renglones,
+      respuestas.renglones ?? [],
+    );
+
+    // La compra y lo aprendido van en la misma transacción: si la compra no
+    // entra, no se aprende nada. Contestar no es comprometerse; registrar sí.
+    const compra = await this.tx.enContexto(ctx, async (t) => {
+      const registrada = await this.compras.registrar(
+        ctx,
+        {
+          terceroId,
+          fecha: cruzada.factura.fecha,
+          numeroFacturaProveedor: conPrefijo,
+          lineas,
+          // Crédito salvo que digan otra cosa: contado exige rol CAJA o
+          // DIRECTOR y los medios de pago, que no salen de la factura.
+          formaPago: respuestas.formaPago ?? 'CREDITO',
+        },
+        // De qué documento salió. Va por acá y no en el cuerpo de la petición:
+        // si viniera del navegador, cualquiera podría decir que una compra
+        // digitada salió de un documento que María leyó.
+        { documentoLeidoId: documentoId },
+        t,
+      );
+      await this.memoria.aprender(
+        ctx,
+        terceroId,
+        registrada.id,
+        aprendizajes,
+        t,
+      );
+      return registrada;
+    });
 
     this.log.log(
-      `Factura ${documentoId} registrada como compra ${compra.id} (${conPrefijo}), ${lineas.length} líneas.`,
+      `Factura ${documentoId} registrada como compra ${compra.id} (${conPrefijo}), ${lineas.length} líneas, ${aprendizajes.length} renglones aprendidos.`,
     );
 
     return compra;

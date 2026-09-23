@@ -137,7 +137,10 @@ export const ESQUEMA_FACTURA = {
           cantidad: { type: 'number' },
           valorUnitario: { type: 'number', description: 'Antes de IVA.' },
           ivaTarifa: { type: 'number', description: '19, 5 o 0.' },
-          total: { type: 'number', description: 'El total del renglón antes de IVA.' },
+          total: {
+            type: 'number',
+            description: 'El total del renglón antes de IVA.',
+          },
         },
       },
     },
@@ -201,13 +204,27 @@ export function comprobar(factura: FacturaCompraLeida): Comprobacion[] {
   const total = redondear(subtotal + iva - (factura.impreso.retencion ?? 0));
 
   return [
-    comparar('Los renglones suman el subtotal', subtotal, factura.impreso.subtotal, {
-      exigeImpreso: true,
-    }),
-    comparar('El IVA de los renglones da el IVA impreso', iva, factura.impreso.iva),
-    comparar('Subtotal más IVA menos retención da el total', total, factura.impreso.total, {
-      exigeImpreso: true,
-    }),
+    comparar(
+      'Los renglones suman el subtotal',
+      subtotal,
+      factura.impreso.subtotal,
+      {
+        exigeImpreso: true,
+      },
+    ),
+    comparar(
+      'El IVA de los renglones da el IVA impreso',
+      iva,
+      factura.impreso.iva,
+    ),
+    comparar(
+      'Subtotal más IVA menos retención da el total',
+      total,
+      factura.impreso.total,
+      {
+        exigeImpreso: true,
+      },
+    ),
   ];
 }
 

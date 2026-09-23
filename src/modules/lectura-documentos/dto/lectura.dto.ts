@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
   IsArray,
   IsIn,
@@ -25,6 +26,7 @@ const TIPOS: readonly TipoDocumento[] = [
   'CAMARA_COMERCIO',
   'RESOLUCION_DIAN',
   'FACTURA_COMPRA',
+  'PEDIDO_VENTA',
 ];
 
 /** Lo que el navegador manda antes de subir: qué va a subir y de qué tipo. */
@@ -131,4 +133,32 @@ export class RegistrarCompraLeidaDto {
   @IsOptional()
   @IsIn(['CREDITO', 'CONTADO'])
   formaPago?: 'CREDITO' | 'CONTADO';
+}
+
+/** Un archivo del lote: dónde quedó en el bucket y cómo se llamaba. */
+export class ArchivoDeLoteDto {
+  @IsString()
+  @Length(10, 200)
+  clave!: string;
+
+  @IsString()
+  @Length(1, 255)
+  nombre!: string;
+}
+
+/** `POST /lotes`: los archivos que se soltaron juntos, en el orden en que llegaron. */
+export class CrearLoteDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(25)
+  @ValidateNested({ each: true })
+  @Type(() => ArchivoDeLoteDto)
+  archivos!: ArchivoDeLoteDto[];
+}
+
+/** Por qué una lectura se deja sin registrar: «es la misma que CC-0924». */
+export class DescartarLecturaDto {
+  @IsString()
+  @Length(3, 300)
+  motivo!: string;
 }

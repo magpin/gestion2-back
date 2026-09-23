@@ -184,6 +184,9 @@ export const CAMPOS: Record<string, DefinicionCampo> = {
     paso: 'RESOLUCIONES',
     etiqueta: 'Tipo de documento',
     documentos: ['RESOLUCION_DIAN'],
+    // Sin esto devolvía el texto impreso —«FACTURA ELECTRÓNICA DE VENTA»— y la
+    // resolución entera quedaba sin aplicar.
+    nota: 'uno de estos códigos, no el texto impreso: FACTURA_VENTA, FACTURA_CONTINGENCIA, NOTA_CREDITO, NOTA_DEBITO, DOCUMENTO_SOPORTE, NOTA_AJUSTE_DOC_SOPORTE, NOMINA_ELECTRONICA o POS. Una factura electrónica de venta es FACTURA_VENTA',
   },
   numeroResolucion: {
     paso: 'RESOLUCIONES',
@@ -240,6 +243,8 @@ export function nombreDocumento(tipo: TipoDocumento): string {
       return 'la resolución de la DIAN';
     case 'FACTURA_COMPRA':
       return 'la factura';
+    case 'PEDIDO_VENTA':
+      return 'el pedido';
   }
 }
 

@@ -10,6 +10,7 @@ import {
   etiquetaDeConsulta,
   herramientasPara,
   ROLES_EXISTENCIAS,
+  ROLES_REVISION,
   ROLES_SALDOS,
   origenDeHerramienta,
   resultadoParaModelo,
@@ -46,8 +47,8 @@ describe('herramientasPara — el modelo ve lo que el rol puede ver', () => {
     ]);
   });
 
-  it('CONTADOR: los seis orígenes, buscar, saldos y existencias', () => {
-    expect(nombres(['CONTADOR'])).toHaveLength(9);
+  it('CONTADOR: los seis orígenes, buscar, saldos, existencias y la revisión', () => {
+    expect(nombres(['CONTADOR'])).toHaveLength(10);
   });
 
   it('un rol sin orígenes no recibe ninguna herramienta, ni la de buscar', () => {
@@ -176,6 +177,7 @@ describe('saldos y existencias — los roles son los de sus pantallas', () => {
     ['tesoreria/controladores/cuentas-bancarias.controller.ts', ROLES_SALDOS],
     ['tesoreria/controladores/cajas.controller.ts', ROLES_SALDOS],
     ['inventario/controladores/productos.controller.ts', ROLES_EXISTENCIAS],
+    ['revision/controladores/revision.controller.ts', ROLES_REVISION],
   ])('%s', (ruta, roles) => {
     expect(controlador(ruta)).toContain(lista(roles));
   });

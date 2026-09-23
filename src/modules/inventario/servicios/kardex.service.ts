@@ -21,6 +21,7 @@ import type {
 import { ConfiguracionService } from './configuracion.service';
 import {
   calcularEntrada,
+  calcularReversaDeEntrada,
   calcularSalida,
   type ResultadoEntrada,
   type SaldoKardex,
@@ -351,46 +352,128 @@ export class KardexService {
   }
 
   /**
-   * Devuelve al kardex lo que una compra anulada había metido.
+   * Deja en cero, **al mismo valor**, lo que un asiento anulado movió en el
+   * kardex. Es lo que hace falta para anular una venta o una compra.
    *
-   * Sin asiento propio: el de la compra queda anulado y con eso el libro ya
-   * dejó de contar esa mercancía, así que la salida referencia ese mismo
-   * asiento y el conjunto queda en cero por los dos lados. Se valora al
-   * promedio vigente, igual que cualquier salida. Rechaza si las unidades ya
-   * no están —se vendieron— porque entonces no hay qué devolver.
+   * Sin asiento propio: el del documento queda anulado y con eso el libro ya
+   * dejó de contar esa mercancía, así que la reversa referencia ese mismo
+   * asiento y el conjunto queda en cero **por los dos lados**, en cantidad y en
+   * pesos. Antes una compra se revertía al promedio vigente —y el kardex quedaba
+   * distinto de la cuenta— y una venta anulada no devolvía nada.
+   *
+   * Por producto, en dos pasos, y cada uno solo si hace falta:
+   *
+   * 1. **Lo que salió vuelve**, al costo con que salió: una venta anulada, o
+   *    una reversa mal hecha que hay que deshacer.
+   * 2. **Lo que entró sale**, al costo con que entró: una compra anulada.
+   *
+   * Un asiento que ya está en cero no se toca, así que correrlo dos veces no
+   * hace nada: sirve también para reparar anulaciones viejas.
+   *
+   * Rechaza si las unidades de una compra ya no están —se vendieron—, porque
+   * entonces no hay qué devolver.
    */
-  async registrarSalidaPorAnulacionCompra(
+  async revertirAsiento(
     ctx: CtxEmpresa,
-    productoId: string,
-    cantidad: number,
+    asientoId: string,
     fecha: string,
     motivo: string,
-    asientoId: string,
     tx: Tx,
-  ): Promise<MovimientoResumen> {
-    await this.exigirProductoBloqueado(productoId, tx);
-    const { decimalesCantidad } = await this.exigirPromedioPonderado(ctx, tx);
-    const actual = (await this.ultimoMovimiento(productoId, tx)) ?? {
-      cantidad: 0,
-      costoPromedio: 0,
-    };
-    const resultado = calcularSalida(actual, cantidad, decimalesCantidad);
-    if (!resultado.ok) {
-      throw new BadRequestException(resultado.motivo);
-    }
-    return this.insertarMovimiento(
-      tx,
-      ctx,
-      randomUUID(),
-      productoId,
-      'SALIDA_AJUSTE',
-      fecha,
-      cantidad,
-      actual.costoPromedio,
-      resultado,
-      motivo,
-      asientoId,
+  ): Promise<MovimientoResumen[]> {
+    const movido = filas<{
+      producto_id: string;
+      cantidad_entra: string;
+      valor_entra: string;
+      cantidad_sale: string;
+      valor_sale: string;
+    }>(
+      await tx.query(
+        `SELECT producto_id,
+                coalesce(sum(cantidad)    FILTER (WHERE tipo LIKE 'ENTRADA%'), 0) AS cantidad_entra,
+                coalesce(sum(valor_total) FILTER (WHERE tipo LIKE 'ENTRADA%'), 0) AS valor_entra,
+                coalesce(sum(cantidad)    FILTER (WHERE tipo LIKE 'SALIDA%'), 0)  AS cantidad_sale,
+                coalesce(sum(valor_total) FILTER (WHERE tipo LIKE 'SALIDA%'), 0)  AS valor_sale
+           FROM producto_movimiento
+          WHERE asiento_id = $1
+          GROUP BY producto_id
+          ORDER BY producto_id`,
+        [asientoId],
+      ),
     );
+
+    const hechos: MovimientoResumen[] = [];
+    const { decimalesCantidad, decimalesCosto } =
+      await this.exigirPromedioPonderado(ctx, tx);
+
+    for (const m of movido) {
+      const entra = { cantidad: Number(m.cantidad_entra), valor: Number(m.valor_entra) };
+      const sale = { cantidad: Number(m.cantidad_sale), valor: Number(m.valor_sale) };
+      // Ya en cero: una anulación bien hecha, o una que ya se reparó.
+      if (entra.cantidad === sale.cantidad && Math.abs(entra.valor - sale.valor) <= 0.01) {
+        continue;
+      }
+
+      await this.exigirProductoBloqueado(m.producto_id, tx);
+
+      // 1. Lo que salió vuelve, al costo con que salió.
+      if (sale.cantidad > 0) {
+        const costo = redondearCosto(sale.valor / sale.cantidad, decimalesCosto);
+        const actual = (await this.ultimoMovimiento(m.producto_id, tx)) ?? {
+          cantidad: 0,
+          costoPromedio: 0,
+        };
+        hechos.push(
+          await this.insertarMovimiento(
+            tx,
+            ctx,
+            randomUUID(),
+            m.producto_id,
+            'ENTRADA_AJUSTE',
+            fecha,
+            sale.cantidad,
+            costo,
+            calcularEntrada(actual, sale.cantidad, costo, decimalesCantidad, decimalesCosto),
+            motivo,
+            asientoId,
+          ),
+        );
+      }
+
+      // 2. Lo que entró sale, al costo con que entró.
+      if (entra.cantidad > 0) {
+        const costo = redondearCosto(entra.valor / entra.cantidad, decimalesCosto);
+        const actual = (await this.ultimoMovimiento(m.producto_id, tx)) ?? {
+          cantidad: 0,
+          costoPromedio: 0,
+        };
+        const resultado = calcularReversaDeEntrada(
+          actual,
+          entra.cantidad,
+          costo,
+          decimalesCantidad,
+          decimalesCosto,
+        );
+        if (!resultado.ok) {
+          throw new BadRequestException(resultado.motivo);
+        }
+        hechos.push(
+          await this.insertarMovimiento(
+            tx,
+            ctx,
+            randomUUID(),
+            m.producto_id,
+            'SALIDA_AJUSTE',
+            fecha,
+            entra.cantidad,
+            costo,
+            resultado,
+            motivo,
+            asientoId,
+          ),
+        );
+      }
+    }
+    return hechos;
   }
 
   /**
@@ -686,4 +769,10 @@ export class KardexService {
     }
     return creado;
   }
+}
+
+/** El costo unitario con los decimales que la empresa usa para costos. */
+function redondearCosto(valor: number, decimales: number): number {
+  const factor = 10 ** decimales;
+  return Math.round(valor * factor) / factor;
 }

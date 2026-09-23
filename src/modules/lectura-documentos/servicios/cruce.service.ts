@@ -8,8 +8,10 @@ import {
   consolidar,
   elegirCuenta,
   elegirProducto,
+  elegirCliente,
   elegirProveedor,
   type Cruce,
+  type FormaDeCruce,
   type LineaCruzada,
 } from '../reglas/cruce.reglas';
 import type {
@@ -18,6 +20,13 @@ import type {
   RenglonLeido,
 } from '../reglas/factura-compra.reglas';
 import { cuadra } from '../reglas/factura-compra.reglas';
+import { llaveDelRenglon, porQueNoSirve } from '../reglas/memoria.reglas';
+import {
+  avisoDePrecio,
+  type PedidoLeido,
+  type RenglonPedido,
+} from '../reglas/pedido-venta.reglas';
+import { MemoriaService, type Recordado } from './memoria.service';
 
 /**
  * Cruza una factura leída con lo que ya está en el sistema: quién es el
@@ -45,6 +54,12 @@ export interface RenglonCruzado {
     | null;
   /** Cómo se resolvió, o por qué no. Escrito para leerse. */
   motivo: string;
+  /**
+   * Por qué camino se encontró. `APRENDIDO` es lo que la pantalla muestra
+   * distinto: lo contestó una persona en otra factura, y se puede cambiar.
+   * Ausente en las lecturas guardadas antes de que existiera.
+   */
+  forma?: FormaDeCruce;
 }
 
 /** Lo que falta para poder registrar. Cada una es una pregunta concreta. */
@@ -71,6 +86,37 @@ export interface FacturaCruzada {
   completa: boolean;
 }
 
+/** Un renglón del pedido después de cruzarlo. */
+export interface RenglonPedidoCruzado {
+  orden: number;
+  leido: RenglonPedido;
+  /** Solo productos: una factura de venta no tiene líneas de gasto. */
+  resuelto: { id: string; codigo: string; nombre: string } | null;
+  motivo: string;
+  forma?: FormaDeCruce;
+  /** El precio de lista vigente, que es al que se factura. */
+  precioLista: number | null;
+  /** Si el pedido dice otro precio. Se factura igual al de la lista. */
+  avisoPrecio: string | null;
+}
+
+/**
+ * El borrador de la factura de venta. **No es una factura**: una factura de
+ * venta nace emitida, con su consecutivo. Esto es lo que se lleva al
+ * formulario de siempre para que una persona la revise y la emita.
+ */
+export interface PedidoCruzado {
+  pedido: PedidoLeido;
+  comprobaciones: Comprobacion[];
+  cliente: { id: string; nombre: string } | null;
+  renglones: RenglonPedidoCruzado[];
+  /** Producto y cantidad, ya consolidados: la venta no acepta un producto dos veces. */
+  lineas: Array<{ productoId: string; cantidad: number }>;
+  juntadas: number;
+  preguntas: Pregunta[];
+  completa: boolean;
+}
+
 @Injectable()
 export class CruceService {
   private readonly log = new Logger(CruceService.name);
@@ -78,6 +124,7 @@ export class CruceService {
   constructor(
     private readonly nucleo: NucleoApi,
     private readonly inventario: InventarioApi,
+    private readonly memoria: MemoriaService,
   ) {}
 
   async cruzar(
@@ -122,14 +169,54 @@ export class CruceService {
     const renglones: RenglonCruzado[] = [];
     const lineas: LineaCruzada[] = [];
 
+    // Lo que una persona ya contestó para este proveedor. Solo con el
+    // proveedor encontrado por NIT: recordar lo de otro sería peor que
+    // preguntar.
+    const recordados =
+      cruceProveedor.encontrado === null
+        ? new Map<string, Recordado>()
+        : await this.memoria.recordados(
+            ctx,
+            cruceProveedor.encontrado.id,
+            factura.renglones.flatMap((r) => {
+              const texto = llaveDelRenglon(r);
+              return texto === null ? [] : [{ clase: r.clase, texto }];
+            }),
+          );
+
     for (const [indice, leido] of factura.renglones.entries()) {
       const orden = indice + 1;
-      const cruce =
-        leido.clase === 'GASTO'
-          ? await this.cruzarGasto(ctx, leido)
-          : await this.cruzarProducto(ctx, leido);
+      const texto = llaveDelRenglon(leido);
+      const recordado =
+        texto === null ? undefined : recordados.get(`${leido.clase}|${texto}`);
 
-      renglones.push({ orden, leido, resuelto: cruce.encontrado, motivo: cruce.motivo });
+      // Lo recordado va antes que el catálogo: es lo que una persona dijo que
+      // es este texto de este proveedor. Si ya no sirve, se cruza como
+      // siempre y se dice por qué no se usó.
+      const deMemoria =
+        recordado === undefined
+          ? null
+          : await this.usarRecordado(ctx, recordado);
+      let cruce: Cruce<RenglonCruzado['resuelto'] & object>;
+      if (deMemoria !== null && deMemoria.encontrado !== null) {
+        cruce = deMemoria;
+      } else {
+        cruce =
+          leido.clase === 'GASTO'
+            ? await this.cruzarGasto(ctx, leido)
+            : await this.cruzarProducto(ctx, leido);
+        if (deMemoria !== null && cruce.encontrado === null) {
+          cruce = { ...cruce, motivo: `${deMemoria.motivo} ${cruce.motivo}` };
+        }
+      }
+
+      renglones.push({
+        orden,
+        leido,
+        resuelto: cruce.encontrado,
+        motivo: cruce.motivo,
+        ...(cruce.forma !== undefined && { forma: cruce.forma }),
+      });
 
       if (cruce.encontrado === null) {
         preguntas.push({
@@ -187,6 +274,188 @@ export class CruceService {
   }
 
   /**
+   * El pedido de un cliente, para armar la factura de venta.
+   *
+   * La misma búsqueda que en una compra —el tercero por NIT, cada renglón por
+   * código y después por nombre—, con dos diferencias: el tercero tiene que
+   * ser **cliente**, y cada producto encontrado trae **su precio de lista**,
+   * que es al que se factura. Un producto sin precio de lista no se puede
+   * facturar —la venta lo rechaza—, así que eso también es una pregunta.
+   *
+   * Sin memoria: en una venta el renglón no llega hasta la factura con su
+   * orden —la persona puede cambiar, quitar o agregar líneas en el formulario—,
+   * así que no hay con qué saber qué contestó para cuál.
+   */
+  async cruzarPedido(
+    ctx: CtxEmpresa,
+    pedido: PedidoLeido,
+    comprobaciones: Comprobacion[],
+  ): Promise<PedidoCruzado> {
+    const preguntas: Pregunta[] = [];
+
+    const candidatos =
+      pedido.cliente.nit === null
+        ? []
+        : await this.nucleo.terceroPorDocumento(ctx, pedido.cliente.nit);
+    const cruceCliente = elegirCliente(
+      pedido.cliente,
+      candidatos.map((t) => ({
+        id: t.id,
+        numeroDocumento: t.numeroDocumento,
+        nombre: t.nombre,
+        esCliente: t.esCliente,
+      })),
+    );
+    if (cruceCliente.encontrado === null) {
+      preguntas.push({ sobre: 'cliente', texto: cruceCliente.motivo });
+    }
+
+    const renglones: RenglonPedidoCruzado[] = [];
+    const porProducto = new Map<string, number>();
+
+    for (const [indice, leido] of pedido.renglones.entries()) {
+      const orden = indice + 1;
+      const cruce = await this.cruzarProducto(ctx, leido);
+      const producto = cruce.encontrado;
+      const precioLista =
+        producto === null
+          ? null
+          : await this.inventario.precioVigente(ctx, producto.id);
+
+      renglones.push({
+        orden,
+        leido,
+        resuelto:
+          producto === null
+            ? null
+            : {
+                id: producto.id,
+                codigo: producto.codigo,
+                nombre: producto.nombre,
+              },
+        motivo: cruce.motivo,
+        ...(cruce.forma !== undefined && { forma: cruce.forma }),
+        precioLista,
+        avisoPrecio: avisoDePrecio(leido.valorUnitario, precioLista),
+      });
+
+      if (producto === null) {
+        preguntas.push({
+          sobre: `renglon-${orden}`,
+          texto: `Renglón ${orden} («${leido.descripcion}»): ${cruce.motivo}`,
+        });
+        continue;
+      }
+      if (precioLista === null || precioLista <= 0) {
+        preguntas.push({
+          sobre: `renglon-${orden}`,
+          texto: `Renglón ${orden}: ${producto.codigo} ${producto.nombre} no tiene precio de venta. Hay que ponérselo antes de facturar.`,
+        });
+        continue;
+      }
+      porProducto.set(
+        producto.id,
+        (porProducto.get(producto.id) ?? 0) + leido.cantidad,
+      );
+    }
+
+    const lineas = [...porProducto.entries()].map(([productoId, cantidad]) => ({
+      productoId,
+      cantidad,
+    }));
+    const facturables = renglones.filter(
+      (r) => r.resuelto !== null && r.precioLista !== null && r.precioLista > 0,
+    ).length;
+    const completa = preguntas.length === 0 && cuadra(comprobaciones);
+
+    this.log.log(
+      `Pedido cruzado: ${renglones.length} renglones, ${preguntas.length} preguntas, ${completa ? 'completo' : 'incompleto'}.`,
+    );
+
+    return {
+      pedido,
+      comprobaciones,
+      cliente:
+        cruceCliente.encontrado === null
+          ? null
+          : {
+              id: cruceCliente.encontrado.id,
+              nombre: cruceCliente.encontrado.nombre,
+            },
+      renglones,
+      lineas,
+      // Cuántos renglones facturables se juntaron con otro del mismo producto.
+      juntadas: facturables - lineas.length,
+      preguntas,
+      completa,
+    };
+  }
+
+  /**
+   * Lo recordado, si todavía sirve. Si el producto se inactivó o la cuenta
+   * dejó de recibir movimientos, no se usa: se vuelve a preguntar, sin error.
+   */
+  private async usarRecordado(
+    ctx: CtxEmpresa,
+    recordado: Recordado,
+  ): Promise<Cruce<RenglonCruzado['resuelto'] & object>> {
+    const deDonde = `Lo recuerdo: en la factura ${recordado.numeroFactura} de este proveedor se registró así.`;
+
+    if (recordado.productoId !== null) {
+      const producto = await this.inventario.producto(
+        ctx,
+        recordado.productoId,
+      );
+      const falla = porQueNoSirve({
+        clase: 'PRODUCTO',
+        existe: producto !== null,
+        activo: producto?.activo ?? false,
+      });
+      if (producto === null || falla !== null) {
+        return {
+          encontrado: null,
+          motivo: `Lo había recordado, pero ${falla}.`,
+        };
+      }
+      return {
+        encontrado: {
+          clase: 'PRODUCTO',
+          id: producto.id,
+          codigo: producto.codigo,
+          nombre: producto.nombre,
+        },
+        forma: 'APRENDIDO',
+        motivo: deDonde,
+      };
+    }
+
+    const cuenta =
+      recordado.cuentaId === null
+        ? null
+        : await this.nucleo.cuentaPorId(ctx, recordado.cuentaId);
+    const falla = porQueNoSirve({
+      clase: 'GASTO',
+      existe: cuenta !== null,
+      activa: cuenta?.activa ?? false,
+      esAuxiliar: cuenta?.es_auxiliar ?? false,
+      codigo: cuenta?.codigo ?? '',
+    });
+    if (cuenta === null || falla !== null) {
+      return { encontrado: null, motivo: `Lo había recordado, pero ${falla}.` };
+    }
+    return {
+      encontrado: {
+        clase: 'GASTO',
+        id: cuenta.id,
+        codigo: cuenta.codigo,
+        nombre: cuenta.nombre,
+      },
+      forma: 'APRENDIDO',
+      motivo: deDonde,
+    };
+  }
+
+  /**
    * Un renglón de mercancía. Dos búsquedas y no una: primero por código, que
    * es identidad, y solo si eso no da, por descripción.
    *
@@ -195,7 +464,7 @@ export class CruceService {
    */
   private async cruzarProducto(
     ctx: CtxEmpresa,
-    renglon: RenglonLeido,
+    renglon: Pick<RenglonLeido, 'codigo' | 'descripcion'>,
   ): Promise<Cruce<RenglonCruzado['resuelto'] & object>> {
     const codigo = codigoDelRenglon(renglon);
 

@@ -7,6 +7,7 @@ import {
 import type { CtxEmpresa } from '../../../common/ctx';
 import { fila, filas } from '../../../common/db/filas';
 import { armarPagina, type Pagina } from '../../../common/dto/paginacion.dto';
+import { hoyEnColombia } from '../../../common/fecha';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import { InventarioApi } from '../../inventario/inventario.api';
@@ -87,6 +88,12 @@ export interface VentaDocumentoResumen {
    */
   saldo_a_favor: string;
   asiento_id: string | null;
+  /**
+   * Emitida antes de usar el sistema y cargada con su número original
+   * (migración 0065). Sin resolución, sin asiento y sin kardex: se consulta
+   * y se cobra, pero no se le hacen notas.
+   */
+  historica: boolean;
 }
 
 export interface VentaDocumentoLineaResumen {
@@ -185,7 +192,7 @@ const IDENTIFICACION_TERCERO = `(SELECT concat_ws(' ', x.tipo_documento,
 // donde agregarle una columna.
 export const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, estado, prefijo, consecutivo,
                            resolucion_id, documento_origen_id, subtotal, total_iva, total,
-                           monto_pagado, asiento_id,
+                           monto_pagado, asiento_id, historica,
                            (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
                               FROM tercero x WHERE x.id = tercero_id) AS tercero_nombre,
                            ${IDENTIFICACION_TERCERO} AS tercero_identificacion,
@@ -643,9 +650,13 @@ export class VentaDocumentoService {
         estado: string;
         asiento_id: string | null;
         monto_pagado: string;
+        numero: string;
+        historica: boolean;
       }>(
         await t.query(
-          `SELECT tipo, estado, asiento_id, monto_pagado FROM venta_documento WHERE id = $1`,
+          `SELECT tipo, estado, asiento_id, monto_pagado, historica,
+                  concat_ws('-', nullif(prefijo, ''), consecutivo::text) AS numero
+             FROM venta_documento WHERE id = $1`,
           [id],
         ),
       );
@@ -664,18 +675,56 @@ export class VentaDocumentoService {
       // nada y la cartera del cliente en negativo. Lo que corrige una
       // factura cobrada es una nota crédito, que deja el saldo a favor
       // registrado; el cobro no se toca porque ocurrió de verdad.
-      if (Number(documento.monto_pagado) > 0) {
+      //
+      // En una histórica, `monto_pagado` trae además lo que se pagó en el
+      // sistema anterior, que no es un cobro de acá: no hay plata que quede
+      // colgando. Lo que la traba es un cobro registrado **en este sistema**,
+      // y eso lo dicen los movimientos de caja y bancos, no la columna.
+      const cobrada = documento.historica
+        ? await this.tieneCobrosEnElSistema(id, t)
+        : Number(documento.monto_pagado) > 0;
+      if (cobrada) {
         throw new BadRequestException(
-          'Esta factura tiene cobros registrados y no se puede anular. Para corregirla, emití una nota crédito.',
+          documento.historica
+            ? 'Esta factura tiene cobros registrados en el sistema y no se puede anular. Devolvé esos cobros primero.'
+            : 'Esta factura tiene cobros registrados y no se puede anular. Para corregirla, emití una nota crédito.',
         );
       }
 
+      // Una histórica no tiene asiento ni kardex que deshacer: se anula porque
+      // se cargó mal, y anularla libera su número para cargarla bien
+      // (`ux_venta_numero`, migración 0065).
+      if (documento.historica) {
+        await t.query(
+          `UPDATE venta_documento
+              SET estado = 'ANULADA', motivo_anulacion = $2,
+                  anulado_en = now(), anulado_por = $3
+            WHERE id = $1`,
+          [id, motivo, ctx.usuarioId],
+        );
+        return;
+      }
+
       // `asiento_id` no puede ser NULL acá: `ck_venta_fiscal` lo exige para
-      // todo tipo que no sea COTIZACION, y ya se descartó ese caso arriba.
+      // todo lo que no sea cotización ni histórica, y las dos ya se
+      // descartaron arriba.
       await this.contabilidad.anular(
         ctx,
         documento.asiento_id as string,
         motivo,
+        t,
+      );
+
+      // La mercancía que la factura sacó vuelve al kardex, al costo con que
+      // salió. Antes se anulaba solo el asiento: el libro dejaba de contar la
+      // venta y el kardex seguía con las unidades descontadas —la SETT-13 dejó
+      // así 7 unidades y $ 208.050—. Una nota crédito no movió kardex, así que
+      // para ella esto no hace nada.
+      await this.inventario.revertirPorAnulacion(
+        ctx,
+        documento.asiento_id as string,
+        hoyEnColombia(),
+        `Anulación de ${documento.tipo === 'FACTURA' ? 'la factura' : 'el documento'} ${documento.numero}: ${motivo}`,
         t,
       );
 
@@ -687,6 +736,30 @@ export class VentaDocumentoService {
         [id, motivo, ctx.usuarioId],
       );
     });
+  }
+
+  /**
+   * Si lo cobrado de una factura **en este sistema** —por caja o por banco,
+   * descontando las devoluciones— es más que cero. Lo usa la anulación de una
+   * histórica, cuyo `monto_pagado` mezcla lo pagado antes con lo cobrado acá.
+   */
+  private async tieneCobrosEnElSistema(id: string, t: Tx): Promise<boolean> {
+    const r = fila<{ neto: string }>(
+      await t.query(
+        `SELECT coalesce(sum(neto), 0) AS neto FROM (
+           SELECT CASE WHEN tipo = 'INGRESO' THEN valor ELSE -valor END AS neto
+             FROM caja_movimiento
+            WHERE origen_tipo = 'FACTURA_VENTA' AND origen_id = $1
+           UNION ALL
+           SELECT CASE WHEN tipo IN ('CONSIGNACION', 'TRANSFERENCIA_ENTRANTE', 'NOTA_CREDITO')
+                       THEN valor ELSE -valor END
+             FROM banco_movimiento
+            WHERE origen_tipo = 'FACTURA_VENTA' AND origen_id = $1
+         ) m`,
+        [id],
+      ),
+    );
+    return Number(r?.neto ?? 0) > 0.005;
   }
 
   /**

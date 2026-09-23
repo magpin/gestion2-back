@@ -151,9 +151,10 @@ describe('elegirProveedor — por NIT o se pregunta', () => {
   // Dos empresas casi homónimas y la compra le queda a la cuenta por pagar de
   // la equivocada.
   it('sin NIT no se elige por nombre, aunque haya una sola', () => {
-    const c = elegirProveedor({ nombre: 'JALTECH SOLUCIONES S.A.S.', nit: null }, [
-      tercero('900378652'),
-    ]);
+    const c = elegirProveedor(
+      { nombre: 'JALTECH SOLUCIONES S.A.S.', nit: null },
+      [tercero('900378652')],
+    );
     expect(c.encontrado).toBeNull();
     expect(c.motivo).toContain('no trae el NIT');
   });
@@ -183,10 +184,9 @@ describe('elegirCuenta — solo por código, y casi nunca hay uno', () => {
   });
 
   it('por código exacto', () => {
-    const c = elegirCuenta(
-      { cuentaPuc: '512005', descripcion: 'ARRIENDO' },
-      [cuenta('512005')],
-    );
+    const c = elegirCuenta({ cuentaPuc: '512005', descripcion: 'ARRIENDO' }, [
+      cuenta('512005'),
+    ]);
     expect(c.encontrado?.id).toBe('id-512005');
   });
 
@@ -225,7 +225,11 @@ describe('elegirCuenta — solo por código, y casi nunca hay uno', () => {
 });
 
 describe('consolidar — el mismo producto dos veces', () => {
-  const linea = (productoId: string, cantidad: number, valor: number): LineaCruzada => ({
+  const linea = (
+    productoId: string,
+    cantidad: number,
+    valor: number,
+  ): LineaCruzada => ({
     productoId,
     cantidad,
     costoUnitario: valor / cantidad,
@@ -259,7 +263,10 @@ describe('consolidar — el mismo producto dos veces', () => {
       costoUnitario: 100,
       valor: 100,
     });
-    const r = consolidar([gasto('mantenimiento del aire'), gasto('mantenimiento del ascensor')]);
+    const r = consolidar([
+      gasto('mantenimiento del aire'),
+      gasto('mantenimiento del ascensor'),
+    ]);
     expect(r.lineas).toHaveLength(2);
     expect(r.juntadas).toBe(0);
   });

@@ -46,6 +46,7 @@ const facturaVigente: VentaDocumentoDetalle = {
   pendiente: '689962',
   saldo_a_favor: '0',
   asiento_id: 'asiento-original',
+  historica: false,
   lineas: [],
 };
 

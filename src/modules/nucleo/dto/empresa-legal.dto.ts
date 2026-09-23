@@ -203,3 +203,17 @@ export class GuardarHechosOperativosDto {
   )
   hechos!: string[];
 }
+
+/**
+ * La tarifa de ICA de una actividad que se registró sin ella —la lectura del
+ * RUT no la trae: la fija el acuerdo del municipio—.
+ */
+export class TarifaIcaDto {
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  // Por mil: ninguna tarifa municipal se acerca a 30. Un 8000 es alguien que
+  // escribió «8.000» queriendo decir 8.
+  @Max(30, { message: 'La tarifa de ICA va por mil y ninguna pasa de 30. Si es 8 por mil, escribí 8.' })
+  tarifaIcaPorMil!: number;
+}

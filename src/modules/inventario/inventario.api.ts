@@ -227,28 +227,29 @@ export class InventarioApi {
   }
 
   /**
-   * Revierte en el kardex la entrada de una compra que se anula. Mismo
-   * contrato que `incrementarPorCompra`: en la MISMA transacción y con el
-   * asiento —el de la compra, ya anulado— resuelto por quien llama.
+   * Deja en cero, al mismo valor, lo que movió en el kardex un documento que
+   * se anula —una venta o una compra—. En la MISMA transacción que la
+   * anulación, con el asiento del documento, ya anulado, como referencia.
+   *
+   * Lo que salió vuelve al costo con que salió y lo que entró sale al costo con
+   * que entró: así el kardex queda igual que la cuenta del inventario, que es
+   * la que el asiento anulado dejó de contar. Correrlo sobre un asiento que ya
+   * está en cero no hace nada.
    */
-  async revertirPorAnulacionCompra(
+  async revertirPorAnulacion(
     ctx: CtxEmpresa,
-    productoId: string,
-    cantidad: number,
+    asientoId: string,
     fecha: string,
     motivo: string,
-    asientoId: string,
     tx: Tx,
-  ): Promise<{ movimientoId: string }> {
-    const movimiento = await this.kardex.registrarSalidaPorAnulacionCompra(
+  ): Promise<{ movimientos: number }> {
+    const hechos = await this.kardex.revertirAsiento(
       ctx,
-      productoId,
-      cantidad,
+      asientoId,
       fecha,
       motivo,
-      asientoId,
       tx,
     );
-    return { movimientoId: movimiento.id };
+    return { movimientos: hechos.length };
   }
 }

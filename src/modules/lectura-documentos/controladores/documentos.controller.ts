@@ -52,7 +52,14 @@ export class DocumentosController {
    * Si el modo IA se puede ofrecer. Sin clave de Anthropic o sin bucket, no: el
    * asistente manual funciona igual y la pantalla no muestra una puerta cerrada.
    */
-  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR', 'COMPRAS', 'CONSULTA')
+  @Roles(
+    'ADMIN_TENANT',
+    'DIRECTOR',
+    'CONTADOR',
+    'COMPRAS',
+    'VENTAS',
+    'CONSULTA',
+  )
   @Get('disponible')
   async disponible(
     @ActorEmpresa() ctx: CtxEmpresa,
@@ -78,7 +85,7 @@ export class DocumentosController {
    * la decide el servidor y lleva el id de la empresa adentro: es lo que después
    * permite rechazar una llave ajena.
    */
-  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR', 'COMPRAS')
+  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR', 'COMPRAS', 'VENTAS')
   @Post('documentos/carga')
   urlDeCarga(@ActorEmpresa() ctx: CtxEmpresa, @Body() dto: UrlDeCargaDto) {
     return this.almacenamiento.firmarSubida(
@@ -92,7 +99,7 @@ export class DocumentosController {
    * Registra un archivo ya subido y lo encola. Contesta apenas la fila existe:
    * la lectura sigue por su cuenta y se mira por `GET progreso`.
    */
-  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR', 'COMPRAS')
+  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR', 'COMPRAS', 'VENTAS')
   @Post('documentos')
   registrar(
     @ActorEmpresa() ctx: CtxEmpresa,
@@ -105,7 +112,7 @@ export class DocumentosController {
    * Un archivo cualquiera, subido sin decir qué es. Contesta qué es; si es
    * uno de los tres documentos, la lectura ya arrancó y viene en `documento`.
    */
-  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR', 'COMPRAS')
+  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR', 'COMPRAS', 'VENTAS')
   @Post('documentos/analizar')
   @HttpCode(HttpStatus.OK)
   analizar(@ActorEmpresa() ctx: CtxEmpresa, @Body() dto: AnalizarDocumentoDto) {
@@ -116,7 +123,14 @@ export class DocumentosController {
    * El último intento de cada tipo. Es lo que la tarjeta de documentos necesita
    * para dibujarse después de un F5, cuando ya no hay eventos que escuchar.
    */
-  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR', 'COMPRAS', 'CONSULTA')
+  @Roles(
+    'ADMIN_TENANT',
+    'DIRECTOR',
+    'CONTADOR',
+    'COMPRAS',
+    'VENTAS',
+    'CONSULTA',
+  )
   @Get('documentos')
   listar(@ActorEmpresa() ctx: CtxEmpresa) {
     return this.documentos.listar(ctx);
@@ -133,7 +147,7 @@ export class DocumentosController {
    * «Detener» del §7.7: corta la llamada en curso. Si ya había terminado no hay
    * nada que cortar, y decirlo es la respuesta correcta.
    */
-  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR', 'COMPRAS')
+  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR', 'COMPRAS', 'VENTAS')
   @Post('documentos/:id/detener')
   async detener(
     @ActorEmpresa() ctx: CtxEmpresa,

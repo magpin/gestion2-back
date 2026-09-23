@@ -41,6 +41,11 @@ const CODIGO_CUENTA_IVA_GENERADO = '240805';
 /** Comprobante de ingreso, uno de los cinco que siembra toda empresa nueva. */
 const CODIGO_COMPROBANTE_VENTA = 'CI';
 
+/** De qué pedido leído salió una factura, cuando no la armó una persona desde cero. */
+export interface OrigenDeLaFactura {
+  documentoLeidoId: string;
+}
+
 /**
  * Crea la factura de venta: el único servicio de `ventas` que asienta y
  * mueve el kardex. Todo en una sola transacción, en este orden exacto:
@@ -75,11 +80,20 @@ export class FacturaService {
     private readonly retenciones: RetencionesApi,
   ) {}
 
+  /**
+   * `origen` lo pone el servidor, nunca el navegador: dice de qué pedido leído
+   * salió la factura, y si viniera en el cuerpo cualquiera podría decir que una
+   * factura digitada salió de un documento que María leyó. Mismo criterio que
+   * `OrigenDeLaCompra`.
+   */
   async crear(
     ctx: CtxEmpresa,
     dto: CrearFacturaDto,
+    origen?: OrigenDeLaFactura,
   ): Promise<VentaDocumentoDetalle> {
-    return this.tx.enContexto(ctx, (t) => this.crearInterno(ctx, dto, null, t));
+    return this.tx.enContexto(ctx, (t) =>
+      this.crearInterno(ctx, dto, null, t, origen),
+    );
   }
 
   /**
@@ -165,6 +179,7 @@ export class FacturaService {
     dto: CrearFacturaDto,
     origenCotizacionId: string | null,
     t: Tx,
+    origen?: OrigenDeLaFactura,
   ): Promise<VentaDocumentoDetalle> {
     const productoIds = dto.lineas.map((l) => l.productoId);
     if (new Set(productoIds).size !== productoIds.length) {
@@ -451,8 +466,8 @@ export class FacturaService {
         `INSERT INTO venta_documento
              (id, empresa_id, tipo, tercero_id, fecha, prefijo, consecutivo,
               resolucion_id, documento_origen_id, subtotal, total_iva, total,
-              asiento_id, creado_por)
-           VALUES ($1, $2, 'FACTURA', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+              asiento_id, creado_por, documento_leido_id)
+           VALUES ($1, $2, 'FACTURA', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
            RETURNING ${CAMPOS_DOCUMENTO}`,
         [
           documentoId,
@@ -468,6 +483,7 @@ export class FacturaService {
           totales.total,
           asiento.id,
           ctx.usuarioId,
+          origen?.documentoLeidoId ?? null,
         ],
       ),
     );

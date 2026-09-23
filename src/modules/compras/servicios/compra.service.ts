@@ -234,6 +234,7 @@ export class CompraService {
     ctx: CtxEmpresa,
     dto: CrearCompraDto,
     origen?: OrigenDeLaCompra,
+    tx?: Tx,
   ): Promise<CompraDocumentoDetalle> {
     if (esFechaFutura(dto.fecha)) {
       throw new BadRequestException(
@@ -586,7 +587,7 @@ export class CompraService {
         lineas: lineasInsertadas,
         retenciones: retencionesInsertadas,
       };
-    });
+    }, tx);
   }
 
   /** Las compras, sin sus líneas ni retenciones — para el listado. */
@@ -746,17 +747,22 @@ export class CompraService {
       // unidades y el kardex con ellas, y el ajuste manual que se pedía después
       // las volvía a acreditar: dos salidas contables por una sola física.
       // Si alguna unidad ya se vendió, no hay qué devolver y no se anula.
+      // Solo las de mercancía: un gasto —un arriendo, un flete— no entró a la
+      // bodega y no hay nada que sacar. Antes se miraban todas, y una compra
+      // con una línea de gasto no se podía anular: el saldo de un producto
+      // nulo daba cero.
       const lineas = filas<{
-        producto_id: string;
+        producto_id: string | null;
         producto_codigo: string;
         cantidad: string;
       }>(
         await t.query(
           `SELECT ${CAMPOS_LINEA} FROM compra_documento_linea
-            WHERE compra_documento_id = $1 ORDER BY orden`,
+            WHERE compra_documento_id = $1 AND producto_id IS NOT NULL
+            ORDER BY orden`,
           [id],
         ),
-      );
+      ) as Array<{ producto_id: string; producto_codigo: string; cantidad: string }>;
       for (const l of lineas) {
         const saldo = await this.inventario.saldoActual(ctx, l.producto_id, t);
         const disponible = Number(saldo?.cantidad ?? 0);
@@ -769,18 +775,16 @@ export class CompraService {
 
       await this.contabilidad.anular(ctx, documento.asiento_id, motivo, t);
 
-      const hoy = hoyEnColombia();
-      for (const l of lineas) {
-        await this.inventario.revertirPorAnulacionCompra(
-          ctx,
-          l.producto_id,
-          Number(l.cantidad),
-          hoy,
-          `Anulación de la compra ${documento.numero_factura_proveedor}: ${motivo}`,
-          documento.asiento_id,
-          t,
-        );
-      }
+      // Lo que entró sale **al costo con que entró**, no al promedio de hoy:
+      // al promedio, el kardex quedaba distinto de la cuenta del inventario
+      // —la compra FM-101264 dejó $ 125.347,50 así—.
+      await this.inventario.revertirPorAnulacion(
+        ctx,
+        documento.asiento_id,
+        hoyEnColombia(),
+        `Anulación de la compra ${documento.numero_factura_proveedor}: ${motivo}`,
+        t,
+      );
 
       await t.query(
         `UPDATE compra_documento

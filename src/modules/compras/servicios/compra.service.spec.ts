@@ -1115,7 +1115,7 @@ describe('CompraService.anular', () => {
       saldoActual: jest.fn(() =>
         Promise.resolve({ cantidad: disponible, costoPromedio: 1000 }),
       ),
-      revertirPorAnulacionCompra: revertir,
+      revertirPorAnulacion: revertir,
     } as unknown as ConstructorParameters<typeof CompraService>[2];
     return { fake, revertir };
   }
@@ -1146,13 +1146,13 @@ describe('CompraService.anular', () => {
       'Factura duplicada por error',
       tx,
     );
+    // Todo lo que el asiento movió en el kardex, de una vez y al costo con que
+    // entró: no línea por línea al promedio, que descuadraba el kardex.
     expect(revertir).toHaveBeenCalledWith(
       ctx,
-      'p-1',
-      5,
+      'asiento-1',
       expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       expect.stringContaining('FV-1'),
-      'asiento-1',
       tx,
     );
     expect(actualizaciones).toHaveLength(1);

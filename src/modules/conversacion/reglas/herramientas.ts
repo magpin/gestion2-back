@@ -2,6 +2,7 @@ import type { RolCodigo } from '../../../common/ctx';
 import type { Existencia } from '../../inventario/inventario.api';
 import type { SaldoDeMedio } from '../../tesoreria/tesoreria.api';
 import type { Resultado } from '../../reportes/servicios/armador.service';
+import type { Hallazgo } from '../../revision/revision.api';
 import {
   ORIGENES,
   origenesPara,
@@ -65,7 +66,18 @@ export const ROLES_EXISTENCIAS: readonly RolCodigo[] = [
   'CONSULTA',
 ];
 
+/**
+ * Los de `GET /revision`, que son los de los asientos: lo que se revisa sale
+ * de los libros, y quien no los ve no tiene por qué ver sus diferencias.
+ */
+export const ROLES_REVISION: readonly RolCodigo[] = [
+  'DIRECTOR',
+  'CONTADOR',
+  'CONSULTA',
+];
+
 export const SALDOS = 'consultar_saldos';
+export const REVISAR = 'revisar_errores';
 export const EXISTENCIAS = 'consultar_existencias';
 export const BUSCAR = 'buscar_valores';
 
@@ -145,6 +157,16 @@ export function herramientasPara(roles: readonly RolCodigo[]): Herramienta[] {
               },
               required: ['busqueda'],
             },
+          },
+        ]
+      : []),
+    ...(puede(roles, ROLES_REVISION)
+      ? [
+          {
+            name: REVISAR,
+            description:
+              'Revisa los libros y devuelve lo que no cuadra, lo que está dos veces, lo que falta y lo que parece mal clasificado: asientos y cierres descuadrados, el kardex, las cajas y los bancos contra su cuenta, documentos anulados que dejaron el kardex mal, facturas, cobros, pagos y terceros repetidos, compras sin retención, meses sin cerrar, lecturas sin registrar, productos que no se pueden facturar y gastos en cuentas raras. Cada hallazgo trae su certeza: AFIRMADO es un hecho comprobado; VISTA y DEDUCIDA piden criterio. No corrige nada.',
+            input_schema: { type: 'object', properties: {} },
           },
         ]
       : []),
@@ -231,6 +253,7 @@ export function etiquetaDeConsulta(nombre: string): string {
   if (origen !== undefined) return ORIGENES[origen].etiqueta;
   if (nombre === SALDOS) return 'Saldos de caja y bancos';
   if (nombre === EXISTENCIAS) return 'Existencias';
+  if (nombre === REVISAR) return 'Revisión de los libros';
   if (nombre === BUSCAR) return 'Búsqueda';
   // Las de proponer (paso 7) no son consultas: la burbuja dice que verifica.
   if (nombre === 'proponer_cobro') return 'Verificando el cobro';
@@ -245,6 +268,36 @@ export function saldosParaModelo(saldos: readonly SaldoDeMedio[]): string {
       ? { aviso: 'La empresa no tiene cajas ni cuentas bancarias activas.' }
       : saldos,
   );
+}
+
+/**
+ * Lo que encontró la revisión, como lo lee el modelo: sin ids —no le sirven
+ * para nada y no tiene que repetirlos—, con el título, el detalle y las cifras.
+ */
+export function revisionParaModelo(
+  hallazgos: readonly Hallazgo[],
+  roles: readonly RolCodigo[] = [],
+): string {
+  return JSON.stringify({
+    // Quién pregunta, como dato: sin esto el modelo le decía al contador que
+    // «lo revise con su contador». Es quien lleva los libros, o su director.
+    rolesDeQuienPregunta: roles,
+    ...(hallazgos.length === 0
+      ? {
+          aviso:
+            'La revisión no encontró nada: los asientos cuadran, el kardex, las cajas y los bancos coinciden con sus cuentas, y no hay facturas, cobros, pagos ni terceros repetidos.',
+        }
+      : {
+          hallazgos: hallazgos.map((h) => ({
+            grupo: h.grupo,
+            // Cómo tiene que decirlo: AFIRMADO es un hecho; VISTA y DEDUCIDA
+            // son criterio, y se dicen con «me parece».
+            certeza: h.certeza,
+            titulo: h.titulo,
+            detalle: h.detalle,
+          })),
+        }),
+  });
 }
 
 /** Las existencias, como las lee el modelo. */

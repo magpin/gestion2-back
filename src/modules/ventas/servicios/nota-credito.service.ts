@@ -89,6 +89,13 @@ export class NotaCreditoService {
           'Solo se puede emitir una nota crédito sobre una factura vigente (no anulada).',
         );
       }
+      // Lo que vendió está en los saldos iniciales, no en un asiento: una nota
+      // reversaría un ingreso que el sistema nunca registró.
+      if (factura.historica) {
+        throw new BadRequestException(
+          'Esa factura es histórica: se emitió antes de usar el sistema y no tiene asiento que corregir. La nota va en el sistema donde se emitió.',
+        );
+      }
 
       const cuentaDevoluciones = await this.nucleo.cuenta(
         ctx,

@@ -8,6 +8,7 @@ import { InventarioApi } from '../../inventario/inventario.api';
 import type { ClaveOrigen } from '../../reportes/reglas/catalogo';
 import { aMano } from '../../reportes/reglas/rango';
 import { ArmadorService } from '../../reportes/servicios/armador.service';
+import { RevisionApi } from '../../revision/revision.api';
 import { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import type { HerramientasDelTurno } from '../proveedores/conversador.puerto';
 import {
@@ -19,6 +20,9 @@ import {
   herramientasPara,
   origenDeHerramienta,
   resultadoParaModelo,
+  REVISAR,
+  revisionParaModelo,
+  ROLES_REVISION,
   ROLES_EXISTENCIAS,
   ROLES_SALDOS,
   SALDOS,
@@ -60,7 +64,9 @@ class NoPermitida extends Error {}
  * - los reportes por `ArmadorService.correr`, que vuelve a mirar los roles
  *   adentro;
  * - los saldos por `TesoreriaApi`;
- * - las existencias por `InventarioApi`.
+ * - las existencias por `InventarioApi`;
+ * - la revisión de errores por `RevisionApi`, que es lo que corre
+ *   `GET /revision`.
  *
  * Esas dos fachadas no miran roles, como tampoco los servicios detrás de sus
  * controladores. Por eso se miran acá, con las mismas listas.
@@ -76,6 +82,7 @@ export class ConsultasService {
     private readonly tesoreria: TesoreriaApi,
     private readonly inventario: InventarioApi,
     private readonly propuestas: PropuestasService,
+    private readonly revision: RevisionApi,
   ) {}
 
   /**
@@ -186,6 +193,16 @@ export class ConsultasService {
       return {
         texto: existenciasParaModelo(existencias),
         filas: existencias.length,
+      };
+    }
+
+    if (nombre === REVISAR) {
+      if (!ctx.roles.some((r) => ROLES_REVISION.includes(r)))
+        throw new NoPermitida();
+      const hallazgos = await this.revision.revisar(ctx);
+      return {
+        texto: revisionParaModelo(hallazgos, ctx.roles),
+        filas: hallazgos.length,
       };
     }
 

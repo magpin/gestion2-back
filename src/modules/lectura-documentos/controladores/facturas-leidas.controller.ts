@@ -13,7 +13,10 @@ import {
   Roles,
 } from '../../../common/auth/decoradores';
 import type { CtxEmpresa } from '../../../common/ctx';
-import { RegistrarCompraLeidaDto } from '../dto/lectura.dto';
+import {
+  DescartarLecturaDto,
+  RegistrarCompraLeidaDto,
+} from '../dto/lectura.dto';
 import { ConfirmacionFacturaService } from '../servicios/confirmacion-factura.service';
 import { DocumentoService } from '../servicios/documento.service';
 
@@ -68,5 +71,20 @@ export class FacturasLeidasController {
     @Body() dto: RegistrarCompraLeidaDto,
   ) {
     return this.facturas.confirmar(ctx, id, dto);
+  }
+
+  /**
+   * La deja sin registrar, con el motivo: «es la misma, descartala» sobre un
+   * posible duplicado. Los mismos roles que registrarla: decidir que no se
+   * registra es la otra mitad de la misma decisión.
+   */
+  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR', 'COMPRAS')
+  @Post(':id/descartar')
+  descartar(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DescartarLecturaDto,
+  ) {
+    return this.documentos.descartar(ctx, id, 'FACTURA_COMPRA', dto.motivo);
   }
 }

@@ -7,9 +7,15 @@ import {
   ContabilidadApi,
   type VistaAsiento,
 } from '../contabilidad/contabilidad.api';
+import type { CrearFacturaDto } from './dto/factura.dto';
 import type { CobrarDto } from './dto/venta.dto';
 import {
+  FacturaService,
+  type OrigenDeLaFactura,
+} from './servicios/factura.service';
+import {
   VentaDocumentoService,
+  type VentaDocumentoDetalle,
   type VentaDocumentoResumen,
 } from './servicios/venta-documento.service';
 
@@ -39,7 +45,24 @@ export class VentasApi {
     private readonly ventas: VentaDocumentoService,
     private readonly tx: TxService,
     private readonly contabilidad: ContabilidadApi,
+    private readonly facturas: FacturaService,
   ) {}
+
+  /**
+   * Emite una factura. **La misma puerta que `POST /facturas`**: el mismo
+   * precio de lista, la misma resolución, el mismo asiento y el mismo kardex.
+   *
+   * Existe para que `lectura-documentos` emita la factura que una persona armó
+   * a partir de un pedido leído, dejando dicho de qué pedido salió —y un
+   * pedido se factura una vez: lo impide un índice único de la 0064—.
+   */
+  crearFactura(
+    ctx: CtxEmpresa,
+    dto: CrearFacturaDto,
+    origen: OrigenDeLaFactura,
+  ): Promise<VentaDocumentoDetalle> {
+    return this.facturas.crear(ctx, dto, origen);
+  }
 
   /**
    * Una factura vigente por su número, como sale en la cartera y en la

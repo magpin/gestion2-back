@@ -21,6 +21,7 @@ import {
 import { ROLES, type CtxEmpresa } from '../../../common/ctx';
 import { ConfirmarPropuestaDto, TurnoDto } from '../dto/conversacion.dto';
 import { ConversacionService } from '../servicios/conversacion.service';
+import { PendientesService } from '../servicios/pendientes.service';
 import { PropuestasService } from '../servicios/propuestas.service';
 
 /**
@@ -41,6 +42,7 @@ export class ConversacionController {
   constructor(
     private readonly conversacion: ConversacionService,
     private readonly propuestas: PropuestasService,
+    private readonly pendientes: PendientesService,
     // `@Optional()` por lo mismo que en el servicio: las pruebas que arman
     // este controlador a mano no tienen por qué saber de pausas.
     @Optional() private readonly pausa?: PausaIaService,
@@ -100,6 +102,21 @@ export class ConversacionController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.propuestas.descartar(ctx, id);
+  }
+
+  /**
+   * Lo que espera una decisión de quien pregunta: el número de la barra lateral
+   * y la píldora del encabezado. Antes de `:id`, que si no se tragaría la ruta.
+   */
+  @Get('pendientes')
+  pendientesDe(@ActorEmpresa() ctx: CtxEmpresa) {
+    return this.pendientes.contar(ctx);
+  }
+
+  /** «María esta semana», la tarjeta del tablero. También antes de `:id`. */
+  @Get('semana')
+  semana(@ActorEmpresa() ctx: CtxEmpresa) {
+    return this.pendientes.semana(ctx);
   }
 
   /** Todas las de quien pregunta, para la columna de la izquierda. */

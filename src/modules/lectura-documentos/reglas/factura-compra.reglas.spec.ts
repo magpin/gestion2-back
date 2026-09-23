@@ -6,7 +6,9 @@ import {
 } from './factura-compra.reglas';
 
 /** Una factura mínima que cuadra: un renglón de 100.000 al 19 %. */
-const factura = (cambios: Partial<FacturaCompraLeida> = {}): FacturaCompraLeida => ({
+const factura = (
+  cambios: Partial<FacturaCompraLeida> = {},
+): FacturaCompraLeida => ({
   proveedor: { nombre: 'JALTECH SOLUCIONES S.A.S.', nit: '900378652' },
   numero: '215183',
   prefijo: null,
@@ -36,10 +38,21 @@ describe('comprobar — el código suma, el modelo transcribe', () => {
   // se salta un renglón de una factura de sesenta.
   it('un renglón que falta se ve en el subtotal', () => {
     const c = comprobar(
-      factura({ impreso: { subtotal: 150_000, iva: 28_500, retencion: 0, total: 178_500 } }),
+      factura({
+        impreso: {
+          subtotal: 150_000,
+          iva: 28_500,
+          retencion: 0,
+          total: 178_500,
+        },
+      }),
     );
     expect(cuadra(c)).toBe(false);
-    expect(c[0]).toMatchObject({ cuadra: false, calculado: 100_000, impreso: 150_000 });
+    expect(c[0]).toMatchObject({
+      cuadra: false,
+      calculado: 100_000,
+      impreso: 150_000,
+    });
   });
 
   it('una cifra mal leída en un renglón se ve aunque el subtotal impreso sea el bueno', () => {
@@ -64,14 +77,24 @@ describe('comprobar — el código suma, el modelo transcribe', () => {
           total: 1_131_573,
         },
       ],
-      impreso: { subtotal: 1_131_573, iva: 214_999, retencion: 0, total: 1_346_572 },
+      impreso: {
+        subtotal: 1_131_573,
+        iva: 214_999,
+        retencion: 0,
+        total: 1_346_572,
+      },
     });
     expect(cuadra(comprobar(f))).toBe(true);
   });
 
   it('descuenta la retención del total', () => {
     const f = factura({
-      impreso: { subtotal: 100_000, iva: 19_000, retencion: 2_500, total: 116_500 },
+      impreso: {
+        subtotal: 100_000,
+        iva: 19_000,
+        retencion: 2_500,
+        total: 116_500,
+      },
     });
     expect(cuadra(comprobar(f))).toBe(true);
   });

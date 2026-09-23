@@ -17,7 +17,9 @@ export type FormaDeCruce =
   | 'CODIGO'
   | 'NOMBRE_EXACTO'
   | 'UNICA_COINCIDENCIA'
-  | 'NIT';
+  | 'NIT'
+  /** Lo contestó una persona en una factura anterior del mismo proveedor. */
+  | 'APRENDIDO';
 
 /**
  * Lo que se dice de un renglón o de la cabecera después de buscarlo.
@@ -155,12 +157,19 @@ export function mismoNit(guardado: string, leido: string): boolean {
   const b = leido.replace(/\D/g, '');
   if (a === '' || b === '') return false;
   if (a === b) return true;
-  return Math.abs(a.length - b.length) === 1 && (a.startsWith(b) || b.startsWith(a));
+  return (
+    Math.abs(a.length - b.length) === 1 && (a.startsWith(b) || b.startsWith(a))
+  );
 }
 
 /** Elige el proveedor. Por NIT es identidad; por nombre **no se elige nunca**. */
 export function elegirProveedor<
-  T extends { id: string; numeroDocumento: string; nombre: string; esProveedor: boolean },
+  T extends {
+    id: string;
+    numeroDocumento: string;
+    nombre: string;
+    esProveedor: boolean;
+  },
 >(leido: { nombre: string; nit: string | null }, candidatos: T[]): Cruce<T> {
   if (leido.nit === null) {
     // Dos empresas pueden llamarse casi igual y una compra le queda a la
@@ -170,7 +179,9 @@ export function elegirProveedor<
     );
   }
 
-  const porNit = candidatos.filter((c) => mismoNit(c.numeroDocumento, leido.nit!));
+  const porNit = candidatos.filter((c) =>
+    mismoNit(c.numeroDocumento, leido.nit!),
+  );
   if (porNit.length !== 1) {
     return sinEncontrar(
       porNit.length === 0
@@ -192,11 +203,55 @@ export function elegirProveedor<
 }
 
 /**
+ * Elige el cliente de un pedido. La misma regla que el proveedor —por NIT es
+ * identidad, por nombre no se elige nunca—, mirando que esté marcado como
+ * cliente: facturarle a un tercero que no lo está, la venta lo rechaza.
+ */
+export function elegirCliente<
+  T extends {
+    id: string;
+    numeroDocumento: string;
+    nombre: string;
+    esCliente: boolean;
+  },
+>(leido: { nombre: string; nit: string | null }, candidatos: T[]): Cruce<T> {
+  if (leido.nit === null) {
+    return sinEncontrar(
+      `El pedido no trae el NIT de «${leido.nombre}». ¿Quién es el cliente?`,
+    );
+  }
+
+  const porNit = candidatos.filter((c) =>
+    mismoNit(c.numeroDocumento, leido.nit!),
+  );
+  if (porNit.length !== 1) {
+    return sinEncontrar(
+      porNit.length === 0
+        ? `No tengo ningún tercero con el NIT ${leido.nit}. Hay que crearlo como cliente antes de facturar.`
+        : `Hay ${porNit.length} terceros con el NIT ${leido.nit}. ¿Cuál es?`,
+    );
+  }
+
+  const [cliente] = porNit;
+  if (!cliente.esCliente) {
+    return sinEncontrar(
+      `«${cliente.nombre}» está en el sistema pero no figura como cliente. Hay que marcarlo antes de facturar.`,
+    );
+  }
+
+  return encontrado(cliente, 'NIT', `Por el NIT ${leido.nit}.`);
+}
+
+/**
  * Las clases del PUC contra las que una compra se debita. Las mismas de
  * `compra.service.ts`: gastos y costos (5, 6, 7) y los activos que se compran
  * (14 a 17). La clase 1 entera dejaría mandar un arriendo a un banco.
  */
 const CLASES_DE_GASTO = ['5', '6', '7', '14', '15', '16', '17'];
+
+export function esCuentaDeGasto(codigo: string): boolean {
+  return CLASES_DE_GASTO.some((clase) => codigo.startsWith(clase));
+}
 
 /**
  * Elige la cuenta de un renglón de gasto.
@@ -229,7 +284,7 @@ export function elegirCuenta<T extends Candidato & { esAuxiliar: boolean }>(
       `La cuenta ${codigo} no recibe movimientos: es de agrupación.`,
     );
   }
-  if (!CLASES_DE_GASTO.some((clase) => codigo.startsWith(clase))) {
+  if (!esCuentaDeGasto(codigo)) {
     return sinEncontrar(
       `La cuenta ${codigo} no es de gasto ni de un activo que se compre.`,
     );

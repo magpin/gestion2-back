@@ -107,6 +107,50 @@ export class EmpresaLegalService {
     await this.cerrarFila(ctx, 'empresa_actividad_economica', id, fechaFin);
   }
 
+  /**
+   * Completa la tarifa de ICA de una actividad vigente que no la tiene —la
+   * lectura del RUT no la trae—. **Solo completa**: cambiar una tarifa que ya
+   * estaba es otro hecho, con otra fecha, y se hace cerrando la actividad y
+   * abriéndola con la tarifa nueva.
+   */
+  async completarTarifaIca(
+    ctx: CtxEmpresa,
+    id: string,
+    tarifaIcaPorMil: number,
+  ): Promise<void> {
+    await this.tx.enContexto(ctx, async (t) => {
+      const [actual] = filas<{
+        tarifa_ica_por_mil: string | null;
+        fecha_fin: string | null;
+      }>(
+        await t.query(
+          'SELECT tarifa_ica_por_mil, fecha_fin FROM empresa_actividad_economica WHERE id = $1 FOR UPDATE',
+          [id],
+        ),
+      );
+      if (actual === undefined) {
+        throw new NotFoundException('Esa actividad no existe.');
+      }
+      if (actual.fecha_fin !== null) {
+        throw new BadRequestException('Esa actividad ya está cerrada.');
+      }
+      // Una tarifa imposible —más de 30 por mil— no es un hecho con fecha: es un
+      // error de tecleo, y se corrige acá. Una tarifa razonable no se pisa.
+      if (
+        actual.tarifa_ica_por_mil !== null &&
+        Number(actual.tarifa_ica_por_mil) <= 30
+      ) {
+        throw new BadRequestException(
+          'Esa actividad ya tiene tarifa de ICA. Para cambiarla, cerrala y abrila con la tarifa nueva.',
+        );
+      }
+      await t.query(
+        'UPDATE empresa_actividad_economica SET tarifa_ica_por_mil = $2 WHERE id = $1',
+        [id, tarifaIcaPorMil],
+      );
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Responsabilidades del RUT (casilla 53)
   // ---------------------------------------------------------------------------

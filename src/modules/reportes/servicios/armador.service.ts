@@ -124,7 +124,7 @@ export class ArmadorService {
   exigirOrigen(ctx: CtxEmpresa, origen: ClaveOrigen): void {
     if (!ORIGENES[origen].roles.some((r) => ctx.roles.includes(r))) {
       throw new ForbiddenException(
-        `Este reporte es de ${ORIGENES[origen].etiqueta.toLowerCase()} y tu rol no la incluye. Pídele acceso a quien administra la empresa.`,
+        `Este reporte es de ${ORIGENES[origen].etiqueta.toLowerCase()} y tu rol no la incluye. Pedile acceso a quien administra la empresa.`,
       );
     }
   }

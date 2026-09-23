@@ -26,7 +26,11 @@ export interface ResultadoAnalisis {
 }
 import type { Documento } from './documento.service';
 import { DocumentoService, exigirClaveDeLaEmpresa } from './documento.service';
-import { CruceService, type FacturaCruzada } from './cruce.service';
+import {
+  CruceService,
+  type FacturaCruzada,
+  type PedidoCruzado,
+} from './cruce.service';
 import { ProgresoService } from './progreso.service';
 
 /**
@@ -94,7 +98,7 @@ export class ExtractorService {
     exigirClaveDeLaEmpresa(ctx, clave);
     await this.pausa?.exigirActiva(ctx.tenantId, 'LECTURA');
     const archivo = await this.almacenamiento.descargar(clave);
-    const analisis = await this.extractor.analizar(archivo);
+    const analisis = await this.reconocer(ctx, archivo);
     // Se dice qué es igual, aunque quien lo subió no pueda mandarlo a leer:
     // el análisis ya se pagó, y «esto es un RUT, pero no es lo tuyo» es mejor
     // respuesta que un 403 seco sobre un archivo que ya está arriba.
@@ -108,6 +112,30 @@ export class ExtractorService {
       clase: analisis.clase,
       resumen: analisis.resumen,
     };
+  }
+
+  /**
+   * Qué es un archivo ya bajado, sabiendo de qué empresa es quien lo sube: es lo
+   * que separa una factura de compra de una venta propia.
+   */
+  async reconocer(ctx: CtxEmpresa, archivo: ArchivoParaLeer) {
+    const empresa = await this.documentos.empresaDe(ctx);
+    return this.extractor.analizar(archivo, empresa ?? undefined);
+  }
+
+  /** Si quien pregunta puede mandar a leer este tipo. Sin excepción: el lote lo dice. */
+  puedeLeer(ctx: CtxEmpresa, tipo: TipoDocumento): boolean {
+    return puedeMandarALeer(ctx, tipo);
+  }
+
+  /**
+   * Lee una lectura ya registrada y **la espera**. La usa el lote, que lee de a
+   * uno y cuenta él cuántos van. Nunca tira: la fila termina en LEIDO o FALLO
+   * igual que por `encolar`.
+   */
+  async leerYEsperar(ctx: CtxEmpresa, documento: Documento): Promise<void> {
+    exigirRolPara(ctx, documento.tipo);
+    await this.leer(ctx, documento);
   }
 
   /**
@@ -158,6 +186,9 @@ export class ExtractorService {
       const archivo = await this.almacenamiento.descargar(
         documento.claveAlmacenamiento,
       );
+      // La huella de lo que se leyó, para que el historial del asiento pueda
+      // mostrar que el archivo de hoy es el mismo de entonces.
+      await this.documentos.guardarHuella(ctx, documento.id, archivo.contenido);
 
       // Una factura se lee por otro camino: devuelve cabecera con renglones y
       // no campos sueltos, y el código comprueba sus totales. Es la única
@@ -165,6 +196,12 @@ export class ExtractorService {
       // lo extraído, o FALLO con su motivo—.
       if (documento.tipo === 'FACTURA_COMPRA') {
         await this.leerFactura(ctx, documento, archivo, corte.signal);
+        return;
+      }
+      // El pedido de un cliente es la misma forma —cabecera con renglones—,
+      // y termina igual: LEIDO con el borrador de la factura, o FALLO.
+      if (documento.tipo === 'PEDIDO_VENTA') {
+        await this.leerPedido(ctx, documento, archivo, corte.signal);
         return;
       }
 
@@ -311,6 +348,84 @@ export class ExtractorService {
     });
   }
 
+  /**
+   * La rama del pedido. Como la de la factura: si el cruce se cae, la lectura
+   * se guarda igual —leer es lo que costó dinero— con una pregunta que lo dice.
+   */
+  private async leerPedido(
+    ctx: CtxEmpresa,
+    documento: Documento,
+    archivo: ArchivoParaLeer,
+    corte: AbortSignal,
+  ): Promise<void> {
+    const resultado = await this.extractor.leerPedido({ archivo, corte });
+
+    if (!resultado.leido) {
+      await this.documentos.marcarFallo(ctx, documento.id, resultado);
+      this.progreso.emitir(ctx.empresaId, {
+        etapa: 'ERROR',
+        documento: documento.tipo,
+        documentoId: documento.id,
+        mensaje: resultado.motivo,
+        datos: [],
+      });
+      this.log.warn(
+        `Lectura ${documento.id} (pedido) terminó en ${resultado.clase}.`,
+      );
+      return;
+    }
+
+    let cruzado: PedidoCruzado | null;
+    try {
+      cruzado = await this.cruce.cruzarPedido(
+        ctx,
+        resultado.pedido,
+        resultado.comprobaciones,
+      );
+    } catch (error: unknown) {
+      this.log.error(
+        `No pude cruzar el pedido ${documento.id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      cruzado = null;
+    }
+
+    await this.documentos.guardarLeido(
+      ctx,
+      documento.id,
+      cruzado ?? {
+        pedido: resultado.pedido,
+        comprobaciones: resultado.comprobaciones,
+        cliente: null,
+        renglones: [],
+        lineas: [],
+        juntadas: 0,
+        preguntas: [
+          {
+            sobre: 'cruce',
+            texto:
+              'Leí el pedido pero no pude buscar el cliente ni los productos. Probá de nuevo.',
+          },
+        ],
+        completa: false,
+      },
+      resultado.medicion,
+    );
+
+    this.progreso.emitir(ctx.empresaId, {
+      etapa: 'LISTO',
+      documento: documento.tipo,
+      documentoId: documento.id,
+      mensaje:
+        cruzado === null
+          ? 'Leí el pedido, pero no pude buscar el cliente ni los productos.'
+          : cruzado.preguntas.length === 0
+            ? `Leí el pedido: ${cruzado.renglones.length} renglones, listo para armar la factura.`
+            : `Leí el pedido: ${cruzado.renglones.length} renglones, y me ${cruzado.preguntas.length === 1 ? 'queda 1 pregunta' : `quedan ${cruzado.preguntas.length} preguntas`}.`,
+      datos: [],
+    });
+  }
+
   private async marcarFalloSeguro(
     ctx: CtxEmpresa,
     documento: Documento,
@@ -354,7 +469,10 @@ function puedeMandarALeer(ctx: CtxEmpresa, tipo: TipoDocumento): boolean {
   const permitidos: RolCodigo[] =
     tipo === 'FACTURA_COMPRA'
       ? ['ADMIN_TENANT', 'DIRECTOR', 'CONTADOR', 'COMPRAS']
-      : ['ADMIN_TENANT', 'DIRECTOR', 'CONTADOR'];
+      : tipo === 'PEDIDO_VENTA'
+        ? // Los de `POST /facturas`: leer un pedido es el primer paso de facturar.
+          ['DIRECTOR', 'VENTAS']
+        : ['ADMIN_TENANT', 'DIRECTOR', 'CONTADOR'];
   return ctx.roles.some((rol) => permitidos.includes(rol));
 }
 
@@ -363,7 +481,9 @@ function exigirRolPara(ctx: CtxEmpresa, tipo: TipoDocumento): void {
   throw new ForbiddenException(
     tipo === 'FACTURA_COMPRA'
       ? 'No tenés permiso para registrar compras.'
-      : 'No tenés permiso para configurar la empresa.',
+      : tipo === 'PEDIDO_VENTA'
+        ? 'No tenés permiso para facturar.'
+        : 'No tenés permiso para configurar la empresa.',
   );
 }
 

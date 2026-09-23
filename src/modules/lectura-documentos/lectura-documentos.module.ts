@@ -2,12 +2,16 @@ import { Module } from '@nestjs/common';
 
 import { AlmacenamientoModule } from '../almacenamiento/almacenamiento.module';
 import { ComprasModule } from '../compras/compras.module';
+import { VentasModule } from '../ventas/ventas.module';
 import { InventarioModule } from '../inventario/inventario.module';
 import { NucleoModule } from '../nucleo/nucleo.module';
 import { ConfirmacionController } from './controladores/confirmacion.controller';
 import { DocumentosController } from './controladores/documentos.controller';
 import { ExtraccionController } from './controladores/extraccion.controller';
 import { FacturasLeidasController } from './controladores/facturas-leidas.controller';
+import { AltasController } from './controladores/altas.controller';
+import { LotesController } from './controladores/lotes.controller';
+import { PedidosLeidosController } from './controladores/pedidos-leidos.controller';
 import { LecturaDocumentosApi } from './lectura-documentos.api';
 import { ClaudeProveedor } from './proveedores/claude.proveedor';
 import { EXTRACTOR_PUERTO } from './proveedores/extractor.puerto';
@@ -16,6 +20,9 @@ import { ConfirmacionService } from './servicios/confirmacion.service';
 import { CruceService } from './servicios/cruce.service';
 import { DocumentoService } from './servicios/documento.service';
 import { ExtractorService } from './servicios/extractor.service';
+import { FacturacionPedidoService } from './servicios/facturacion-pedido.service';
+import { LoteService } from './servicios/lote.service';
+import { MemoriaService } from './servicios/memoria.service';
 import { ProgresoService } from './servicios/progreso.service';
 
 /**
@@ -37,12 +44,16 @@ import { ProgresoService } from './servicios/progreso.service';
     NucleoModule,
     InventarioModule,
     ComprasModule,
+    VentasModule,
   ],
   controllers: [
     DocumentosController,
     ExtraccionController,
     ConfirmacionController,
     FacturasLeidasController,
+    PedidosLeidosController,
+    LotesController,
+    AltasController,
   ],
   providers: [
     DocumentoService,
@@ -51,6 +62,9 @@ import { ProgresoService } from './servicios/progreso.service';
     ConfirmacionService,
     ConfirmacionFacturaService,
     CruceService,
+    FacturacionPedidoService,
+    MemoriaService,
+    LoteService,
     { provide: EXTRACTOR_PUERTO, useClass: ClaudeProveedor },
     LecturaDocumentosApi,
   ],

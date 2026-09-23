@@ -728,10 +728,14 @@ describe('VentaDocumentoService.anular', () => {
       asiento_id: 'asiento-1',
     });
     const { fake: contabilidad, anular: anularAsiento } = contabilidadFalso();
+    const revertir = jest.fn(() => Promise.resolve({ movimientos: 2 }));
     const servicio = new VentaDocumentoService(
       txServiceFalso(tx),
       nucleoFalso(),
-      inventarioFalso(),
+      {
+        ...inventarioFalso(),
+        revertirPorAnulacion: revertir,
+      } as unknown as ConstructorParameters<typeof VentaDocumentoService>[2],
       contabilidad,
       {} as never, // TesoreriaApi: no la usa anular.
     );
@@ -742,6 +746,15 @@ describe('VentaDocumentoService.anular', () => {
       ctx,
       'asiento-1',
       'Error de digitación',
+      tx,
+    );
+    // La mercancía vuelve al kardex con el mismo asiento, en la misma
+    // transacción. Antes no volvía: la SETT-13 dejó 7 unidades descontadas.
+    expect(revertir).toHaveBeenCalledWith(
+      ctx,
+      'asiento-1',
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      expect.stringContaining('Error de digitación'),
       tx,
     );
     expect(actualizaciones).toHaveLength(1);

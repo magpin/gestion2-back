@@ -98,6 +98,11 @@ export class NotaDebitoService {
           'Solo se puede emitir una nota débito sobre una factura vigente (no anulada).',
         );
       }
+      if (factura.historica) {
+        throw new BadRequestException(
+          'Esa factura es histórica: se emitió antes de usar el sistema y no tiene asiento que corregir. La nota va en el sistema donde se emitió.',
+        );
+      }
 
       // Una sola vez para todas las líneas, igual que en la factura.
       const responsableIva = await this.nucleo.esResponsableDeIva(

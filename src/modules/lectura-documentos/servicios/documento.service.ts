@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   BadRequestException,
   Injectable,
@@ -22,7 +24,8 @@ import type {
  * es lo único que lo escribe.
  */
 
-export type EstadoDocumento = 'EN_COLA' | 'LEYENDO' | 'LEIDO' | 'FALLO';
+export type EstadoDocumento =
+  'EN_COLA' | 'LEYENDO' | 'LEIDO' | 'FALLO' | 'DESCARTADO';
 
 export interface Documento {
   id: string;
@@ -52,9 +55,13 @@ export interface Documento {
    * el JOIN a las tres de configuración, que nunca terminan en una compra.
    */
   compra: { id: string; numero: string; estado: string } | null;
+  /** Lo mismo para un pedido: en qué factura de venta terminó. */
+  venta: { id: string; numero: string; estado: string } | null;
   error: string | null;
   creadoEn: string;
   leidoEn: string | null;
+  /** Por qué una persona la dejó sin registrar (0067). Solo en DESCARTADO. */
+  motivoDescarte: string | null;
 }
 
 interface FilaDocumento {
@@ -66,9 +73,13 @@ interface FilaDocumento {
   compra_id?: string | null;
   compra_numero?: string | null;
   compra_estado?: string | null;
+  venta_id?: string | null;
+  venta_numero?: string | null;
+  venta_estado?: string | null;
   error: string | null;
   creado_en: Date | string;
   leido_en: Date | string | null;
+  motivo_descarte?: string | null;
 }
 
 /** El prefijo del bucket donde viven los documentos de una empresa. */
@@ -136,7 +147,7 @@ export class DocumentoService {
         await t.query(
           `SELECT DISTINCT ON (tipo) *
              FROM documento_leido
-            WHERE empresa_id = $1 AND tipo <> 'FACTURA_COMPRA'
+            WHERE empresa_id = $1 AND tipo NOT IN ('FACTURA_COMPRA', 'PEDIDO_VENTA')
             ORDER BY tipo, creado_en DESC`,
           [ctx.empresaId],
         ),
@@ -174,6 +185,32 @@ export class DocumentoService {
     });
   }
 
+  /**
+   * Los últimos pedidos de clientes leídos, con la factura en que terminó cada
+   * uno. Una anulada no cuenta: el pedido vuelve a quedar por facturar, que es
+   * lo mismo que dice el índice único de la 0064.
+   */
+  async listarPedidos(ctx: CtxEmpresa, tope = 50): Promise<Documento[]> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const encontrados = filas<FilaDocumento>(
+        await t.query(
+          `SELECT d.*,
+                  v.id     AS venta_id,
+                  concat_ws('-', nullif(v.prefijo, ''), v.consecutivo::text) AS venta_numero,
+                  v.estado AS venta_estado
+             FROM documento_leido d
+             LEFT JOIN venta_documento v
+               ON v.documento_leido_id = d.id AND v.estado <> 'ANULADA'
+            WHERE d.empresa_id = $1 AND d.tipo = 'PEDIDO_VENTA'
+            ORDER BY d.creado_en DESC
+            LIMIT $2`,
+          [ctx.empresaId, tope],
+        ),
+      );
+      return encontrados.map(aDocumento);
+    });
+  }
+
   async porId(ctx: CtxEmpresa, id: string): Promise<Documento> {
     return this.tx.enContexto(ctx, async (t) => {
       const encontrada = fila<FilaDocumento>(
@@ -183,6 +220,79 @@ export class DocumentoService {
         throw new NotFoundException('Ese documento no existe.');
       }
       return aDocumento(encontrada);
+    });
+  }
+
+  /** Cómo se llama y qué NIT tiene la empresa de quien pregunta. */
+  async empresaDe(
+    ctx: CtxEmpresa,
+  ): Promise<{ razonSocial: string; nit: string } | null> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const e = fila<{ razon_social: string; nit: string }>(
+        await t.query('SELECT razon_social, nit FROM empresa WHERE id = $1', [
+          ctx.empresaId,
+        ]),
+      );
+      return e === undefined
+        ? null
+        : { razonSocial: e.razon_social, nit: e.nit };
+    });
+  }
+
+  /**
+   * Deja una lectura sin registrar, con quién, cuándo y por qué (0067): «es la
+   * misma, descartala» sobre un posible duplicado.
+   *
+   * Solo una leída y sin registrar: una que ya es compra o factura se corrige
+   * anulando ese documento, no escondiendo de dónde salió.
+   */
+  async descartar(
+    ctx: CtxEmpresa,
+    id: string,
+    tipo: 'FACTURA_COMPRA' | 'PEDIDO_VENTA',
+    motivo: string,
+  ): Promise<Documento> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const actual = fila<FilaDocumento & { registrada: boolean }>(
+        await t.query(
+          `SELECT d.*,
+                  EXISTS (SELECT 1 FROM compra_documento c
+                           WHERE c.documento_leido_id = d.id AND c.estado <> 'ANULADA')
+               OR EXISTS (SELECT 1 FROM venta_documento v
+                           WHERE v.documento_leido_id = d.id AND v.estado <> 'ANULADA')
+                  AS registrada
+             FROM documento_leido d
+            WHERE d.id = $1 AND d.tipo = $2
+            FOR UPDATE`,
+          [id, tipo],
+        ),
+      );
+      if (actual === undefined) {
+        throw new NotFoundException('Ese documento no existe.');
+      }
+      if (actual.registrada) {
+        throw new BadRequestException(
+          'Ya está registrado: para dejarlo sin efecto, anulá el documento que se registró.',
+        );
+      }
+      if (actual.estado !== 'LEIDO') {
+        throw new BadRequestException(
+          actual.estado === 'DESCARTADO'
+            ? 'Ya estaba descartado.'
+            : 'Solo se descarta lo que ya se leyó.',
+        );
+      }
+      const hecho = fila<FilaDocumento>(
+        await t.query(
+          `UPDATE documento_leido
+              SET estado = 'DESCARTADO', descartado_en = now(),
+                  descartado_por = $2, motivo_descarte = $3
+            WHERE id = $1
+            RETURNING *`,
+          [id, ctx.usuarioId, motivo.trim()],
+        ),
+      );
+      return aDocumento(hecho!);
     });
   }
 
@@ -217,6 +327,28 @@ export class DocumentoService {
         [id, JSON.stringify(datos), ...columnasDe(medicion)],
       ),
     );
+  }
+
+  /**
+   * El sha256 del archivo (0066). Se guarda al leer, que es cuando el archivo
+   * ya está bajado; los documentos anteriores la calculan la primera vez que
+   * alguien abre el historial de su asiento. Si ya la tenía no se pisa: la
+   * huella es de lo que se leyó, no de lo que haya hoy en el bucket.
+   */
+  async guardarHuella(
+    ctx: CtxEmpresa,
+    id: string,
+    contenido: Buffer,
+  ): Promise<string> {
+    const huella = createHash('sha256').update(contenido).digest('hex');
+    await this.tx.enContexto(ctx, (t) =>
+      t.query(
+        `UPDATE documento_leido SET huella_sha256 = $2
+          WHERE id = $1 AND huella_sha256 IS NULL`,
+        [id, huella],
+      ),
+    );
+    return huella;
   }
 
   /**
@@ -265,9 +397,18 @@ function aDocumento(f: FilaDocumento): Documento {
             numero: f.compra_numero ?? '',
             estado: f.compra_estado ?? '',
           },
+    venta:
+      f.venta_id == null
+        ? null
+        : {
+            id: f.venta_id,
+            numero: f.venta_numero ?? '',
+            estado: f.venta_estado ?? '',
+          },
     error: f.error,
     creadoEn: comoTexto(f.creado_en),
     leidoEn: f.leido_en === null ? null : comoTexto(f.leido_en),
+    motivoDescarte: f.motivo_descarte ?? null,
   };
 }
 

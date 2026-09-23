@@ -31,15 +31,31 @@ export interface EventoProgreso {
   datos: DatoExtraido[];
 }
 
+/**
+ * El avance de un lote (0067): cuántos van de cuántos y cuál se está leyendo.
+ * Es el `{ hechos, total, etapa }` que pedía el plan de María (§ 9.4): con
+ * esto la cara dibuja el arco y el encabezado dice «3 de 12».
+ */
+export interface EventoLote {
+  etapa: 'LOTE';
+  loteId: string;
+  total: number;
+  hechos: number;
+  actual: string | null;
+  terminado: boolean;
+}
+
+export type EventoDelFlujo = EventoProgreso | EventoLote;
+
 @Injectable()
 export class ProgresoService {
   private readonly log = new Logger(ProgresoService.name);
-  private readonly canales = new Map<string, Subject<EventoProgreso>>();
+  private readonly canales = new Map<string, Subject<EventoDelFlujo>>();
   private readonly cortes = new Map<string, AbortController>();
 
   /** El flujo de una empresa. Se cierra cuando el último que mira se va. */
-  flujo(empresaId: string): Observable<EventoProgreso> {
-    const canal = this.canales.get(empresaId) ?? new Subject<EventoProgreso>();
+  flujo(empresaId: string): Observable<EventoDelFlujo> {
+    const canal = this.canales.get(empresaId) ?? new Subject<EventoDelFlujo>();
     this.canales.set(empresaId, canal);
 
     return canal.asObservable().pipe(
@@ -64,6 +80,10 @@ export class ProgresoService {
     const corte = new AbortController();
     this.cortes.set(documentoId, corte);
     return corte;
+  }
+
+  emitirLote(empresaId: string, evento: Omit<EventoLote, 'etapa'>): void {
+    this.canales.get(empresaId)?.next({ etapa: 'LOTE', ...evento });
   }
 
   soltarCorte(documentoId: string): void {

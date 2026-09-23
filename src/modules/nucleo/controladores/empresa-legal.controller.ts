@@ -26,6 +26,7 @@ import {
   CerrarVigenciaDto,
   EditarConfiguracionContableDto,
   GuardarHechosOperativosDto,
+  TarifaIcaDto,
 } from '../dto/empresa-legal.dto';
 import { EmpresaLegalService } from '../servicios/empresa-legal.service';
 
@@ -69,6 +70,18 @@ export class EmpresaLegalController {
     @Body() dto: CerrarVigenciaDto,
   ): Promise<void> {
     await this.legal.cerrarActividad(ctx, id, dto.fechaFin);
+  }
+
+  /** Completa la tarifa de ICA de una actividad que se registró sin ella. */
+  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR')
+  @Post('actividades/:id/tarifa-ica')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async completarTarifaIca(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: TarifaIcaDto,
+  ): Promise<void> {
+    await this.legal.completarTarifaIca(ctx, id, dto.tarifaIcaPorMil);
   }
 
   // --- Régimen tributario ----------------------------------------------------

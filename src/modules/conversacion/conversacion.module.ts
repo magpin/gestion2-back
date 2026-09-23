@@ -5,6 +5,7 @@ import { ContabilidadModule } from '../contabilidad/contabilidad.module';
 import { InventarioModule } from '../inventario/inventario.module';
 import { NucleoModule } from '../nucleo/nucleo.module';
 import { ReportesModule } from '../reportes/reportes.module';
+import { RevisionModule } from '../revision/revision.module';
 import { TesoreriaModule } from '../tesoreria/tesoreria.module';
 import { VentasModule } from '../ventas/ventas.module';
 
@@ -13,6 +14,7 @@ import { ClaudeConversador } from './proveedores/claude.conversador';
 import { CONVERSADOR } from './proveedores/conversador.puerto';
 import { ConsultasService } from './servicios/consultas.service';
 import { ConversacionService } from './servicios/conversacion.service';
+import { PendientesService } from './servicios/pendientes.service';
 import { PropuestasService } from './servicios/propuestas.service';
 
 /**
@@ -45,12 +47,14 @@ import { PropuestasService } from './servicios/propuestas.service';
     NucleoModule,
     // Para dejar anotado en el asiento de qué propuesta salió.
     ContabilidadModule,
+    RevisionModule,
   ],
   controllers: [ConversacionController],
   providers: [
     ConversacionService,
     ConsultasService,
     PropuestasService,
+    PendientesService,
     { provide: CONVERSADOR, useClass: ClaudeConversador },
   ],
 })

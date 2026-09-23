@@ -1,5 +1,6 @@
 import {
   calcularEntrada,
+  calcularReversaDeEntrada,
   calcularSalida,
   redondear,
   type SaldoKardex,
@@ -104,5 +105,41 @@ describe('calcularSalida', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.faltante).toBe(0);
+  });
+});
+
+describe('calcularReversaDeEntrada — deshacer una compra al costo con que entró', () => {
+  // Había 10 a 1.000; entraron 10 a 2.000 (promedio 1.500). Anular esa compra
+  // tiene que dejar exactamente lo que había: 10 a 1.000.
+  it('vuelve al saldo de antes de la entrada, no al promedio', () => {
+    const r = calcularReversaDeEntrada(
+      { cantidad: 20, costoPromedio: 1_500 },
+      10,
+      2_000,
+      6,
+      6,
+    );
+    expect(r).toEqual({
+      ok: true,
+      saldo: { cantidad: 10, costoPromedio: 1_000 },
+      valorMovimiento: 20_000,
+      faltante: 0,
+    });
+  });
+
+  it('al promedio habría salido 15.000, y la cuenta dice 20.000', () => {
+    const alPromedio = calcularSalida({ cantidad: 20, costoPromedio: 1_500 }, 10, 6);
+    const exacta = calcularReversaDeEntrada({ cantidad: 20, costoPromedio: 1_500 }, 10, 2_000, 6, 6);
+    expect(alPromedio.ok && exacta.ok && exacta.valorMovimiento - alPromedio.valorMovimiento).toBe(5_000);
+  });
+
+  it('si no queda nada, conserva el promedio', () => {
+    const r = calcularReversaDeEntrada({ cantidad: 10, costoPromedio: 2_000 }, 10, 2_000, 6, 6);
+    expect(r.ok && r.saldo).toEqual({ cantidad: 0, costoPromedio: 2_000 });
+  });
+
+  it('si parte ya salió, no se puede', () => {
+    const r = calcularReversaDeEntrada({ cantidad: 3, costoPromedio: 2_000 }, 10, 2_000, 6, 6);
+    expect(r.ok).toBe(false);
   });
 });

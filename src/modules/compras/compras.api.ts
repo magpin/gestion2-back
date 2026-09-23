@@ -103,13 +103,18 @@ export class ComprasApi {
    * confirmó de una factura leída, sin abrirse un camino propio a la base. Es
    * el mismo criterio con el que ese módulo aplica un RUT por `NucleoApi`: si
    * hubiera dos caminos, habría dos verdades sobre qué es una compra válida.
+   *
+   * Con `tx`, se engancha a la transacción de quien llama: lo que ese módulo
+   * escriba junto con la compra —lo que María aprendió de la factura— entra o
+   * no entra con ella.
    */
   async registrar(
     ctx: CtxEmpresa,
     dto: CrearCompraDto,
     origen?: OrigenDeLaCompra,
+    tx?: Tx,
   ): Promise<CompraDocumentoDetalle> {
-    return this.compras.crear(ctx, dto, origen);
+    return this.compras.crear(ctx, dto, origen, tx);
   }
 
   /** El pago de verdad, en la transacción de quien llama. */

@@ -3,6 +3,7 @@ import type {
   Comprobacion,
   FacturaCompraLeida,
 } from '../reglas/factura-compra.reglas';
+import type { PedidoLeido } from '../reglas/pedido-venta.reglas';
 
 /**
  * La frontera del módulo con el mundo de afuera.
@@ -19,9 +20,7 @@ import type {
  * sueltos**: una lista de `campo · valor` que alimenta un paso del asistente.
  */
 export type TipoDocumentoConfiguracion =
-  | 'RUT'
-  | 'CAMARA_COMERCIO'
-  | 'RESOLUCION_DIAN';
+  'RUT' | 'CAMARA_COMERCIO' | 'RESOLUCION_DIAN';
 
 /**
  * Todo lo que se puede leer. Mismo juego de valores que la columna
@@ -33,7 +32,8 @@ export type TipoDocumentoConfiguracion =
  * `DatoExtraido[]`, que es la forma en la que dos renglones de la misma factura
  * se pisan.
  */
-export type TipoDocumento = TipoDocumentoConfiguracion | 'FACTURA_COMPRA';
+export type TipoDocumento =
+  TipoDocumentoConfiguracion | 'FACTURA_COMPRA' | 'PEDIDO_VENTA';
 
 /**
  * `DUDOSA` **no se aplica nunca**: va a la lista de preguntas. Es el mismo
@@ -157,6 +157,19 @@ export type ResultadoLecturaFactura =
     }
   | FallaLectura;
 
+/**
+ * Lo que salió de leer el pedido de un cliente. Las comprobaciones pueden venir
+ * vacías: un pedido sin precios ni subtotal no tiene contra qué sumarse.
+ */
+export type ResultadoLecturaPedido =
+  | {
+      leido: true;
+      pedido: PedidoLeido;
+      comprobaciones: Comprobacion[];
+      medicion: MedicionLectura;
+    }
+  | FallaLectura;
+
 export interface ExtractorPuerto {
   /**
    * `false` cuando falta la clave. El modo IA entonces no se ofrece y el
@@ -189,17 +202,58 @@ export interface ExtractorPuerto {
   }): Promise<ResultadoLecturaFactura>;
 
   /**
-   * Qué es un archivo cualquiera —PDF, foto, Excel, Word, texto—, dicho en
-   * palabras. Si es uno de los tres que se leen para configurar la empresa,
-   * `tipo` lo dice y la lectura sigue por `leer`. Es una llamada corta y aparte.
+   * El pedido de un cliente, para armar la factura de venta. Misma forma de
+   * llamada que la factura de compra —herramienta forzada, sin avances—, con
+   * su propio esquema: lo que importa acá son las cantidades, no los precios.
    */
-  analizar(archivo: ArchivoParaLeer): Promise<AnalisisArchivo>;
+  leerPedido(entrada: {
+    archivo: ArchivoParaLeer;
+    corte?: AbortSignal;
+  }): Promise<ResultadoLecturaPedido>;
+
+  /**
+   * Qué es un archivo cualquiera —PDF, foto, Excel, Word, texto—, dicho en
+   * palabras. Si es algo que ella lee —los tres de configuración, una factura
+   * de compra o el pedido de un cliente—, `tipo` lo dice y la lectura sigue.
+   * Es una llamada corta y aparte.
+   *
+   * `empresa` es quien usa el sistema: sin saberlo no se distingue una factura
+   * que un proveedor le emitió de una que ella misma emitió.
+   */
+  analizar(
+    archivo: ArchivoParaLeer,
+    empresa?: { razonSocial: string; nit: string },
+  ): Promise<AnalisisArchivo>;
+
+  /**
+   * La identidad de una empresa que todavía no existe, desde su RUT: para que
+   * una cuenta nueva pueda elegir «Con IA» antes de crearla. Llamada corta.
+   */
+  identificarEmpresa(archivo: ArchivoParaLeer): Promise<IdentidadEmpresa>;
+}
+
+/**
+ * Quién es la empresa, leído de su RUT **antes de que exista en el sistema**:
+ * lo justo para crearla. El resto del RUT se lee después, ya con la empresa,
+ * por el camino de siempre.
+ */
+export interface IdentidadEmpresa {
+  /** `false` si el archivo no es un RUT: entonces lo demás viene vacío. */
+  esRut: boolean;
+  razonSocial: string | null;
+  /** Solo dígitos, sin el de verificación. */
+  nit: string | null;
+  dv: string | null;
+  tipoPersona: 'JURIDICA' | 'NATURAL' | null;
+  /** Una frase para la persona: qué se leyó, o por qué no. */
+  resumen: string;
+  medicion?: MedicionLectura;
 }
 
 /** Lo que dice el asistente de un archivo que se le subió sin decir qué es. */
 export interface AnalisisArchivo {
-  /** Uno de los que se leen para configurar la empresa, o `null`. */
-  tipo: TipoDocumentoConfiguracion | null;
+  /** Algo que María lee, o `null`. */
+  tipo: TipoDocumento | null;
   /** Qué es, en dos o tres palabras: «Factura de compra», «Extracto bancario». */
   clase: string;
   /** Qué dice, para el dueño: de quién, fechas y montos principales. */

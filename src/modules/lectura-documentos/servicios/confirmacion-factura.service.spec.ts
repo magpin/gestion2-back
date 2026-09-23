@@ -1,11 +1,16 @@
 import { BadRequestException } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
+import type { TxService } from '../../../common/db/tx.service';
 import type { ComprasApi } from '../../compras/compras.api';
-import { comprobar, type FacturaCompraLeida } from '../reglas/factura-compra.reglas';
+import {
+  comprobar,
+  type FacturaCompraLeida,
+} from '../reglas/factura-compra.reglas';
 import { ConfirmacionFacturaService } from './confirmacion-factura.service';
 import type { FacturaCruzada } from './cruce.service';
 import type { DocumentoService } from './documento.service';
+import type { MemoriaService } from './memoria.service';
 
 const ctx = { empresaId: 'e1', usuarioId: 'u1' } as unknown as CtxEmpresa;
 
@@ -37,7 +42,12 @@ const cruzada = (cambios: Partial<FacturaCruzada> = {}): FacturaCruzada => ({
     {
       orden: 1,
       leido: factura.renglones[0],
-      resuelto: { clase: 'PRODUCTO', id: 'prod-1', codigo: 'P001', nombre: 'TECLADO' },
+      resuelto: {
+        clase: 'PRODUCTO',
+        id: 'prod-1',
+        codigo: 'P001',
+        nombre: 'TECLADO',
+      },
       motivo: 'Por el código P001.',
     },
   ],
@@ -50,15 +60,27 @@ const cruzada = (cambios: Partial<FacturaCruzada> = {}): FacturaCruzada => ({
 
 const armar = (extraido: unknown, tipo = 'FACTURA_COMPRA') => {
   const registrar = jest.fn().mockResolvedValue({ id: 'compra-1' });
+  const aprender = jest.fn().mockResolvedValue(undefined);
   const documentos = {
-    porId: jest.fn().mockResolvedValue({ id: 'doc-1', tipo, extraido, datos: [] }),
+    porId: jest
+      .fn()
+      .mockResolvedValue({ id: 'doc-1', tipo, extraido, datos: [] }),
   } as unknown as DocumentoService;
   const compras = { registrar } as unknown as ComprasApi;
+  const memoria = { aprender } as unknown as MemoriaService;
+  // La transacción de mentira: corre la función con un `tx` reconocible, para
+  // poder comprobar que la compra y lo aprendido van en la misma.
+  const tx = {
+    enContexto: jest.fn((_ctx: unknown, fn: (t: unknown) => unknown) => fn(TX)),
+  } as unknown as TxService;
   return {
-    servicio: new ConfirmacionFacturaService(documentos, compras),
+    servicio: new ConfirmacionFacturaService(documentos, compras, memoria, tx),
     registrar,
+    aprender,
   };
 };
+
+const TX = { soy: 'la transacción' };
 
 describe('ConfirmacionFacturaService — registrar lo confirmado', () => {
   it('registra por la misma puerta que el endpoint manual', async () => {
@@ -79,6 +101,7 @@ describe('ConfirmacionFacturaService — registrar lo confirmado', () => {
       // el cuerpo de la petición, cualquiera podría registrar una compra a
       // mano y decir que la leyó María.
       { documentoLeidoId: 'doc-1' },
+      TX,
     );
   });
 
@@ -159,7 +182,12 @@ describe('ConfirmacionFacturaService — lo que no se registra', () => {
     const mal = cruzada({
       comprobaciones: comprobar({
         ...factura,
-        impreso: { subtotal: 999_999, iva: 19_000, retencion: 0, total: 119_000 },
+        impreso: {
+          subtotal: 999_999,
+          iva: 19_000,
+          retencion: 0,
+          total: 119_000,
+        },
       }),
     });
     const { servicio, registrar } = armar(mal);
@@ -174,7 +202,12 @@ describe('ConfirmacionFacturaService — lo que no se registra', () => {
     const mal = cruzada({
       comprobaciones: comprobar({
         ...factura,
-        impreso: { subtotal: 999_999, iva: 19_000, retencion: 0, total: 119_000 },
+        impreso: {
+          subtotal: 999_999,
+          iva: 19_000,
+          retencion: 0,
+          total: 119_000,
+        },
       }),
     });
     const { servicio } = armar(mal);
@@ -186,7 +219,12 @@ describe('ConfirmacionFacturaService — lo que no se registra', () => {
     const { servicio, registrar } = armar(
       cruzada({
         renglones: [
-          { orden: 1, leido: factura.renglones[0], resuelto: null, motivo: 'No lo encontré.' },
+          {
+            orden: 1,
+            leido: factura.renglones[0],
+            resuelto: null,
+            motivo: 'No lo encontré.',
+          },
         ],
       }),
     );
@@ -215,7 +253,9 @@ describe('ConfirmacionFacturaService — lo que no se registra', () => {
   });
 
   it('sin número y sin respuesta', async () => {
-    const { servicio } = armar(cruzada({ factura: { ...factura, numero: null } }));
+    const { servicio } = armar(
+      cruzada({ factura: { ...factura, numero: null } }),
+    );
     await expect(servicio.confirmar(ctx, 'doc-1')).rejects.toThrow(/número/i);
   });
 
@@ -266,5 +306,94 @@ describe('ConfirmacionFacturaService — el mismo producto dos veces', () => {
     expect(registrar.mock.calls[0][1].lineas).toEqual([
       { productoId: 'prod-1', cantidad: 5, costoUnitario: 13_000 },
     ]);
+  });
+});
+
+describe('ConfirmacionFacturaService — lo que aprende al registrar', () => {
+  const gasto = (cambios: Partial<FacturaCruzada['renglones'][number]> = {}) =>
+    cruzada({
+      renglones: [
+        {
+          orden: 1,
+          leido: {
+            ...factura.renglones[0],
+            clase: 'GASTO',
+            descripcion: 'ARRENDAMIENTO LOCAL COMERCIAL OCTUBRE 2026',
+            ivaTarifa: 0,
+          },
+          resuelto: null,
+          motivo: '¿Cuál uso?',
+          ...cambios,
+        },
+      ],
+    });
+
+  it('guarda lo que la persona contestó, en la transacción de la compra', async () => {
+    const { servicio, registrar, aprender } = armar(gasto());
+
+    await servicio.confirmar(ctx, 'doc-1', {
+      renglones: [{ orden: 1, cuentaId: 'cta-512005' }],
+    });
+
+    expect(registrar.mock.calls[0][3]).toBe(TX);
+    expect(aprender).toHaveBeenCalledWith(
+      ctx,
+      'prov-1',
+      'compra-1',
+      [
+        {
+          tipo: 'RESPUESTA',
+          clase: 'GASTO',
+          texto: 'ARRENDAMIENTO LOCAL COMERCIAL',
+          ejemplo: 'ARRENDAMIENTO LOCAL COMERCIAL OCTUBRE 2026',
+          cuentaId: 'cta-512005',
+        },
+      ],
+      TX,
+    );
+  });
+
+  // Lo que el cruce resolvió solo no se aprende: grabaría un «era el único que
+  // se parecía» equivocado para siempre.
+  it('no aprende lo que el cruce encontró solo', async () => {
+    const { servicio, aprender } = armar(cruzada());
+
+    await servicio.confirmar(ctx, 'doc-1');
+
+    expect(aprender.mock.calls[0][3]).toEqual([]);
+  });
+
+  it('lo recordado que nadie cambió suma un uso', async () => {
+    const { servicio, aprender } = armar(
+      gasto({
+        resuelto: {
+          clase: 'GASTO',
+          id: 'cta-512005',
+          codigo: '512005',
+          nombre: 'Arrendamientos',
+        },
+        forma: 'APRENDIDO',
+      }),
+    );
+
+    await servicio.confirmar(ctx, 'doc-1');
+
+    expect(aprender.mock.calls[0][3]).toEqual([
+      { tipo: 'USO', clase: 'GASTO', texto: 'ARRENDAMIENTO LOCAL COMERCIAL' },
+    ]);
+  });
+
+  it('si la compra falla, no se aprende nada', async () => {
+    const { servicio, registrar, aprender } = armar(gasto());
+    registrar.mockRejectedValueOnce(
+      new BadRequestException('Período cerrado.'),
+    );
+
+    await expect(
+      servicio.confirmar(ctx, 'doc-1', {
+        renglones: [{ orden: 1, cuentaId: 'cta-512005' }],
+      }),
+    ).rejects.toThrow(/período cerrado/i);
+    expect(aprender).not.toHaveBeenCalled();
   });
 });

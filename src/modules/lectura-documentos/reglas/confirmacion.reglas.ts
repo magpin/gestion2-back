@@ -18,7 +18,6 @@ import type { DatoExtraido } from '../proveedores/extractor.puerto';
  *    número de documento no es medio representante: es una pregunta.
  */
 
-
 /** Los tipos de documento que la DIAN numera por resolución. */
 const TIPOS_FISCALES: readonly TipoDocumentoFiscal[] = [
   'FACTURA_VENTA',
@@ -30,6 +29,30 @@ const TIPOS_FISCALES: readonly TipoDocumentoFiscal[] = [
   'NOMINA_ELECTRONICA',
   'POS',
 ];
+
+/**
+ * El tipo de documento de la resolución, venga como código o como lo imprime la
+ * DIAN. El modelo a veces devuelve el texto —«FACTURA ELECTRÓNICA DE VENTA»— y
+ * eso dejaba la resolución entera sin aplicar, porque va completa o no va.
+ */
+export function tipoFiscalDe(valor: string | undefined): TipoDocumentoFiscal | undefined {
+  if (valor === undefined) return undefined;
+  const t = valor
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .trim();
+  if ((TIPOS_FISCALES as readonly string[]).includes(t)) return t as TipoDocumentoFiscal;
+  if (t.includes('CONTINGENCIA')) return 'FACTURA_CONTINGENCIA';
+  if (t.includes('AJUSTE')) return 'NOTA_AJUSTE_DOC_SOPORTE';
+  if (t.includes('NOTA') && t.includes('CREDITO')) return 'NOTA_CREDITO';
+  if (t.includes('NOTA') && t.includes('DEBITO')) return 'NOTA_DEBITO';
+  if (t.includes('SOPORTE')) return 'DOCUMENTO_SOPORTE';
+  if (t.includes('NOMINA')) return 'NOMINA_ELECTRONICA';
+  if (/\bPOS\b|TIQUETE/.test(t)) return 'POS';
+  if (t.includes('FACTURA')) return 'FACTURA_VENTA';
+  return undefined;
+}
 
 export type Accion =
   | {
@@ -318,7 +341,7 @@ export function planear(
     'fechaVigenciaDesde',
     'fechaVigenciaHasta',
   ]);
-  const tipoFiscal = texto(tomar('tipoDocumento'));
+  const tipoFiscal = tipoFiscalDe(texto(tomar('tipoDocumento')));
   const numeroResolucion = texto(tomar('numeroResolucion'));
   const rangoDesde = entero(tomar('rangoDesde'));
   const rangoHasta = entero(tomar('rangoHasta'));

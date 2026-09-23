@@ -13,6 +13,7 @@ import type {
   Resultado,
 } from '../../reportes/servicios/armador.service';
 import type { TesoreriaApi } from '../../tesoreria/tesoreria.api';
+import type { RevisionApi } from '../../revision/revision.api';
 import { ConsultasService } from './consultas.service';
 import type { PropuestasService } from './propuestas.service';
 
@@ -63,6 +64,17 @@ function preparar() {
     ]),
   );
   const existencias = jest.fn(() => Promise.resolve([]));
+  const revisar = jest.fn(() =>
+    Promise.resolve([
+      {
+        tipo: 'TERCERO_DUPLICADO' as const,
+        grupo: 'DUPLICADO' as const,
+        titulo: '«X» está cargado dos veces',
+        detalle: 'Es el mismo documento.',
+        referencias: [{ tipo: 'TERCERO' as const, id: 't-secreto', etiqueta: 'CC 1' }],
+      },
+    ]),
+  );
   const preparar = jest.fn(() =>
     Promise.resolve({
       texto: '{"propuesta":"lista para confirmar"}',
@@ -87,8 +99,9 @@ function preparar() {
     { saldos } as unknown as TesoreriaApi,
     { existencias } as unknown as InventarioApi,
     { preparar } as unknown as PropuestasService,
+    { revisar } as unknown as RevisionApi,
   );
-  return { servicio, correr, valores, saldos, existencias, preparar };
+  return { servicio, correr, valores, saldos, existencias, preparar, revisar };
 }
 
 describe('ConsultasService — con los permisos de quien pregunta', () => {
@@ -196,5 +209,29 @@ describe('ConsultasService — con los permisos de quien pregunta', () => {
       'cliente',
     );
     expect(JSON.parse(texto)).toEqual(['FERRETERÍA EL TORNILLO']);
+  });
+});
+
+describe('ConsultasService — la revisión de los libros', () => {
+  it('la corre quien ve los asientos, y al modelo no le llegan los ids', async () => {
+    const { servicio, revisar } = preparar();
+    const quien = ctx(['CONTADOR']);
+    const { herramientas, hechas } = servicio.paraTurno(quien);
+
+    const texto = await herramientas.ejecutar('revisar_errores', {});
+
+    expect(revisar).toHaveBeenCalledWith(quien);
+    expect(texto).toContain('está cargado dos veces');
+    expect(texto).not.toContain('t-secreto');
+    expect(hechas[0]).toMatchObject({ herramienta: 'revisar_errores', filas: 1 });
+  });
+
+  it('quien no ve los asientos no la tiene', async () => {
+    const { servicio, revisar } = preparar();
+    const { herramientas } = servicio.paraTurno(ctx(['VENTAS']));
+
+    expect(herramientas.definiciones.map((d) => d.name)).not.toContain('revisar_errores');
+    expect(await herramientas.ejecutar('revisar_errores', {})).toMatch(/^No se pudo/);
+    expect(revisar).not.toHaveBeenCalled();
   });
 });

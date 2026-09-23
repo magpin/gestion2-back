@@ -136,3 +136,51 @@ export function calcularSalida(
       nuevaCantidad < 0 ? redondear(-nuevaCantidad, decimalesCantidad) : 0,
   };
 }
+
+/**
+ * Deshace una entrada **al costo con que entró**, no al promedio de hoy.
+ *
+ * Es lo que hace falta al anular una compra. Sacar esas unidades al promedio
+ * vigente —como cualquier salida— deja una diferencia con la cuenta del
+ * inventario: el asiento anulado se lleva el valor de la factura, y el kardex
+ * se llevaba otro. Con la compra FM-101264 fueron $ 125.347,50.
+ *
+ * Lo que queda es lo que había sin esa entrada: la cantidad menos la que entró,
+ * y el valor menos el que entró. El promedio sale de dividir los dos. Si no
+ * queda nada, el promedio se conserva: no hay de qué sacarlo, y el próximo
+ * costo de una salida en descubierto necesita alguno.
+ */
+export function calcularReversaDeEntrada(
+  actual: SaldoKardex,
+  cantidad: number,
+  costoUnitarioOriginal: number,
+  decimalesCantidad: number,
+  decimalesCosto: number,
+): ResultadoSalida {
+  const nuevaCantidad = redondear(actual.cantidad - cantidad, decimalesCantidad);
+  if (nuevaCantidad < 0) {
+    return {
+      ok: false,
+      motivo: `Solo hay ${actual.cantidad} en existencia; no se pueden devolver ${cantidad}: parte ya salió.`,
+    };
+  }
+
+  const valorMovimiento = redondear(
+    cantidad * costoUnitarioOriginal,
+    DECIMALES_DINERO,
+  );
+  const valorRestante = actual.cantidad * actual.costoPromedio - valorMovimiento;
+  const costoPromedio =
+    nuevaCantidad === 0
+      ? actual.costoPromedio
+      : // Nunca negativo: si las cuentas previas ya venían corridas, un
+        // promedio negativo rompería todo lo que salga después.
+        Math.max(0, redondear(valorRestante / nuevaCantidad, decimalesCosto));
+
+  return {
+    ok: true,
+    saldo: { cantidad: nuevaCantidad, costoPromedio },
+    valorMovimiento,
+    faltante: 0,
+  };
+}

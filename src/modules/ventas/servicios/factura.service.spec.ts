@@ -149,6 +149,7 @@ const cotizacionEmitida: VentaDocumentoDetalle = {
   pendiente: '344981',
   saldo_a_favor: '0',
   asiento_id: null,
+  historica: false,
   lineas: [
     {
       id: 'cot-linea-1',

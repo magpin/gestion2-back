@@ -144,6 +144,8 @@ export class ErrorPostgresFilter implements ExceptionFilter {
         'Ya hay una resolucion activa para ese tipo de documento y ambiente.',
       uq_resolucion_numero: 'Esa resolucion ya esta registrada.',
       uq_producto_codigo: 'Ya existe un producto con ese codigo.',
+      uq_venta_documento_leido:
+        'Este pedido ya se facturo. Anula esa factura si hay que volver a hacerla.',
       ux_caja_principal_por_sede:
         'Ya hay una caja principal activa en esa sede.',
       ux_arqueo_abierto:

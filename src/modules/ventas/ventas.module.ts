@@ -9,6 +9,8 @@ import { FacturasController } from './controladores/facturas.controller';
 import { FaltantesController } from './controladores/faltantes.controller';
 import { NotasCreditoController } from './controladores/notas-credito.controller';
 import { NotasDebitoController } from './controladores/notas-debito.controller';
+import { FacturasHistoricasController } from './controladores/facturas-historicas.controller';
+import { HistoricoService } from './servicios/historico.service';
 import { FacturaService } from './servicios/factura.service';
 import { FaltanteService } from './servicios/faltante.service';
 import { NotaCreditoService } from './servicios/nota-credito.service';
@@ -42,6 +44,7 @@ import { VentasApi } from './ventas.api';
     FaltantesController,
     NotasCreditoController,
     NotasDebitoController,
+    FacturasHistoricasController,
   ],
   providers: [
     VentaDocumentoService,
@@ -49,6 +52,7 @@ import { VentasApi } from './ventas.api';
     FaltanteService,
     NotaCreditoService,
     NotaDebitoService,
+    HistoricoService,
     VentasApi,
   ],
   exports: [VentasApi],

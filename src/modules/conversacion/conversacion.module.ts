@@ -1,17 +1,16 @@
 import { Module } from '@nestjs/common';
 
 import { ComprasModule } from '../compras/compras.module';
+import { ContabilidadModule } from '../contabilidad/contabilidad.module';
 import { InventarioModule } from '../inventario/inventario.module';
 import { NucleoModule } from '../nucleo/nucleo.module';
 import { ReportesModule } from '../reportes/reportes.module';
 import { TesoreriaModule } from '../tesoreria/tesoreria.module';
 import { VentasModule } from '../ventas/ventas.module';
 
-import { AutonomiaController } from './controladores/autonomia.controller';
 import { ConversacionController } from './controladores/conversacion.controller';
 import { ClaudeConversador } from './proveedores/claude.conversador';
 import { CONVERSADOR } from './proveedores/conversador.puerto';
-import { AutonomiaService } from './servicios/autonomia.service';
 import { ConsultasService } from './servicios/consultas.service';
 import { ConversacionService } from './servicios/conversacion.service';
 import { PropuestasService } from './servicios/propuestas.service';
@@ -44,15 +43,14 @@ import { PropuestasService } from './servicios/propuestas.service';
     VentasModule,
     ComprasModule,
     NucleoModule,
+    // Para dejar anotado en el asiento de qué propuesta salió.
+    ContabilidadModule,
   ],
-  // La autonomía primero: `GET /conversacion/autonomia` tiene que ganarle a
-  // `GET /conversacion/:id`, que se registra en el orden de esta lista.
-  controllers: [AutonomiaController, ConversacionController],
+  controllers: [ConversacionController],
   providers: [
     ConversacionService,
     ConsultasService,
     PropuestasService,
-    AutonomiaService,
     { provide: CONVERSADOR, useClass: ClaudeConversador },
   ],
 })

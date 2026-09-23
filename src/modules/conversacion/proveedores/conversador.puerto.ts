@@ -65,9 +65,27 @@ export type ResultadoRespuesta =
     }
   | {
       estado: 'FALLO';
-      clase: 'SIN_CLAVE' | 'NO_DISPONIBLE' | 'PETICION' | 'FALLA';
+      clase: ClaseDeFalla;
       motivo: string;
+      /**
+       * Lo que dijo el proveedor, para quien administra. **Nunca se le muestra
+       * a la persona**: sin esto, averiguar por qué el asistente dejó de
+       * contestar obliga a llamar a la API a mano.
+       */
+      detalle?: string;
     };
+
+/**
+ * De qué tipo fue la falla. `SIN_SALDO` va aparte de `PETICION` porque llega
+ * con la misma forma —un 400— y significa lo contrario: la pregunta estaba
+ * bien y lo que falta es recargar la cuenta.
+ */
+export type ClaseDeFalla =
+  | 'SIN_CLAVE'
+  | 'SIN_SALDO'
+  | 'NO_DISPONIBLE'
+  | 'PETICION'
+  | 'FALLA';
 
 /**
  * Lo que el modelo puede consultar en este turno (paso 6 de
@@ -110,13 +128,6 @@ export interface ConversadorPuerto {
     corte?: AbortSignal;
     herramientas?: HerramientasDelTurno;
     alConsultar?: (nombre: string, entrada: unknown) => void;
-    /**
-     * Lo que el sistema le dice al modelo en este turno, fuera del hilo: hoy,
-     * las reglas de autonomía vigentes (paso 8). Va con las instrucciones y no
-     * dentro de una consulta, porque lo que devuelve una consulta es dato, y
-     * el modelo —con razón— no lo obedece.
-     */
-    contexto?: string;
   }): Promise<ResultadoRespuesta>;
 }
 

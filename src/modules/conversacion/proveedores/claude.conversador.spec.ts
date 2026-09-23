@@ -432,29 +432,3 @@ describe('ClaudeConversador — con herramientas', () => {
     });
   });
 });
-
-describe('ClaudeConversador — el contexto del sistema', () => {
-  it('va como un bloque más de las instrucciones, después de la fecha y sin caché propio', async () => {
-    const conversador = new ConversadorDePrueba({
-      respuesta: respuesta({ texto: 'Listo.' }),
-    });
-    await conversador.responder({
-      hilo: HILO,
-      contexto:
-        'Autonomía (la escribe el sistema en cada turno): cobros hasta $ 5.000 se registran solos.',
-    });
-    const system = conversador.peticion?.system as {
-      text: string;
-      cache_control?: unknown;
-    }[];
-    expect(system).toHaveLength(3);
-    expect(system[2]).toEqual({
-      type: 'text',
-      text: 'Autonomía (la escribe el sistema en cada turno): cobros hasta $ 5.000 se registran solos.',
-    });
-    // Y nunca dentro del hilo, donde sería de la persona.
-    expect(JSON.stringify(conversador.peticion?.messages)).not.toMatch(
-      /Autonomía/,
-    );
-  });
-});

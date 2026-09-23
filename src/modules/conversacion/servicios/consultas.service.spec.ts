@@ -14,7 +14,6 @@ import type {
 } from '../../reportes/servicios/armador.service';
 import type { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import { ConsultasService } from './consultas.service';
-import type { AutonomiaService } from './autonomia.service';
 import type { PropuestasService } from './propuestas.service';
 
 const ctx = (roles: RolCodigo[]): CtxEmpresa => ({
@@ -88,7 +87,6 @@ function preparar() {
     { saldos } as unknown as TesoreriaApi,
     { existencias } as unknown as InventarioApi,
     { preparar } as unknown as PropuestasService,
-    { contexto: () => Promise.resolve(null) } as unknown as AutonomiaService,
   );
   return { servicio, correr, valores, saldos, existencias, preparar };
 }

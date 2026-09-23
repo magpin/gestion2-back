@@ -15,6 +15,7 @@ import { PausaIaService } from '../../../common/ia/pausa-ia.service';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import {
   CONVERSADOR,
+  type ClaseDeFalla,
   type ConversadorPuerto,
   type ResultadoRespuesta,
   type UsoConversacion,
@@ -42,6 +43,8 @@ export interface TurnoResumen {
   texto: string;
   estado: 'COMPLETO' | 'CORTADO' | 'RECHAZADO' | 'FALLO';
   motivo: string | null;
+  /** De qué tipo fue la falla, cuando la hubo. Decide qué cara muestra la pantalla. */
+  clase: ClaseDeFalla | null;
   creado_en: string;
   /**
    * De dónde salieron las cifras de una respuesta: «Cartera», «Saldos de caja
@@ -93,7 +96,7 @@ export interface TurnoPreparado {
   hilo: ReturnType<typeof hiloParaModelo>;
 }
 
-const CAMPOS = `id, orden, autor, texto, estado, motivo, creado_en`;
+const CAMPOS = `id, orden, autor, texto, estado, motivo, clase, creado_en`;
 
 interface FilaTurno extends Omit<TurnoResumen, 'fuentes' | 'propuestas'> {
   uso: UsoConversacion | null;
@@ -302,7 +305,6 @@ export class ConversacionService {
     try {
       const { herramientas, hechas, propuestas } =
         this.consultas.paraTurno(ctx);
-      const contexto = await this.consultas.contextoDelTurno(ctx);
       // Cuánto tardó la respuesta entera, consultas incluidas (0054).
       const empezo = Date.now();
       const resultado = await this.conversador.responder({
@@ -312,7 +314,6 @@ export class ConversacionService {
         herramientas,
         alConsultar: (nombre) =>
           opciones.alConsultar?.(etiquetaDeConsulta(nombre)),
-        contexto: contexto ?? undefined,
       });
       const turno = await this.tx.enContexto(ctx, async (t) => {
         const turnos = await this.turnos(preparado.conversacionId, t);
@@ -345,16 +346,6 @@ export class ConversacionService {
           propuestas: guardadas,
         };
       });
-      // Paso 8: lo que una regla de autonomía cubre se confirma ahora, ya con
-      // la respuesta guardada. Cada una en su transacción: un cobro que falla
-      // no se lleva la respuesta, queda pendiente con el motivo.
-      if (propuestas.some((p) => p.porRegla === true)) {
-        turno.propuestas = await this.consultas.confirmarPorReglas(
-          ctx,
-          propuestas,
-          turno.propuestas,
-        );
-      }
       return turno;
     } finally {
       this.enCurso.delete(preparado.conversacionId);
@@ -451,6 +442,8 @@ export class ConversacionService {
       modelo?: string | null;
       uso?: UsoConversacion | null;
       motivo?: string | null;
+      clase?: ClaseDeFalla | null;
+      detalle?: string | null;
       /** Solo en la respuesta del asistente: lo que mide el tablero de consumo. */
       duracionMs?: number;
       vueltas?: number | null;
@@ -461,8 +454,8 @@ export class ConversacionService {
       await t.query(
         `INSERT INTO conversacion_turno
            (empresa_id, conversacion_id, orden, autor, texto, estado, modelo, uso, motivo,
-            duracion_ms, vueltas)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            duracion_ms, vueltas, clase, detalle)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING ${CAMPOS}, uso`,
         [
           ctx.empresaId,
@@ -478,6 +471,10 @@ export class ConversacionService {
           turno.motivo ?? null,
           turno.duracionMs === undefined ? null : Math.round(turno.duracionMs),
           turno.vueltas ?? null,
+          turno.clase ?? null,
+          // Acotado: es para diagnosticar, no un registro de todo lo que dijo
+          // el proveedor.
+          turno.detalle?.slice(0, 500) ?? null,
         ],
       ),
     );
@@ -493,6 +490,8 @@ function turnoDeRespuesta(r: ResultadoRespuesta): TurnoGuardado & {
   modelo: string | null;
   uso: UsoConversacion | null;
   motivo: string | null;
+  clase?: ClaseDeFalla | null;
+  detalle?: string | null;
 } {
   switch (r.estado) {
     case 'COMPLETO':
@@ -530,6 +529,8 @@ function turnoDeRespuesta(r: ResultadoRespuesta): TurnoGuardado & {
         modelo: null,
         uso: null,
         motivo: r.motivo,
+        clase: r.clase,
+        detalle: r.detalle ?? null,
       };
   }
 }
@@ -555,6 +556,7 @@ function sinUso(t: FilaTurno): TurnoResumen {
     texto: t.texto,
     estado: t.estado,
     motivo: t.motivo,
+    clase: t.clase,
     creado_en: t.creado_en,
     fuentes: fuentesDe(t.herramientas ?? []),
     propuestas: (t.propuestas ?? []).map(resumenDe),

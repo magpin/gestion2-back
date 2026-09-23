@@ -16,18 +16,19 @@ import { TxService, type Tx } from '../../../common/db/tx.service';
 import { hoyEnColombia } from '../../../common/fecha';
 import { ComprasApi } from '../../compras/compras.api';
 import { PagarDto } from '../../compras/dto/compra.dto';
-import type { VistaAsiento } from '../../contabilidad/contabilidad.api';
+import {
+  ContabilidadApi,
+  type VistaAsiento,
+} from '../../contabilidad/contabilidad.api';
 import { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import { CobrarDto } from '../../ventas/dto/venta.dto';
 import { VentasApi } from '../../ventas/ventas.api';
-import { pesos } from '../reglas/autonomia';
 import {
   cuerpoDesde,
   puedeHacer,
   type AccionPropuesta,
   type CuerpoDePago,
 } from '../reglas/propuestas';
-import { AutonomiaService } from './autonomia.service';
 
 /** Lo que se muestra de una propuesta: sale de la verificación en seco. */
 export interface VistaPrevia {
@@ -47,10 +48,6 @@ export interface PropuestaNueva {
   documentoId: string;
   cuerpo: CuerpoDePago;
   vistaPrevia: VistaPrevia;
-  /** La regla de autonomía que la va a confirmar sola al guardar la respuesta (paso 8). */
-  porRegla?: boolean;
-  /** Por qué una regla no la confirmó sola: queda escrito en la propuesta. */
-  apartada?: string;
 }
 
 export type EstadoPropuesta =
@@ -68,8 +65,6 @@ export interface PropuestaResumen {
   error: string | null;
   /** Lo que se registró de verdad, si se corrigió antes de confirmar. */
   cuerpoConfirmado: CuerpoDePago | null;
-  /** La confirmó una regla de autonomía, sin preguntar (paso 8). */
-  automatica: boolean;
 }
 
 interface FilaPropuesta {
@@ -83,13 +78,11 @@ interface FilaPropuesta {
   vencida: boolean;
   error: string | null;
   cuerpo_confirmado: CuerpoDePago | null;
-  automatica: boolean;
 }
 
 /** Los campos de una propuesta, para leerla (`vencida` sale de la base, con su reloj). */
 export const CAMPOS_PROPUESTA = `id, accion, documento_id, cuerpo, vista_previa, estado,
-  vence_en, (estado = 'PENDIENTE' AND vence_en < now()) AS vencida, error, cuerpo_confirmado,
-  confirmada_por_regla IS NOT NULL AS automatica`;
+  vence_en, (estado = 'PENDIENTE' AND vence_en < now()) AS vencida, error, cuerpo_confirmado`;
 
 class NoSePudo extends Error {}
 
@@ -126,7 +119,7 @@ export class PropuestasService {
     private readonly ventas: VentasApi,
     private readonly compras: ComprasApi,
     private readonly tesoreria: TesoreriaApi,
-    private readonly autonomia: AutonomiaService,
+    private readonly contabilidad: ContabilidadApi,
   ) {}
 
   /**
@@ -157,29 +150,13 @@ export class PropuestasService {
               typeof e.proveedor === 'string' ? e.proveedor : undefined,
               cuerpo,
             );
-      // Paso 8: si una regla de autonomía la cubre, se registra sola al
-      // guardar la respuesta, y el asistente tiene que decirlo así.
-      const decision = await this.autonomia.decidir(
-        ctx,
-        accion,
-        nueva.documentoId,
-        total(nueva.cuerpo),
-      );
-      if (decision.confirmar) {
-        nueva.porRegla = true;
-      } else if (decision.motivo !== null) {
-        nueva.apartada = decision.motivo;
-      }
       return {
         texto: JSON.stringify({
-          propuesta: decision.confirmar
-            ? 'se registra sola por una regla de autonomía'
-            : 'lista para confirmar',
+          propuesta: 'lista para confirmar',
           ...nueva.vistaPrevia.documento,
           medios: nueva.vistaPrevia.medios,
-          aviso: decision.confirmar
-            ? `La regla de autonomía de la empresa (${AutonomiaService.descripcion(decision.regla)}) la registra sola al terminar esta respuesta, sin botón. Decí que quedó registrada sin preguntar por esa regla, y que se deshace con «Devolver ${accion === 'COBRO' ? 'cobro' : 'pago'}».`
-            : `Quedó como propuesta, con un botón Confirmar para la persona. No está registrada: no digas que se hizo.${decision.motivo ? ` ${decision.motivo}` : ''}`,
+          aviso:
+            'Quedó como propuesta, con un botón Confirmar para la persona. No está registrada: no digas que se hizo.',
         }),
         nueva,
       };
@@ -211,7 +188,7 @@ export class PropuestasService {
             n.documentoId,
             JSON.stringify(n.cuerpo),
             JSON.stringify(n.vistaPrevia),
-            n.apartada ?? null,
+            null,
           ],
         ),
       );
@@ -245,6 +222,10 @@ export class PropuestasService {
           p.accion === 'COBRO'
             ? await this.ventas.cobrarEnTx(ctx, p.documento_id, cuerpo, t)
             : await this.compras.pagarEnTx(ctx, p.documento_id, cuerpo, t);
+        // Los asientos que acaba de dejar el cobro quedan atados a esta
+        // propuesta, dentro de la misma transacción: después ya no habría
+        // forma de distinguirlos de un cobro digitado a mano.
+        await this.contabilidad.marcarPropuesta(t, id);
         const f = fila<FilaPropuesta>(
           await t.query(
             `UPDATE asistente_propuesta
@@ -271,71 +252,6 @@ export class PropuestasService {
         await this.anotarError(ctx, id, e.message);
       }
       throw e;
-    }
-  }
-
-  /**
-   * Confirmar **por una regla** (paso 8): sin botón, con el mismo código que
-   * confirmar a mano. La regla se vuelve a mirar ahora —los roles de quien la
-   * activó cuentan al actuar, no al proponer—, y si ya no aplica la propuesta
-   * espera con el motivo. Nunca tira: lo que no se pudo queda escrito en la
-   * propuesta, y la respuesta ya está guardada.
-   */
-  async confirmarPorRegla(
-    ctx: CtxEmpresa,
-    id: string,
-    accion: AccionPropuesta,
-    documentoId: string,
-    cuerpo: CuerpoDePago,
-  ): Promise<PropuestaResumen | null> {
-    const decision = await this.autonomia.decidir(
-      ctx,
-      accion,
-      documentoId,
-      total(cuerpo),
-    );
-    if (!decision.confirmar) {
-      await this.anotarError(
-        ctx,
-        id,
-        decision.motivo ??
-          'No se registró sola: la regla cambió. Espera tu confirmación.',
-      );
-      return this.leer(ctx, id);
-    }
-    try {
-      return await this.tx.enContexto(ctx, async (t) => {
-        await this.bloquear(ctx, id, t);
-        const resultado =
-          accion === 'COBRO'
-            ? await this.ventas.cobrarEnTx(ctx, documentoId, cuerpo, t)
-            : await this.compras.pagarEnTx(ctx, documentoId, cuerpo, t);
-        const f = fila<FilaPropuesta>(
-          await t.query(
-            `UPDATE asistente_propuesta
-                SET estado = 'CONFIRMADA', resuelta_en = now(), resuelta_por = $2,
-                    confirmada_por_regla = $3, cuerpo_confirmado = $4,
-                    resultado = $5, error = NULL
-              WHERE id = $1
-              RETURNING ${CAMPOS_PROPUESTA}`,
-            [
-              id,
-              decision.regla.activadaPor,
-              decision.regla.id,
-              JSON.stringify(cuerpo),
-              JSON.stringify(resultado),
-            ],
-          ),
-        );
-        return resumenDe(f!);
-      });
-    } catch (e) {
-      await this.anotarError(
-        ctx,
-        id,
-        `No se registró sola: ${this.explicar(e)}`,
-      );
-      return this.leer(ctx, id);
     }
   }
 
@@ -553,7 +469,6 @@ export function resumenDe(f: FilaPropuesta): PropuestaResumen {
     venceEn: f.vence_en,
     error: f.error,
     cuerpoConfirmado: f.cuerpo_confirmado,
-    automatica: f.automatica,
   };
 }
 
@@ -563,4 +478,3 @@ function total(cuerpo: CuerpoDePago): number {
 }
 
 /** Para el texto al modelo. */
-export { pesos };

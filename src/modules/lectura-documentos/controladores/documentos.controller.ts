@@ -5,10 +5,13 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
+  Optional,
   Param,
   ParseUUIDPipe,
   Post,
 } from '@nestjs/common';
+
+import { PausaIaService } from '../../../common/ia/pausa-ia.service';
 
 import {
   ActorEmpresa,
@@ -40,6 +43,9 @@ export class DocumentosController {
     private readonly almacenamiento: AlmacenamientoApi,
     private readonly documentos: DocumentoService,
     private readonly extractor: ExtractorService,
+    // `@Optional()` por lo mismo que en el extractor: las pruebas que arman
+    // este controlador a mano no tienen por qué saber de pausas.
+    @Optional() private readonly pausa?: PausaIaService,
   ) {}
 
   /**
@@ -48,8 +54,20 @@ export class DocumentosController {
    */
   @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR', 'CONSULTA')
   @Get('disponible')
-  disponible() {
-    return { disponible: this.extractor.disponible };
+  async disponible(
+    @ActorEmpresa() ctx: CtxEmpresa,
+  ): Promise<{ disponible: boolean; motivo?: 'SIN_CLAVE' | 'EN_PAUSA' }> {
+    // El motivo viaja porque las dos causas se arreglan en lugares distintos:
+    // una la resuelve quien administra el servidor y la otra quien maneja la
+    // plataforma. Decir «falta configurarla» cuando en realidad la pausaron
+    // manda a la persona a buscar donde no es.
+    if (!this.extractor.disponible) {
+      return { disponible: false, motivo: 'SIN_CLAVE' };
+    }
+    if ((await this.pausa?.pausada(ctx.tenantId, 'LECTURA')) ?? false) {
+      return { disponible: false, motivo: 'EN_PAUSA' };
+    }
+    return { disponible: true };
   }
 
   /**

@@ -48,6 +48,25 @@ export class ContabilidadApi {
    * Una fila nueva lleva en `xmin` el id de la transacción que la creó, y eso
    * la distingue de cualquier otra sin depender de la hora.
    */
+  /**
+   * Deja anotado en los asientos de la transacción en curso de qué propuesta
+   * del asistente salieron.
+   *
+   * Va acá y no en `conversacion` porque escribir en `asiento` es de este
+   * módulo. Y va **dentro de la misma transacción que los creó**: fuera de
+   * ella, `xmin` ya no los distingue de ningún otro.
+   */
+  async marcarPropuesta(t: Tx, propuestaId: string): Promise<number> {
+    const { rowCount } = await t.query(
+      `UPDATE asiento
+          SET propuesta_id = $1
+        WHERE xmin::text::bigint = txid_current() % 4294967296
+          AND propuesta_id IS NULL`,
+      [propuestaId],
+    );
+    return rowCount ?? 0;
+  }
+
   async asientosDeLaTransaccion(t: Tx): Promise<VistaAsiento[]> {
     const lineas = filas<{
       asiento_id: string;

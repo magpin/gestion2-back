@@ -9,10 +9,9 @@ import {
 import type { CtxEmpresa, RolCodigo } from '../../../common/ctx';
 import type { Tx, TxService } from '../../../common/db/tx.service';
 import type { ComprasApi } from '../../compras/compras.api';
+import type { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import type { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import type { VentasApi } from '../../ventas/ventas.api';
-import type { Decision } from '../reglas/autonomia';
-import type { AutonomiaService } from './autonomia.service';
 import { PropuestasService } from './propuestas.service';
 
 const CAJA_ID = '11111111-1111-4111-8111-111111111111';
@@ -155,18 +154,17 @@ function preparar(e: { vencida?: boolean } = {}) {
       ]),
   } as unknown as TesoreriaApi;
 
-  // Sin regla de autonomía, salvo que la prueba diga otra cosa.
-  const decidir = jest.fn((): Promise<Decision> =>
-    Promise.resolve({ confirmar: false, motivo: null }),
-  );
-  const autonomia = { decidir } as unknown as AutonomiaService;
+  // Marcar los asientos con su propuesta es cosa de contabilidad; acá solo
+  // importa que se llame dentro de la transacción del cobro.
+  const marcarPropuesta = jest.fn(() => Promise.resolve(1));
+  const contabilidad = { marcarPropuesta } as unknown as ContabilidadApi;
 
   const servicio = new PropuestasService(
     tx,
     ventas,
     compras,
     tesoreria,
-    autonomia,
+    contabilidad,
   );
   return {
     servicio,
@@ -174,7 +172,6 @@ function preparar(e: { vencida?: boolean } = {}) {
     cobrarEnTx,
     simularCobro,
     comprasPorNumero,
-    decidir,
     t,
   };
 }
@@ -357,97 +354,3 @@ describe('PropuestasService — confirmar y descartar', () => {
   });
 });
 
-describe('PropuestasService — la autonomía (paso 8)', () => {
-  const REGLA = {
-    id: 'r-1',
-    accion: 'COBRO' as const,
-    modo: 'CONFIRMAR_SI_PASA' as const,
-    limite: 2_000_000,
-    activadaPor: 'u-director',
-  };
-
-  it('si una regla la cubre, el asistente sabe que se registra sola y lo dice así', async () => {
-    const p = preparar();
-    p.decidir.mockResolvedValueOnce({ confirmar: true, regla: REGLA });
-    const r = await p.servicio.preparar(ctx(), 'COBRO', COBRO);
-    expect(r.nueva?.porRegla).toBe(true);
-    expect(r.texto).toMatch(/registra sola .*cobros hasta \$ 2\.000\.000/);
-    expect(p.decidir).toHaveBeenCalledWith(ctx(), 'COBRO', 'f-5', 1000);
-  });
-
-  it('si la regla no alcanza, queda apartada con el motivo escrito en la propuesta', async () => {
-    const p = preparar();
-    p.decidir.mockResolvedValueOnce({
-      confirmar: false,
-      motivo:
-        'No se registró sola: supera el límite de $ 500 de la regla. Espera tu confirmación.',
-    });
-    const guardada = await unaGuardada(p);
-    expect(guardada.estado).toBe('PENDIENTE');
-    expect(p.filas[0].error).toMatch(/supera el límite/);
-  });
-
-  it('confirmar por regla: el cobro de siempre, a nombre de quien activó la regla', async () => {
-    const p = preparar();
-    const guardada = await unaGuardada(p);
-    p.decidir.mockResolvedValueOnce({ confirmar: true, regla: REGLA });
-    const r = await p.servicio.confirmarPorRegla(
-      ctx(),
-      guardada.id,
-      'COBRO',
-      'f-5',
-      guardada.cuerpo,
-    );
-    expect(p.cobrarEnTx).toHaveBeenCalledWith(
-      ctx(),
-      'f-5',
-      guardada.cuerpo,
-      p.t,
-    );
-    expect(r?.estado).toBe('CONFIRMADA');
-    expect(p.filas[0]).toMatchObject({
-      resuelta_por: 'u-director',
-      automatica: true,
-    });
-  });
-
-  it('si al confirmar la regla ya no aplica, espera con el motivo y no cobra', async () => {
-    const p = preparar();
-    const guardada = await unaGuardada(p);
-    p.decidir.mockResolvedValueOnce({
-      confirmar: false,
-      motivo:
-        'No se registró sola: quien activó la regla ya no puede registrar esto. Espera tu confirmación.',
-    });
-    const r = await p.servicio.confirmarPorRegla(
-      ctx(),
-      guardada.id,
-      'COBRO',
-      'f-5',
-      guardada.cuerpo,
-    );
-    expect(p.cobrarEnTx).not.toHaveBeenCalled();
-    expect(r?.estado).toBe('PENDIENTE');
-    expect(p.filas[0].error).toMatch(/ya no puede registrar/);
-  });
-
-  it('si el cobro falla, no tira: la respuesta ya está guardada, y la propuesta espera con el motivo', async () => {
-    const p = preparar();
-    const guardada = await unaGuardada(p);
-    p.decidir.mockResolvedValueOnce({ confirmar: true, regla: REGLA });
-    p.cobrarEnTx.mockRejectedValueOnce(
-      new BadRequestException('El período está cerrado.'),
-    );
-    const r = await p.servicio.confirmarPorRegla(
-      ctx(),
-      guardada.id,
-      'COBRO',
-      'f-5',
-      guardada.cuerpo,
-    );
-    expect(r?.estado).toBe('PENDIENTE');
-    expect(p.filas[0].error).toBe(
-      'No se registró sola: El período está cerrado.',
-    );
-  });
-});

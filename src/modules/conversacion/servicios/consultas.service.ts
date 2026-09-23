@@ -29,7 +29,6 @@ import {
   herramientasDeAccion,
   PROPUESTAS_POR_TURNO,
 } from '../reglas/propuestas';
-import { AutonomiaService } from './autonomia.service';
 import {
   PropuestasService,
   type PropuestaNueva,
@@ -77,18 +76,7 @@ export class ConsultasService {
     private readonly tesoreria: TesoreriaApi,
     private readonly inventario: InventarioApi,
     private readonly propuestas: PropuestasService,
-    private readonly autonomia: AutonomiaService,
   ) {}
-
-  /**
-   * Lo que el sistema le dice al modelo en este turno (paso 8): las reglas de
-   * autonomía vigentes, si quien pregunta puede proponer. Sin herramientas de
-   * proponer, la autonomía no le toca.
-   */
-  async contextoDelTurno(ctx: CtxEmpresa): Promise<string | null> {
-    if (herramientasDeAccion(ctx.roles).length === 0) return null;
-    return this.autonomia.contexto(ctx);
-  }
 
   /**
    * Las herramientas de quien pregunta, y la lista donde queda cada consulta
@@ -147,33 +135,6 @@ export class ConsultasService {
     };
 
     return { herramientas: { definiciones, ejecutar }, hechas, propuestas };
-  }
-
-  /**
-   * Lo que una regla de autonomía confirma sola, después de guardar la
-   * respuesta (paso 8). Devuelve las propuestas como quedaron.
-   */
-  async confirmarPorReglas(
-    ctx: CtxEmpresa,
-    nuevas: readonly PropuestaNueva[],
-    guardadas: readonly PropuestaResumen[],
-  ): Promise<PropuestaResumen[]> {
-    const finales: PropuestaResumen[] = [];
-    for (const [i, g] of guardadas.entries()) {
-      const n = nuevas[i];
-      const confirmada =
-        n?.porRegla === true
-          ? await this.propuestas.confirmarPorRegla(
-              ctx,
-              g.id,
-              n.accion,
-              n.documentoId,
-              n.cuerpo,
-            )
-          : null;
-      finales.push(confirmada ?? g);
-    }
-    return finales;
   }
 
   /** Las propuestas del turno, en la transacción que guarda la respuesta. */

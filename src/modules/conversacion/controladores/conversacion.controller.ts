@@ -3,12 +3,15 @@ import {
   Controller,
   Get,
   HttpCode,
+  Optional,
   Param,
   ParseUUIDPipe,
   Post,
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
+
+import { PausaIaService } from '../../../common/ia/pausa-ia.service';
 
 import {
   ActorEmpresa,
@@ -38,12 +41,35 @@ export class ConversacionController {
   constructor(
     private readonly conversacion: ConversacionService,
     private readonly propuestas: PropuestasService,
+    // `@Optional()` por lo mismo que en el servicio: las pruebas que arman
+    // este controlador a mano no tienen por qué saber de pausas.
+    @Optional() private readonly pausa?: PausaIaService,
   ) {}
 
-  /** Si se puede conversar. Solo depende de la clave del modelo, no del bucket. */
+  /**
+   * Si se puede conversar. Depende de la clave del modelo —no del bucket— y
+   * de que el chat no esté en pausa para esta empresa.
+   *
+   * La pausa entra acá y no solo en el momento de preguntar porque si no, la
+   * pantalla se abre entera y normal y recién falla cuando alguien escribe.
+   * Preguntándolo antes, el asistente se muestra dormido desde el principio,
+   * que es lo que de verdad está pasando.
+   */
   @Get('disponible')
-  disponible(): { disponible: boolean } {
-    return { disponible: this.conversacion.disponible };
+  async disponible(
+    @ActorEmpresa() ctx: CtxEmpresa,
+  ): Promise<{ disponible: boolean; motivo?: 'SIN_CLAVE' | 'EN_PAUSA' }> {
+    // El motivo viaja porque las dos causas se arreglan en lugares distintos:
+    // una la resuelve quien administra el servidor y la otra quien maneja la
+    // plataforma. Decir «falta configurarla» cuando en realidad la pausaron
+    // manda a la persona a buscar donde no es.
+    if (!this.conversacion.disponible) {
+      return { disponible: false, motivo: 'SIN_CLAVE' };
+    }
+    if ((await this.pausa?.pausada(ctx.tenantId, 'CHAT')) ?? false) {
+      return { disponible: false, motivo: 'EN_PAUSA' };
+    }
+    return { disponible: true };
   }
 
   @Get()

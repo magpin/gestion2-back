@@ -1,7 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 
 import { ClaudeProveedor } from './claude.proveedor';
-import type { AvanceLectura, TipoDocumento } from './extractor.puerto';
+import type {
+  AvanceLectura,
+  TipoDocumentoConfiguracion,
+} from './extractor.puerto';
 
 /**
  * El proveedor, sin red.
@@ -132,7 +135,7 @@ const UN_RUT = JSON.stringify({
 const leer = (
   guion: Guion,
   opciones: {
-    tipo?: TipoDocumento;
+    tipo?: TipoDocumentoConfiguracion;
     archivo?: { tipoMime: string; contenido: Buffer };
     corte?: AbortSignal;
   } = {},

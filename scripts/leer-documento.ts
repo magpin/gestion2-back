@@ -44,7 +44,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { ClaudeProveedor } from '../src/modules/lectura-documentos/proveedores/claude.proveedor';
 import type {
   ResultadoLectura,
-  TipoDocumento,
+  TipoDocumentoConfiguracion,
 } from '../src/modules/lectura-documentos/proveedores/extractor.puerto';
 
 /**
@@ -62,7 +62,7 @@ const EXTENSIONES = new Map<string, string>([
   ['.webp', 'image/webp'],
 ]);
 
-const TIPOS: Record<string, TipoDocumento> = {
+const TIPOS: Record<string, TipoDocumentoConfiguracion> = {
   RUT: 'RUT',
   CAMARA: 'CAMARA_COMERCIO',
   CAMARA_COMERCIO: 'CAMARA_COMERCIO',

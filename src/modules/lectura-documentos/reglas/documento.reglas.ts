@@ -2,6 +2,7 @@ import type {
   Confianza,
   DatoExtraido,
   TipoDocumento,
+  TipoDocumentoConfiguracion,
 } from '../proveedores/extractor.puerto';
 import type { ClavePaso } from '../../nucleo/servicios/estado-configuracion.reglas';
 
@@ -23,7 +24,7 @@ interface DefinicionCampo {
   /** Lo que la pantalla muestra. Nuestro, no del documento. */
   etiqueta: string;
   /** Qué documentos pueden decirlo. Un RUT no sabe la matrícula mercantil. */
-  documentos: TipoDocumento[];
+  documentos: TipoDocumentoConfiguracion[];
   /**
    * Una aclaración que viaja con el campo a las instrucciones del modelo.
    *
@@ -222,7 +223,7 @@ export const CAMPOS: Record<string, DefinicionCampo> = {
 };
 
 /** Los campos que un documento de este tipo puede proponer, en orden estable. */
-export function camposDe(tipo: TipoDocumento): string[] {
+export function camposDe(tipo: TipoDocumentoConfiguracion): string[] {
   return Object.keys(CAMPOS)
     .filter((campo) => CAMPOS[campo].documentos.includes(tipo))
     .sort();
@@ -237,6 +238,8 @@ export function nombreDocumento(tipo: TipoDocumento): string {
       return 'la Cámara de Comercio';
     case 'RESOLUCION_DIAN':
       return 'la resolución de la DIAN';
+    case 'FACTURA_COMPRA':
+      return 'la factura';
   }
 }
 
@@ -282,7 +285,7 @@ const LARGO_CASILLA = 24;
  */
 export function validar(
   crudo: unknown,
-  tipo: TipoDocumento,
+  tipo: TipoDocumentoConfiguracion,
 ): { datos: DatoExtraido[]; descartados: DatoDescartado[] } {
   const datos: DatoExtraido[] = [];
   const descartados: DatoDescartado[] = [];

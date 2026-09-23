@@ -133,10 +133,16 @@ export class DocumentoService {
     );
   }
 
+  /**
+   * `extraido` es un arreglo de `DatoExtraido` en los tres documentos de
+   * configuración, y un objeto en una factura (migración 0061). La base no mira
+   * adentro: lo que garantiza es que sea una de esas dos formas, y quién valida
+   * el contenido son las reglas del módulo.
+   */
   async guardarLeido(
     ctx: CtxEmpresa,
     id: string,
-    datos: DatoExtraido[],
+    datos: DatoExtraido[] | object,
     medicion?: MedicionLectura,
   ): Promise<void> {
     await this.tx.enContexto(ctx, (t) =>

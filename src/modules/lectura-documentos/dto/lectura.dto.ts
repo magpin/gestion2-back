@@ -10,10 +10,16 @@ import {
 import type { TipoDocumento } from '../proveedores/extractor.puerto';
 import { TIPOS_SUBIBLES } from '../reglas/contenido';
 
+/**
+ * Lo que se puede mandar a leer. Los tres de configuración, más la factura de
+ * compra —que se lee por otro camino y devuelve otra forma, pero entra por el
+ * mismo endpoint: el archivo sube al bucket igual—.
+ */
 const TIPOS: readonly TipoDocumento[] = [
   'RUT',
   'CAMARA_COMERCIO',
   'RESOLUCION_DIAN',
+  'FACTURA_COMPRA',
 ];
 
 /** Lo que el navegador manda antes de subir: qué va a subir y de qué tipo. */

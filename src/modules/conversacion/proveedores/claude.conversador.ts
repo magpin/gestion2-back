@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 
 import { hoyEnColombia } from '../../../common/fecha';
 import {
+  aceptaRazonamiento,
   MODELO_POR_DEFECTO,
   modeloPara,
   type ModeloPermitido,
@@ -270,8 +271,11 @@ export class ClaudeConversador implements ConversadorPuerto {
             max_tokens: MAX_TOKENS,
             betas: [BETA_RESPALDO],
             fallbacks: 'default',
-            thinking: { type: 'adaptive' },
-            output_config: { effort: ESFUERZO },
+            // Haiku no los acepta y la API rechazaría la petición entera.
+            ...(aceptaRazonamiento(this.modelo) && {
+              thinking: { type: 'adaptive' as const },
+              output_config: { effort: ESFUERZO },
+            }),
             // Dos puntos de caché: uno fijo al final de las instrucciones —y de
             // las herramientas, que van antes—, y el automático, que avanza con
             // el hilo. La fecha va después del fijo: cambia una vez por día y

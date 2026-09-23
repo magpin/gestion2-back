@@ -11,9 +11,11 @@
 //
 // Uso:
 //   npx ts-node scripts/probar-facturas-compra.ts --password "la-del-seed"
-//                 [--registrar]   registra de verdad las compras que cuadran
+//                 [--registrar]      registra de verdad las compras que cuadran
+//                 [--pdf]            deja afuera los Excel
+//                 [--modelo haiku]   lee con uno solo, y ese es el que registra
 //
-// Gasta tokens de verdad: cinco archivos por dos modelos.
+// Gasta tokens de verdad: seis archivos por dos modelos si no se acota.
 
 import 'dotenv/config';
 
@@ -254,12 +256,28 @@ function calificar(l: Leida | null, e: Esperado) {
   const registrar = process.argv.includes('--registrar');
   const cliente = new Anthropic();
 
+  // La comparación completa son seis archivos por dos modelos, y cuesta. Para
+  // volver a probar un cambio del cruce alcanza con los PDF y un solo modelo:
+  //   --pdf              deja afuera los Excel
+  //   --modelo haiku     lee con uno solo (y es el que se registra)
+  const archivos = process.argv.includes('--pdf')
+    ? ARCHIVOS.filter((a) => a.tipo === 'PDF')
+    : ARCHIVOS;
+  const preferido = argumento('modelo') ?? 'sonnet';
+  const modelos = argumento('modelo')
+    ? MODELOS.filter((m) => m.includes(preferido))
+    : MODELOS;
+  if (modelos.length === 0) {
+    console.error(`--modelo ${preferido} no es ninguno de: ${MODELOS.join(', ')}`);
+    process.exit(2);
+  }
+
   // ── 1 y 2: leer y calificar, con cada modelo ──
   const lecturas: { archivo: string; clave: string; modelo: string; leida: Leida | null; aprobada: boolean }[] = [];
   const resumen: string[] = [];
-  for (const a of ARCHIVOS) {
+  for (const a of archivos) {
     console.log(`\n══ ${a.archivo}`);
-    for (const modelo of MODELOS) {
+    for (const modelo of modelos) {
       const r = await leer(cliente, modelo, a);
       const notas = calificar(r.leida, a.esperado);
       const bien = notas.filter((n) => n.ok).length;
@@ -282,6 +300,26 @@ function calificar(l: Leida | null, e: Esperado) {
   // ── 3: cruzar con el sistema, sin IA ──
   const login = await pedir('POST', '/auth/login', { cuerpo: { email: 'compras@demo.co', password } });
   const { token } = await entrar('compras@demo.co', password, login.datos.empresas[0].id);
+
+  /**
+   * La cuenta de una línea de gasto. Mismo criterio que `compra.service.ts`:
+   * auxiliar y de una clase que admita un gasto o un activo que se compra. Solo
+   * por código exacto: buscar un arriendo por su descripción devolvería
+   * «Arrendamientos» y también «Arrendamientos recibidos», y elegir entre las
+   * dos es justamente lo que hay que preguntar.
+   */
+  const CLASES_DE_GASTO = ['5', '6', '7', '14', '15', '16', '17'];
+  const buscarCuenta = async (l: Leida['lineas'][number]) => {
+    const codigo = (l.cuentaContable ?? l.codigo ?? '').replace(/\D/g, '');
+    if (codigo === '') return { cuenta: null, como: 'el documento no dice la cuenta' };
+    const r = await pedir('GET', `/plan-cuentas?q=${codigo}&soloAuxiliares=true`, { token });
+    const exacta = (r.datos as any[]).find((c) => c.codigo === codigo);
+    if (!exacta) return { cuenta: null, como: `la cuenta ${codigo} no está en el plan` };
+    if (!CLASES_DE_GASTO.some((c) => codigo.startsWith(c)))
+      return { cuenta: null, como: `la cuenta ${codigo} no es de gasto ni de activo` };
+    return { cuenta: exacta, como: 'código de cuenta' };
+  };
+
   const buscarProducto = async (l: Leida['lineas'][number]) => {
     // El Excel trae el código pegado al nombre: «P27ORI0018 TINTA …».
     const codigo = l.codigo ?? l.descripcion.split(' ')[0];
@@ -298,7 +336,6 @@ function calificar(l: Leida | null, e: Esperado) {
   for (const clave of ['JALTECH', 'LUIS', 'ARRIENDO']) {
     // La lectura que aprobó todo, prefiriendo el PDF: es lo que manda el
     // proveedor y trae el NIT. Con --modelo haiku se registra con la de Haiku.
-    const preferido = argumento('modelo') ?? 'sonnet';
     const elegida =
       lecturas.find((x) => x.clave === clave && x.aprobada && x.modelo.includes(preferido) && x.archivo.endsWith('.pdf')) ??
       lecturas.find((x) => x.clave === clave && x.aprobada);
@@ -314,18 +351,44 @@ function calificar(l: Leida | null, e: Esperado) {
     const tercero = (t.datos.datos ?? [])[0];
     console.log(`  Proveedor: ${tercero ? `${tercero.razon_social ?? tercero.nombre} (por ${nit ? 'NIT' : 'nombre'})` : 'NO ENCONTRADO — se preguntaría'}`);
 
-    const gastos = l.lineas.filter((x) => x.tipo === 'GASTO');
-    if (gastos.length > 0) {
-      console.log(`  ${gastos.length} línea(s) de GASTO (${gastos.map((g) => `${g.cuentaContable ?? g.codigo ?? '?'} ${g.descripcion}`).join('; ')}).`);
-      console.log('  Hoy una compra solo acepta productos: esto necesita las líneas de gasto (F1). No se registra.');
-      continue;
-    }
-
-    const lineas: { productoId: string; cantidad: number; costoUnitario: number; valor: number }[] = [];
+    // Desde la fase 1 una compra acepta las dos cosas: mercancía contra el
+    // catálogo, y gasto contra una cuenta. Una factura de proveedor mezcla las
+    // dos todo el tiempo —la mercancía y el flete—, así que se cruza por línea.
+    type LineaLista = {
+      productoId?: string;
+      cuentaId?: string;
+      detalle?: string;
+      ivaTarifa?: number;
+      cantidad: number;
+      costoUnitario: number;
+      /** Solo para promediar los repetidos: no viaja en el cuerpo. */
+      valor: number;
+    };
+    const lineas: LineaLista[] = [];
     const sinCruce: string[] = [];
     const como = new Map<string, number>();
     const repetidos: string[] = [];
     for (const x of l.lineas) {
+      if (x.tipo === 'GASTO') {
+        const r = await buscarCuenta(x);
+        como.set(r.como, (como.get(r.como) ?? 0) + 1);
+        if (!r.cuenta) {
+          sinCruce.push(`${x.descripcion} (${r.como})`);
+          continue;
+        }
+        // El detalle es texto del documento del proveedor y se pinta en la
+        // pantalla: se recorta al largo que acepta la columna.
+        lineas.push({
+          cuentaId: r.cuenta.id,
+          detalle: x.descripcion.trim().slice(0, 200),
+          ivaTarifa: x.ivaPorcentaje,
+          cantidad: x.cantidad,
+          costoUnitario: x.valorUnitario,
+          valor: x.total,
+        });
+        continue;
+      }
+
       const r = await buscarProducto(x);
       como.set(r.como, (como.get(r.como) ?? 0) + 1);
       if (!r.producto) sinCruce.push(`${x.descripcion} (${r.como})`);
@@ -341,8 +404,8 @@ function calificar(l: Leida | null, e: Esperado) {
         } else lineas.push({ productoId: r.producto.id, cantidad: x.cantidad, costoUnitario: x.valorUnitario, valor: x.total });
       }
     }
-    console.log(`  Productos: ${[...como.entries()].map(([k, v]) => `${v} por ${k}`).join(', ')}`);
-    if (sinCruce.length > 0) console.log(`  Sin producto (se preguntarían): ${sinCruce.slice(0, 6).join(' | ')}`);
+    console.log(`  Cruce: ${[...como.entries()].map(([k, v]) => `${v} por ${k}`).join(', ')}`);
+    if (sinCruce.length > 0) console.log(`  Sin cruzar (se preguntarían): ${sinCruce.slice(0, 6).join(' | ')}`);
     if (repetidos.length > 0) console.log(`  ${repetidos.length} producto(s) en dos líneas a precios distintos: sumados en una al costo promedio (${repetidos.map((d) => d.slice(0, 30)).join(' | ')})`);
     // Sin simulación de compras todavía, lo mínimo: si el documento cobra IVA
     // y el proveedor figura como no responsable, la compra saldría sin IVA.
@@ -350,7 +413,13 @@ function calificar(l: Leida | null, e: Esperado) {
       console.log('  La factura cobra IVA y el proveedor figura como NO responsable: se preguntaría. No se registra.');
       continue;
     }
-    if (!tercero || sinCruce.length > 0) {
+    // El número lo pone el proveedor y es la identidad del documento: sin él la
+    // compra no se puede registrar ni volver a encontrar. Una cuenta de cobro
+    // no lo trae, y eso no es un error de lectura: es una pregunta.
+    if (!l.numeroFacturaProveedor) {
+      console.log('  El documento no trae número de factura: se preguntaría cuál es.');
+    }
+    if (!tercero || sinCruce.length > 0 || !l.numeroFacturaProveedor) {
       console.log('  Quedan preguntas para la persona: no se registra solo.');
       continue;
     }
@@ -366,15 +435,22 @@ function calificar(l: Leida | null, e: Esperado) {
       console.log(`  Listo para registrar (${lineas.length} líneas). Corré con --registrar para hacerlo.`);
       continue;
     }
-    const antes = await pedir('GET', `/productos/${lineas[0].productoId}`, { token });
+    // El stock solo se mira si hay mercancía: un arriendo no entra a ninguna
+    // bodega, y esa es justamente la diferencia que introdujo la fase 1.
+    const conProducto = lineas.find((x) => x.productoId !== undefined);
+    const antes = conProducto ? await pedir('GET', `/productos/${conProducto.productoId}`, { token }) : null;
     const c = await pedir('POST', '/compras', { token, cuerpo });
     if (c.estado !== 201 && c.estado !== 200) {
       console.log(`  El registro rechazó la compra (${c.estado}): ${JSON.stringify(c.datos.message ?? c.datos)}`);
       continue;
     }
-    const despues = await pedir('GET', `/productos/${lineas[0].productoId}`, { token });
     console.log(`  REGISTRADA: ${c.datos.numero_factura_proveedor} · subtotal ${c.datos.subtotal} · IVA ${c.datos.total_iva} · total ${c.datos.total} · pendiente ${c.datos.pendiente}`);
-    console.log(`  Stock de «${antes.datos.nombre}»: ${antes.datos.saldo_cantidad} → ${despues.datos.saldo_cantidad}`);
+    if (conProducto && antes) {
+      const despues = await pedir('GET', `/productos/${conProducto.productoId}`, { token });
+      console.log(`  Stock de «${antes.datos.nombre}»: ${antes.datos.saldo_cantidad} → ${despues.datos.saldo_cantidad}`);
+    }
+    const gastos = lineas.filter((x) => x.cuentaId !== undefined);
+    if (gastos.length > 0) console.log(`  ${gastos.length} línea(s) de gasto, que no tocan inventario.`);
     console.log(`  Coincide con el documento: subtotal ${Number(c.datos.subtotal) === l.subtotal ? 'sí' : `NO (${l.subtotal})`}, IVA ${Math.abs(Number(c.datos.total_iva) - l.iva) <= 1 ? 'sí' : `NO (${l.iva})`}, total ${Math.abs(Number(c.datos.total) - l.total) <= 1 ? 'sí' : `NO (${l.total})`}`);
   }
 })().catch((e) => {

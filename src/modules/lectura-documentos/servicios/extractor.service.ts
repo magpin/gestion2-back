@@ -6,6 +6,7 @@ import { AlmacenamientoApi } from '../../almacenamiento/almacenamiento.api';
 import { nombreDocumento } from '../reglas/documento.reglas';
 import {
   EXTRACTOR_PUERTO,
+  type ArchivoParaLeer,
   type ExtractorPuerto,
   type TipoDocumento,
 } from '../proveedores/extractor.puerto';
@@ -146,6 +147,15 @@ export class ExtractorService {
         documento.claveAlmacenamiento,
       );
 
+      // Una factura se lee por otro camino: devuelve cabecera con renglones y
+      // no campos sueltos, y el código comprueba sus totales. Es la única
+      // bifurcación del ciclo de vida, y termina igual que la otra —LEIDO con
+      // lo extraído, o FALLO con su motivo—.
+      if (documento.tipo === 'FACTURA_COMPRA') {
+        await this.leerFactura(ctx, documento, archivo, corte.signal);
+        return;
+      }
+
       const resultado = await this.extractor.leer({
         tipo: documento.tipo,
         archivo,
@@ -200,6 +210,61 @@ export class ExtractorService {
     } finally {
       this.progreso.soltarCorte(documento.id);
     }
+  }
+
+  /**
+   * La rama de la factura. Termina en los mismos dos estados que la otra, y con
+   * una diferencia deliberada: **una factura que no cuadra igual se guarda como
+   * LEIDA**, con sus comprobaciones al lado.
+   *
+   * Marcarla FALLO sería decir que no se pudo leer, y sí se pudo: lo que pasa
+   * es que las cuentas no dan. Quien mira la pantalla necesita ver los
+   * renglones justamente para encontrar cuál está mal —y esa es la diferencia
+   * entre «no pude» y «mirá esto»—. Lo que no cuadra no se propone; se muestra.
+   */
+  private async leerFactura(
+    ctx: CtxEmpresa,
+    documento: Documento,
+    archivo: ArchivoParaLeer,
+    corte: AbortSignal,
+  ): Promise<void> {
+    const resultado = await this.extractor.leerFactura({ archivo, corte });
+
+    if (!resultado.leido) {
+      await this.documentos.marcarFallo(ctx, documento.id, resultado);
+      this.progreso.emitir(ctx.empresaId, {
+        etapa: 'ERROR',
+        documento: documento.tipo,
+        documentoId: documento.id,
+        mensaje: resultado.motivo,
+        datos: [],
+      });
+      this.log.warn(
+        `Lectura ${documento.id} (factura) terminó en ${resultado.clase}.`,
+      );
+      return;
+    }
+
+    const sinCuadrar = resultado.comprobaciones.filter((c) => !c.cuadra);
+    await this.documentos.guardarLeido(
+      ctx,
+      documento.id,
+      { factura: resultado.factura, comprobaciones: resultado.comprobaciones },
+      resultado.medicion,
+    );
+
+    this.progreso.emitir(ctx.empresaId, {
+      etapa: 'LISTO',
+      documento: documento.tipo,
+      documentoId: documento.id,
+      mensaje:
+        sinCuadrar.length === 0
+          ? `Leí la factura: ${resultado.factura.renglones.length} renglones, y las cuentas dan.`
+          : `Leí la factura, pero ${sinCuadrar.length === 1 ? 'algo no da' : 'hay cosas que no dan'}: ${sinCuadrar.map((c) => c.que.toLowerCase()).join('; ')}.`,
+      // Los renglones no viajan por el canal de progreso: ese canal transporta
+      // `DatoExtraido`, que es la forma plana. La factura se busca con el `id`.
+      datos: [],
+    });
   }
 
   private async marcarFalloSeguro(

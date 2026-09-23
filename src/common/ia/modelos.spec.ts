@@ -1,4 +1,5 @@
 import {
+  aceptaRazonamiento,
   costoSimulado,
   costoUsd,
   modeloPara,
@@ -75,9 +76,35 @@ describe('modeloPara — el modelo de cada uso, del entorno', () => {
   });
 
   it('un modelo fuera de la lista no arranca, y dice cuáles se pueden', () => {
+    // El nombre corto no existe: el de verdad lleva la fecha pegada. Un error
+    // de tipeo en el entorno tiene que parar el arranque, no aparecer recién
+    // cuando la API rechace la primera factura.
     process.env.MODELO_LECTURA = 'claude-haiku-4-5';
     expect(() => modeloPara('LECTURA')).toThrow(
       /claude-opus-5, claude-sonnet-5/,
     );
+  });
+
+  it('Haiku con su nombre completo sí se puede elegir', () => {
+    process.env.MODELO_FACTURAS = 'claude-haiku-4-5-20251001';
+    expect(modeloPara('FACTURAS')).toBe('claude-haiku-4-5-20251001');
+  });
+});
+
+describe('aceptaRazonamiento — qué modelo admite `thinking` y `effort`', () => {
+  it('Opus y Sonnet sí', () => {
+    expect(aceptaRazonamiento('claude-opus-5')).toBe(true);
+    expect(aceptaRazonamiento('claude-sonnet-5')).toBe(true);
+  });
+
+  // Mandárselos no degrada la respuesta: la API rechaza la petición entera.
+  it('Haiku no', () => {
+    expect(aceptaRazonamiento('claude-haiku-4-5-20251001')).toBe(false);
+  });
+
+  // Con el respaldo por rechazo, el que contesta puede no ser el que se pidió:
+  // se reconoce por la familia, como la tarifa.
+  it('se reconoce por la familia y sin importar mayúsculas', () => {
+    expect(aceptaRazonamiento('Claude-Haiku-9-algo')).toBe(false);
   });
 });

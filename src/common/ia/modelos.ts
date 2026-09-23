@@ -103,9 +103,27 @@ export function costoSimulado(t: Tokens, tarifa: Tarifa): number {
   );
 }
 
-/** Los modelos que se pueden elegir. Haiku 4.5 no acepta `thinking: adaptive` ni `effort`: pasar a Haiku cambia la petición, no solo el nombre. */
-export const MODELOS_PERMITIDOS = ['claude-opus-5', 'claude-sonnet-5'] as const;
+/** Los modelos que se pueden elegir. Ver `aceptaRazonamiento`: con Haiku cambia la petición, no solo el nombre. */
+export const MODELOS_PERMITIDOS = [
+  'claude-opus-5',
+  'claude-sonnet-5',
+  'claude-haiku-4-5-20251001',
+] as const;
 export type ModeloPermitido = (typeof MODELOS_PERMITIDOS)[number];
+
+/**
+ * Si el modelo acepta `thinking: { type: 'adaptive' }` y `output_config.effort`.
+ *
+ * **Haiku 4.5 no**, y mandárselos no degrada la respuesta: la API rechaza la
+ * petición entera. Por eso elegir Haiku no es cambiar un nombre, y por eso esto
+ * vive acá y no en cada proveedor: son dos, y una de las dos se iba a olvidar.
+ *
+ * Se decide por familia y no por nombre exacto porque con el respaldo por
+ * rechazo el que contesta puede no ser el que se pidió.
+ */
+export function aceptaRazonamiento(modelo: string): boolean {
+  return !modelo.toLowerCase().includes('haiku');
+}
 
 /**
  * El modelo por defecto: el que se midió primero y el que pasó todas las

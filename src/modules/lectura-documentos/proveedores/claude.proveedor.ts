@@ -1,7 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 
-import { modeloPara } from '../../../common/ia/modelos';
+import { aceptaRazonamiento, modeloPara } from '../../../common/ia/modelos';
+import {
+  ESQUEMA_FACTURA,
+  INSTRUCCIONES_FACTURA,
+  comprobar,
+  validarFactura,
+} from '../reglas/factura-compra.reglas';
 import {
   CAMPOS,
   TIPOS_ARCHIVO,
@@ -17,8 +23,11 @@ import type {
   DatoExtraido,
   ExtractorPuerto,
   MedicionLectura,
+  FallaLectura,
   ResultadoLectura,
+  ResultadoLecturaFactura,
   TipoDocumento,
+  TipoDocumentoConfiguracion,
 } from './extractor.puerto';
 
 /**
@@ -43,8 +52,30 @@ import type {
  */
 const MODELO = modeloPara('LECTURA');
 
+/**
+ * El de las facturas se elige aparte —`MODELO_FACTURAS`— y va en Haiku: leer
+ * una factura es transcribir contra una forma obligada, y **el código comprueba
+ * cada total** contra lo impreso. Donde se puede verificar, se puede ahorrar.
+ */
+const MODELO_FACTURA = modeloPara('FACTURAS');
+
+/**
+ * La herramienta que obliga a devolver la factura estructurada. Reusa el mismo
+ * esquema que `leer` usaría como formato de salida: la forma es una sola y
+ * vive en las reglas.
+ */
+const HERRAMIENTA_FACTURA = {
+  name: 'devolver_factura_leida',
+  description:
+    'Devuelve la factura de compra tal como está escrita en el documento. No inventa lo que no está y no suma nada.',
+  input_schema: ESQUEMA_FACTURA as unknown as {
+    type: 'object';
+    properties: Record<string, unknown>;
+  },
+};
+
 /** Los documentos que `analizar` puede mandar a leer: los mismos de `leer`. */
-const TIPOS_CLASIFICABLES: readonly TipoDocumento[] = [
+const TIPOS_CLASIFICABLES: readonly TipoDocumentoConfiguracion[] = [
   'RUT',
   'CAMARA_COMERCIO',
   'RESOLUCION_DIAN',
@@ -249,16 +280,7 @@ export class ClaudeProveedor implements ExtractorPuerto {
       ],
     });
 
-    const medicion: MedicionLectura = {
-      uso: {
-        entrada: respuesta.usage.input_tokens,
-        salida: respuesta.usage.output_tokens,
-        cacheLeido: respuesta.usage.cache_read_input_tokens ?? 0,
-        cacheEscrito: respuesta.usage.cache_creation_input_tokens ?? 0,
-      },
-      modelo: respuesta.model,
-      duracionMs: Date.now() - empezo,
-    };
+    const medicion = medicionDe(respuesta, empezo);
     const uso = respuesta.content.find((b) => b.type === 'tool_use');
     const dicho = (uso?.input ?? {}) as {
       tipo?: string;
@@ -272,7 +294,7 @@ export class ClaudeProveedor implements ExtractorPuerto {
       tipo: (TIPOS_CLASIFICABLES as readonly string[]).includes(
         dicho.tipo ?? '',
       )
-        ? (dicho.tipo as TipoDocumento)
+        ? (dicho.tipo as TipoDocumentoConfiguracion)
         : null,
       clase: recortar(dicho.clase ?? 'Documento', 80),
       resumen: recortar(
@@ -283,8 +305,117 @@ export class ClaudeProveedor implements ExtractorPuerto {
     };
   }
 
+  /**
+   * Una factura de compra.
+   *
+   * **Herramienta forzada y no esquema de salida**, a diferencia de `leer`: es
+   * la forma que se midió contra los tres PDF reales —Jaltech de 60 renglones,
+   * Luis Fernando y el arriendo— el 23 de septiembre, 23 de 23 verificaciones
+   * con Haiku. No se cambia por una equivalente sin volver a medir.
+   *
+   * Sin streaming: se lee de una y en segundos, y no hay nada que mostrar a
+   * medias que no invite a leerlo antes de que el total esté comprobado.
+   */
+  async leerFactura(entrada: {
+    archivo: ArchivoParaLeer;
+    corte?: AbortSignal;
+  }): Promise<ResultadoLecturaFactura> {
+    const forma = TIPOS_ARCHIVO.get(entrada.archivo.tipoMime);
+    if (forma === undefined) {
+      return {
+        leido: false,
+        clase: 'ILEGIBLE',
+        motivo: 'Solo puedo leer facturas en PDF o en foto.',
+      };
+    }
+    if (!this.disponible) {
+      return {
+        leido: false,
+        clase: 'SIN_CLAVE',
+        motivo: 'La lectura automática no está disponible en este momento.',
+      };
+    }
+
+    const empezo = Date.now();
+    try {
+      const respuesta = await this.cliente().beta.messages.create(
+        {
+          model: MODELO_FACTURA,
+          max_tokens: MAX_TOKENS,
+          betas: [BETA_RESPALDO],
+          fallbacks: 'default',
+          // Haiku no acepta `thinking`, y es justamente el que va acá.
+          ...(aceptaRazonamiento(MODELO_FACTURA) && {
+            thinking: { type: 'adaptive' as const },
+          }),
+          tools: [HERRAMIENTA_FACTURA],
+          tool_choice: { type: 'tool', name: HERRAMIENTA_FACTURA.name },
+          system: [
+            {
+              type: 'text',
+              text: INSTRUCCIONES_FACTURA,
+              cache_control: { type: 'ephemeral' },
+            },
+          ],
+          messages: [
+            {
+              role: 'user',
+              content: [
+                bloqueDelArchivo(entrada.archivo, forma),
+                { type: 'text', text: 'Leé esta factura de compra.' },
+              ],
+            },
+          ],
+        },
+        { signal: entrada.corte },
+      );
+
+      const medicion = medicionDe(respuesta, empezo);
+
+      // La respuesta cortada es un caso aparte y no «no encontré nada»: una
+      // factura de cien renglones puede agotar la salida, y decirle a la
+      // persona que el archivo no se entiende sería mentirle.
+      if (respuesta.stop_reason === 'max_tokens') {
+        this.log.warn('La factura no cupo en la respuesta.');
+        return {
+          leido: false,
+          clase: 'CORTADO',
+          motivo:
+            'La factura tiene demasiados renglones y la lectura se cortó. Registrala a mano.',
+          medicion,
+        };
+      }
+
+      const bloque = respuesta.content.find((b) => b.type === 'tool_use');
+      const factura = validarFactura(bloque?.input);
+
+      if (factura === null || factura.renglones.length === 0) {
+        return {
+          leido: false,
+          clase: 'ILEGIBLE',
+          motivo:
+            'No encontré una factura de compra en ese archivo. Revisá que sea el documento correcto.',
+          medicion,
+        };
+      }
+
+      // Acá es donde se gana el derecho a usar el modelo barato: las sumas las
+      // hace el código y se comparan con lo impreso. Lo que no cuadra **igual
+      // se devuelve**, con el detalle: quien decide es una persona, y necesita
+      // ver qué no dio.
+      const comprobaciones = comprobar(factura);
+      this.log.log(
+        `Factura leída: ${factura.renglones.length} renglones, ${comprobaciones.filter((c) => c.cuadra).length}/${comprobaciones.length} comprobaciones, en ${medicion.duracionMs} ms · entrada ${medicion.uso.entrada}, salida ${medicion.uso.salida}`,
+      );
+
+      return { leido: true, factura, comprobaciones, medicion };
+    } catch (error: unknown) {
+      return this.explicar(error, 'FACTURA_COMPRA');
+    }
+  }
+
   async leer(entrada: {
-    tipo: TipoDocumento;
+    tipo: TipoDocumentoConfiguracion;
     archivo: ArchivoParaLeer;
     alAvanzar?: (avance: AvanceLectura) => void;
     corte?: AbortSignal;
@@ -324,7 +455,11 @@ export class ClaudeProveedor implements ExtractorPuerto {
           max_tokens: MAX_TOKENS,
           betas: [BETA_RESPALDO],
           fallbacks: 'default',
-          thinking: { type: 'adaptive' },
+          // Haiku no lo acepta y la API rechazaría la petición entera. El
+          // formato de salida sí lo acepta: eso se manda siempre.
+          ...(aceptaRazonamiento(MODELO) && {
+            thinking: { type: 'adaptive' as const },
+          }),
           output_config: { format: { type: 'json_schema', schema: ESQUEMA } },
           system: [
             {
@@ -473,7 +608,7 @@ export class ClaudeProveedor implements ExtractorPuerto {
    * Un motivo para la persona y una línea en el registro. Nunca el error crudo:
    * puede traer pedazos del documento.
    */
-  private explicar(error: unknown, tipo: TipoDocumento): ResultadoLectura {
+  private explicar(error: unknown, tipo: TipoDocumento): FallaLectura {
     if (
       error instanceof Anthropic.APIUserAbortError ||
       (error instanceof Error && error.name === 'AbortError')
@@ -535,6 +670,27 @@ export class ClaudeProveedor implements ExtractorPuerto {
 }
 
 /**
+ * Lo que costó una llamada. El modelo sale de la **respuesta** y no de lo que
+ * se pidió: con el respaldo por rechazo puede contestar otro, y el tablero de
+ * consumo tiene que cobrar el que contestó.
+ */
+function medicionDe(
+  respuesta: { usage: Anthropic.Beta.BetaUsage; model: string },
+  empezo: number,
+): MedicionLectura {
+  return {
+    uso: {
+      entrada: respuesta.usage.input_tokens,
+      salida: respuesta.usage.output_tokens,
+      cacheLeido: respuesta.usage.cache_read_input_tokens ?? 0,
+      cacheEscrito: respuesta.usage.cache_creation_input_tokens ?? 0,
+    },
+    modelo: respuesta.model,
+    duracionMs: Date.now() - empezo,
+  };
+}
+
+/**
  * El PDF viaja como bloque `document` y las fotos como `image`. La API los lee
  * sin OCR aparte.
  */
@@ -562,7 +718,7 @@ function bloqueDelArchivo(
 }
 
 /** Lo único que cambia entre las tres llamadas, y por eso va después del caché. */
-function pedido(tipo: TipoDocumento): string {
+function pedido(tipo: TipoDocumentoConfiguracion): string {
   return `Este archivo es ${nombreDocumento(tipo)} de una empresa. Extraé lo que diga, con las reglas de arriba.`;
 }
 

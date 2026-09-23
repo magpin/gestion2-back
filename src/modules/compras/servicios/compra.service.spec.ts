@@ -58,10 +58,44 @@ function nucleoFalso(
   const cuenta = jest.fn((_ctx: unknown, codigo: string) =>
     Promise.resolve(cuentas[codigo] ?? null),
   );
+  // Las cuentas que una línea de gasto puede elegir, por id.
+  const porId: Record<string, Record<string, unknown>> = {
+    "cta-arriendo": {
+      id: "cta-arriendo",
+      codigo: "512010",
+      nombre: "Arrendamientos",
+      activa: true,
+      es_auxiliar: true,
+    },
+    "cta-agrupa": {
+      id: "cta-agrupa",
+      codigo: "5120",
+      nombre: "Arrendamientos (grupo)",
+      activa: true,
+      es_auxiliar: false,
+    },
+    "cta-banco": {
+      id: "cta-banco",
+      codigo: "111005",
+      nombre: "Banco",
+      activa: true,
+      es_auxiliar: true,
+    },
+    "cta-inactiva": {
+      id: "cta-inactiva",
+      codigo: "512015",
+      nombre: "Vieja",
+      activa: false,
+      es_auxiliar: true,
+    },
+  };
   const fake = {
     buscarTercero: jest.fn(() => Promise.resolve(proveedor)),
     regimenVigente: jest.fn(() => Promise.resolve(regimen)),
     cuenta,
+    cuentaPorId: jest.fn((_ctx: unknown, id: string) =>
+      Promise.resolve(porId[id] ?? null),
+    ),
   } as unknown as ConstructorParameters<typeof CompraService>[1];
   return { fake, cuenta };
 }
@@ -143,6 +177,8 @@ function txFalso() {
           compraDocumentoId,
           orden,
           productoId,
+          cuentaId,
+          detalle,
           cantidad,
           costoUnitario,
           ivaTarifa,
@@ -157,6 +193,8 @@ function txFalso() {
             compra_documento_id: compraDocumentoId,
             orden,
             producto_id: productoId,
+            cuenta_id: cuentaId,
+            detalle,
             cantidad: String(cantidad),
             costo_unitario: String(costoUnitario),
             iva_tarifa: String(ivaTarifa),
@@ -1515,5 +1553,169 @@ describe('CompraService.pagar', () => {
     await expect(servicio.pagar(ctx, 'inexistente', DTO)).rejects.toThrow(
       NotFoundException,
     );
+  });
+});
+
+describe('CompraService.crear — líneas de gasto', () => {
+  /** El arriendo del local: no es un producto y no entra a ninguna bodega. */
+  const arriendo = {
+    cuentaId: 'cta-arriendo',
+    detalle: 'Arriendo del local, septiembre',
+    cantidad: 1,
+    costoUnitario: 2_000_000,
+    ivaTarifa: 19,
+  };
+
+  function servicioDeGasto() {
+    const { tx } = txFalso();
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+    const inventario = inventarioFalso();
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventario.fake,
+      contabilidad,
+      {} as never,
+      {} as never,
+    );
+    return { servicio, asentar, inventario, tx };
+  }
+
+  it('debita la cuenta elegida y no toca el inventario', async () => {
+    const { servicio, asentar, inventario } = servicioDeGasto();
+
+    const compra = await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: '2026-09-08',
+      numeroFacturaProveedor: 'FP-ARR-1',
+      formaPago: 'CREDITO',
+      lineas: [arriendo],
+    });
+
+    expect(compra.subtotal).toBe('2000000');
+    expect(compra.total_iva).toBe('380000');
+
+    const [, dtoAsiento] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      { lineas: Array<Record<string, unknown>> },
+    ];
+    // El débito va a la cuenta del gasto, no a una de inventario.
+    expect(dtoAsiento.lineas[0]).toEqual({
+      cuentaId: 'cta-arriendo',
+      debito: 2_000_000,
+      credito: 0,
+    });
+    // Y un arriendo no entra a la bodega.
+    expect(inventario.incrementarPorCompra).not.toHaveBeenCalled();
+  });
+
+  it('mezcla productos y gastos en la misma factura', async () => {
+    const { servicio, asentar, inventario } = servicioDeGasto();
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: '2026-09-08',
+      numeroFacturaProveedor: 'FP-MIX-1',
+      formaPago: 'CREDITO',
+      lineas: [lineaBase, arriendo],
+    });
+
+    const [, dtoAsiento] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      { lineas: Array<Record<string, unknown>> },
+    ];
+    expect(dtoAsiento.lineas[0]).toMatchObject({ cuentaId: 'cta-inv' });
+    expect(dtoAsiento.lineas[1]).toMatchObject({ cuentaId: 'cta-arriendo' });
+    // Solo el producto entra al kardex.
+    expect(inventario.incrementarPorCompra).toHaveBeenCalledTimes(1);
+  });
+
+  it('deja repetir la misma cuenta en dos líneas, cada una con su detalle', async () => {
+    const { servicio } = servicioDeGasto();
+
+    // Dos renglones contra la misma cuenta son corrientes en una factura de
+    // servicios; repetir un producto no, y eso sigue frenado.
+    const compra = await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: '2026-09-08',
+      numeroFacturaProveedor: 'FP-ARR-2',
+      formaPago: 'CREDITO',
+      lineas: [
+        { ...arriendo, detalle: 'Arriendo del local' },
+        { ...arriendo, detalle: 'Arriendo de la bodega' },
+      ],
+    });
+
+    expect(compra.subtotal).toBe('4000000');
+  });
+
+  it('no acepta una cuenta que agrupa: no recibe movimientos', async () => {
+    const { servicio } = servicioDeGasto();
+
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: '2026-09-08',
+        numeroFacturaProveedor: 'FP-ARR-3',
+        formaPago: 'CREDITO',
+        lineas: [{ ...arriendo, cuentaId: 'cta-agrupa' }],
+      }),
+    ).rejects.toThrow(/agrupa/);
+  });
+
+  it('no acepta una cuenta donde un gasto no va: sería un asiento que cuadra y miente', async () => {
+    const { servicio } = servicioDeGasto();
+
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: '2026-09-08',
+        numeroFacturaProveedor: 'FP-ARR-4',
+        formaPago: 'CREDITO',
+        // Un banco es auxiliar y activa, pero mandar un arriendo ahí no es un
+        // error de tipeo: es contabilidad falsa.
+        lineas: [{ ...arriendo, cuentaId: 'cta-banco' }],
+      }),
+    ).rejects.toThrow(/no es de gasto/);
+  });
+
+  it('no acepta una cuenta inactiva', async () => {
+    const { servicio } = servicioDeGasto();
+
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: '2026-09-08',
+        numeroFacturaProveedor: 'FP-ARR-5',
+        formaPago: 'CREDITO',
+        lineas: [{ ...arriendo, cuentaId: 'cta-inactiva' }],
+      }),
+    ).rejects.toThrow(/no existe o está inactiva/);
+  });
+
+  it('un proveedor no responsable de IVA deja el gasto sin IVA', async () => {
+    const { tx } = txFalso();
+    const { fake: contabilidad } = contabilidadFalso();
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      nucleoFalso({
+        proveedor: { ...proveedorActivo, responsableIva: false },
+      }).fake,
+      inventarioFalso().fake,
+      contabilidad,
+      {} as never,
+      {} as never,
+    );
+
+    const compra = await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: '2026-09-08',
+      numeroFacturaProveedor: 'FP-ARR-6',
+      formaPago: 'CREDITO',
+      // Pide 19 %, pero el proveedor no lo cobra: manda el proveedor.
+      lineas: [arriendo],
+    });
+
+    expect(compra.total_iva).toBe('0');
   });
 });

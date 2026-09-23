@@ -23,10 +23,12 @@ import {
   type CompraDocumentoResumen,
 } from './compra.service';
 
-const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cantidad,
+const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cuenta_id, detalle, cantidad,
                        costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable,
                        (SELECT x.codigo FROM producto x WHERE x.id = producto_id) AS producto_codigo,
-                       (SELECT x.nombre FROM producto x WHERE x.id = producto_id) AS producto_nombre`;
+                       (SELECT x.nombre FROM producto x WHERE x.id = producto_id) AS producto_nombre,
+                       (SELECT x.codigo FROM empresa_cuenta x WHERE x.id = cuenta_id) AS cuenta_codigo,
+                       (SELECT x.nombre FROM empresa_cuenta x WHERE x.id = cuenta_id) AS cuenta_nombre`;
 
 const CODIGO_CUENTA_PROVEEDORES = '220505';
 const CODIGO_CUENTA_IVA_DESCONTABLE = '240810';
@@ -135,11 +137,10 @@ export class CompraNotaService {
       const { cuentaProveedores, cuentaIvaId, totalIvaDescontable } =
         await this.cuentas(ctx, lineas, totales.subtotal, t);
 
-      const cuentaInventarioDe = await this.cuentasDeInventario(
-        ctx,
-        origenes.map((l) => l.producto_id),
-        t,
-      );
+      // Contra la misma cuenta que se debitó al comprar, y la línea original
+      // la guarda desde la 0060. Antes se le preguntaba al producto, y con
+      // una línea de gasto —que no tiene producto— se caía.
+      const cuentaDebitoDe = origenes.map((l) => l.cuenta_id);
 
       // El asiento de la compra, al revés.
       const lineasAsiento: LineaAsientoDto[] = [
@@ -162,7 +163,7 @@ export class CompraNotaService {
       }
       lineas.forEach((l, i) => {
         lineasAsiento.push({
-          cuentaId: cuentaInventarioDe[i],
+          cuentaId: cuentaDebitoDe[i],
           debito: 0,
           credito: l.valorKardex,
         });
@@ -182,7 +183,11 @@ export class CompraNotaService {
         dto,
         compra,
         { lineas, totales, retenido, neto, retenciones },
-        origenes.map((l) => l.producto_id),
+        origenes.map((l) => ({
+          productoId: l.producto_id,
+          cuentaId: l.cuenta_id,
+          detalle: l.detalle,
+        })),
         origenes.map((l) => l.id),
         lineasAsiento,
         t,
@@ -200,7 +205,11 @@ export class CompraNotaService {
     return this.tx.enContexto(ctx, async (t) => {
       const compra = await this.exigirCompraVigente(ctx, dto, t);
 
-      const productoIds = dto.lineas.map((l) => l.productoId);
+      // Las de gasto quedan fuera de esta cuenta: dos fletes en la misma nota
+      // son corrientes, y cada uno tiene su detalle.
+      const productoIds = dto.lineas.flatMap((l) =>
+        l.productoId === undefined ? [] : [l.productoId],
+      );
       if (new Set(productoIds).size !== productoIds.length) {
         throw new BadRequestException(
           'No repitas el mismo producto en dos líneas — sumá la cantidad en una sola.',
@@ -212,17 +221,25 @@ export class CompraNotaService {
       // nuestra condición. Se heredan de la compra que se está corrigiendo.
       const ivaDescontable = compra.lineas.some((l) => l.iva_descontable);
       const entradas = [];
+      /** Contra qué cuenta va cada línea: la del producto o la del gasto. */
+      const cuentaDebitoDe: string[] = [];
       for (const l of dto.lineas) {
-        const producto = await this.inventario.producto(ctx, l.productoId, t);
-        if (producto === null || !producto.activo) {
-          throw new BadRequestException(
-            `El producto ${l.productoId} no existe o está inactivo.`,
-          );
-        }
+        const producto =
+          l.productoId === undefined
+            ? null
+            : await this.compras.productoDeLinea(ctx, l.productoId, t);
+
+        cuentaDebitoDe.push(
+          producto === null
+            ? await this.compras.cuentaDeGasto(ctx, l.cuentaId ?? '', t)
+            : producto.cuenta_inventario_id,
+        );
+
         entradas.push({
           cantidad: l.cantidad,
           costoUnitario: l.costoUnitario,
-          ivaTarifa: Number(producto.iva_tarifa),
+          ivaTarifa:
+            producto === null ? (l.ivaTarifa ?? 0) : Number(producto.iva_tarifa),
           ivaDescontable,
         });
       }
@@ -235,18 +252,14 @@ export class CompraNotaService {
 
       const { cuentaProveedores, cuentaIvaId, totalIvaDescontable } =
         await this.cuentas(ctx, lineas, totales.subtotal, t);
-      const cuentaInventarioDe = await this.cuentasDeInventario(
-        ctx,
-        productoIds,
-        t,
-      );
+
 
       // Mismo sentido que la compra: débito lo que entra, crédito lo que se
       // debe.
       const lineasAsiento: LineaAsientoDto[] = [];
       lineas.forEach((l, i) => {
         lineasAsiento.push({
-          cuentaId: cuentaInventarioDe[i],
+          cuentaId: cuentaDebitoDe[i],
           debito: l.valorKardex,
           credito: 0,
         });
@@ -272,7 +285,11 @@ export class CompraNotaService {
         dto,
         compra,
         { lineas, totales, retenido: 0, neto, retenciones: [] },
-        productoIds,
+        dto.lineas.map((l, i) => ({
+          productoId: l.productoId ?? null,
+          cuentaId: cuentaDebitoDe[i],
+          detalle: l.detalle ?? null,
+        })),
         dto.lineas.map(() => null),
         lineasAsiento,
         t,
@@ -387,22 +404,6 @@ export class CompraNotaService {
     return { cuentaProveedores, cuentaIvaId, totalIvaDescontable };
   }
 
-  private async cuentasDeInventario(
-    ctx: CtxEmpresa,
-    productoIds: string[],
-    t: Tx,
-  ): Promise<string[]> {
-    const cuentas: string[] = [];
-    for (const id of productoIds) {
-      const producto = await this.inventario.producto(ctx, id, t);
-      if (producto === null) {
-        throw new BadRequestException(`El producto ${id} no existe.`);
-      }
-      cuentas.push(producto.cuenta_inventario_id);
-    }
-    return cuentas;
-  }
-
   /** El asiento, la cabecera, las líneas y las retenciones de la nota. */
   private async guardar(
     ctx: CtxEmpresa,
@@ -434,7 +435,11 @@ export class CompraNotaService {
         valor: number;
       }>;
     },
-    productoIds: string[],
+    renglones: Array<{
+      productoId: string | null;
+      cuentaId: string;
+      detalle: string | null;
+    }>,
     lineaOrigenIds: Array<string | null>,
     lineasAsiento: LineaAsientoDto[],
     t: Tx,
@@ -500,16 +505,18 @@ export class CompraNotaService {
       const insertada = fila<CompraDocumentoLineaResumen>(
         await t.query(
           `INSERT INTO compra_documento_linea
-             (empresa_id, compra_documento_id, orden, producto_id, cantidad,
-              costo_unitario, iva_tarifa, subtotal, iva_valor, total,
+             (empresa_id, compra_documento_id, orden, producto_id, cuenta_id, detalle,
+              cantidad, costo_unitario, iva_tarifa, subtotal, iva_valor, total,
               iva_descontable, linea_origen_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
            RETURNING ${CAMPOS_LINEA}`,
           [
             ctx.empresaId,
             documento.id,
             i + 1,
-            productoIds[i],
+            renglones[i].productoId,
+            renglones[i].cuentaId,
+            renglones[i].detalle,
             l.cantidad,
             l.costoUnitario,
             l.ivaTarifa,

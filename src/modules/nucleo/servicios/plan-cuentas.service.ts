@@ -212,6 +212,50 @@ export class PlanCuentasService {
     );
   }
 
+  /**
+   * La misma cuenta, buscada por id y **sin exigir que esté activa**.
+   *
+   * Va aparte de `cuenta()` porque responde otra pregunta. Aquella resuelve
+   * una cuenta que el sistema conoce por su código —la de proveedores, la de
+   * IVA— y si no está activa es como si no existiera. Esta resuelve una que
+   * eligió una persona en una lista, y ahí «no existe» y «está inactiva» son
+   * dos problemas distintos que merecen dos mensajes distintos: por eso
+   * devuelve la fila con su bandera en vez de un nulo.
+   */
+  async cuentaPorId(
+    ctx: CtxEmpresa,
+    id: string,
+    tx?: Tx,
+  ): Promise<{
+    id: string;
+    codigo: string;
+    nombre: string;
+    activa: boolean;
+    es_auxiliar: boolean;
+  } | null> {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const [f] = await t.query<
+          Array<{
+            id: string;
+            codigo: string;
+            nombre: string;
+            activa: boolean;
+            es_auxiliar: boolean;
+          }>
+        >(
+          `SELECT id, codigo, nombre, activa, es_auxiliar
+             FROM empresa_cuenta
+            WHERE id = $1`,
+          [id],
+        );
+        return f ?? null;
+      },
+      tx,
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // El catálogo del decreto, visto desde esta empresa
   // ---------------------------------------------------------------------------

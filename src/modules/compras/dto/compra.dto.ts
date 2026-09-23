@@ -27,9 +27,48 @@ export const CONCEPTOS_RETENCION = [
 ] as const;
 export type ConceptoRetencion = (typeof CONCEPTOS_RETENCION)[number];
 
+/**
+ * Una línea de compra: **o un producto, o un gasto**.
+ *
+ * Con producto, entra al inventario y se debita su cuenta. Con cuenta, no
+ * toca inventario y se debita la que se eligió: es el arriendo, el internet,
+ * los honorarios —la factura que más llega y la que hasta ahora no tenía
+ * dónde ir—.
+ *
+ * Los dos a la vez no: una línea se debita contra una sola cuenta.
+ */
 export class LineaCompraDto {
+  @ValidateIf((o: LineaCompraDto) => o.cuentaId === undefined)
   @IsUUID()
-  productoId!: string;
+  productoId?: string;
+
+  /**
+   * La cuenta contra la que se debita el gasto. Una auxiliar activa del plan
+   * de la empresa; el servicio verifica que reciba movimientos y que sea de
+   * una clase donde un gasto tenga sentido.
+   */
+  @ValidateIf((o: LineaCompraDto) => o.productoId === undefined)
+  @IsUUID()
+  cuentaId?: string;
+
+  /**
+   * Qué se compró. **Obligatorio en las de gasto**: una línea que dice
+   * «519530 · 500.000» y nada más obliga a abrir la factura en papel para
+   * saber qué fue. En las de producto sobra, y se ignora.
+   */
+  @ValidateIf((o: LineaCompraDto) => o.productoId === undefined)
+  @IsString()
+  @Length(2, 200)
+  detalle?: string;
+
+  /**
+   * La tarifa de IVA del gasto. Solo en las de gasto: en las de producto la
+   * pone el producto, que es donde vive esa decisión.
+   */
+  @ValidateIf((o: LineaCompraDto) => o.productoId === undefined)
+  @IsOptional()
+  @IsIn([0, 5, 19])
+  ivaTarifa?: number;
 
   @IsNumber({ maxDecimalPlaces: 6 })
   @Min(0.000001)

@@ -46,6 +46,12 @@ const compraVigente: CompraDocumentoDetalle = {
       producto_id: 'p-1',
       producto_codigo: 'P-1',
       producto_nombre: 'Producto uno',
+      // La cuenta que se debitó al comprar: la nota crédito la toma de acá,
+      // sin volver a preguntarle al producto.
+      cuenta_id: 'cuenta-inventario',
+      cuenta_codigo: '143505',
+      cuenta_nombre: 'Mercancías',
+      detalle: null,
       cantidad: '10',
       costo_unitario: '100000',
       iva_tarifa: '19',
@@ -128,6 +134,14 @@ function comprasFalso(compra: CompraDocumentoDetalle = compraVigente) {
     porId: jest.fn((_ctx: unknown, id: string) =>
       Promise.resolve(id === 'c-1' ? compra : { ...compra, id }),
     ),
+    // Las notas resuelven el producto y la cuenta de gasto con los mismos
+    // ayudantes que la compra: una sola regla para los dos caminos.
+    productoDeLinea: jest.fn((_ctx: unknown, id: string) =>
+      Promise.resolve(
+        id === 'p-1' ? { ...productoFlete, id: 'p-1', codigo: 'P-1' } : productoFlete,
+      ),
+    ),
+    cuentaDeGasto: jest.fn((_ctx: unknown, id: string) => Promise.resolve(id)),
   } as unknown as ConstructorParameters<typeof CompraNotaService>[4];
 }
 
@@ -197,7 +211,7 @@ describe('CompraNotaService.crearNotaCredito', () => {
         debito: 5950,
         credito: 0,
       },
-      { cuentaId: 'cta-inventario', debito: 0, credito: 200000 },
+      { cuentaId: 'cuenta-inventario', debito: 0, credito: 200000 },
       {
         cuentaId: 'cta-iva-descontable',
         baseGravable: 200000,
@@ -232,7 +246,9 @@ describe('CompraNotaService.crearNotaCredito', () => {
       sql.includes('INSERT INTO compra_documento_linea'),
     )!;
     expect(linea[1][3]).toBe('p-1');
-    expect(linea[1][11]).toBe('lc-1');
+    // La cuenta y el detalle vienen de la línea original, no del producto.
+    expect(linea[1][4]).toBe('cuenta-inventario');
+    expect(linea[1][13]).toBe('lc-1');
   });
 
   it('rechaza devolver más de lo que queda pendiente', async () => {

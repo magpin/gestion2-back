@@ -175,6 +175,14 @@ export class NucleoApi {
     return this.plan.cuenta(ctx, codigo, tx);
   }
 
+  /**
+   * Una cuenta por id, con su bandera de activa: la eligió una persona en una
+   * lista, así que «no existe» y «está inactiva» son dos problemas distintos.
+   */
+  async cuentaPorId(ctx: CtxEmpresa, id: string, tx?: Tx) {
+    return this.plan.cuentaPorId(ctx, id, tx);
+  }
+
   /** Los datos de un tercero para ponerlo en un documento. */
   async buscarTercero(
     ctx: CtxEmpresa,

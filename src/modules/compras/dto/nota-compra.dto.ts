@@ -1,12 +1,14 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   Length,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
@@ -54,10 +56,34 @@ export class CrearNotaCreditoCompraDto {
   lineas?: LineaNotaCreditoCompraDto[];
 }
 
-/** Lo que el proveedor cobra de más: un concepto nuevo, con su costo. */
+/**
+ * Lo que el proveedor cobra de más: un concepto nuevo, con su costo.
+ *
+ * **O un producto, o un gasto**, igual que una línea de compra — y acá se
+ * nota más todavía: lo que el proveedor agrega suele ser un flete o un
+ * interés, que no son productos de nadie.
+ */
 export class LineaNotaDebitoCompraDto {
+  @ValidateIf((o: LineaNotaDebitoCompraDto) => o.cuentaId === undefined)
   @IsUUID()
-  productoId!: string;
+  productoId?: string;
+
+  /** La cuenta del gasto. Auxiliar, activa y de una clase donde un gasto va. */
+  @ValidateIf((o: LineaNotaDebitoCompraDto) => o.productoId === undefined)
+  @IsUUID()
+  cuentaId?: string;
+
+  /** Qué cobra de más. Obligatorio cuando no es un producto. */
+  @ValidateIf((o: LineaNotaDebitoCompraDto) => o.productoId === undefined)
+  @IsString()
+  @Length(2, 200)
+  detalle?: string;
+
+  /** La tarifa del gasto. En las de producto la pone el producto. */
+  @ValidateIf((o: LineaNotaDebitoCompraDto) => o.productoId === undefined)
+  @IsOptional()
+  @IsIn([0, 5, 19])
+  ivaTarifa?: number;
 
   @IsNumber({ maxDecimalPlaces: 6 })
   @Min(0.000001)

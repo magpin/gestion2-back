@@ -79,9 +79,16 @@ export interface CompraDocumentoLineaResumen {
   id: string;
   compra_documento_id: string;
   orden: number;
-  producto_id: string;
-  producto_codigo: string;
-  producto_nombre: string;
+  /** Nulo en una línea de gasto: ahí lo que se compró lo dice `detalle`. */
+  producto_id: string | null;
+  producto_codigo: string | null;
+  producto_nombre: string | null;
+  /** Contra qué cuenta se debitó: la del producto, o la del gasto. */
+  cuenta_id: string;
+  cuenta_codigo: string;
+  cuenta_nombre: string;
+  /** Qué se compró, cuando no es un producto del catálogo. */
+  detalle: string | null;
   cantidad: string;
   costo_unitario: string;
   iva_tarifa: string;
@@ -140,10 +147,12 @@ export const CAMPOS_DOCUMENTO = `id, tipo, documento_origen_id,
                            ${PENDIENTE} AS pendiente,
                            ${SALDO_A_FAVOR} AS saldo_a_favor`;
 
-const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cantidad,
+const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cuenta_id, detalle, cantidad,
                        costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable,
                        (SELECT x.codigo FROM producto x WHERE x.id = producto_id) AS producto_codigo,
-                       (SELECT x.nombre FROM producto x WHERE x.id = producto_id) AS producto_nombre`;
+                       (SELECT x.nombre FROM producto x WHERE x.id = producto_id) AS producto_nombre,
+                       (SELECT x.codigo FROM empresa_cuenta x WHERE x.id = cuenta_id) AS cuenta_codigo,
+                       (SELECT x.nombre FROM empresa_cuenta x WHERE x.id = cuenta_id) AS cuenta_nombre`;
 
 const CAMPOS_RETENCION = `id, compra_documento_id, concepto, cuenta_id, base, valor`;
 
@@ -153,6 +162,23 @@ const CODIGO_CUENTA_PROVEEDORES = '220505';
 const CODIGO_CUENTA_IVA_DESCONTABLE = '240810';
 /** Comprobante de egreso — simétrico a como Ventas usa `CI` aunque sea a crédito. */
 const CODIGO_COMPROBANTE_COMPRA = 'CE';
+
+/**
+ * Contra qué cuentas del PUC se puede debitar una línea de compra que no es
+ * un producto.
+ *
+ * - **5** gastos, **6** costos de venta y **7** costos de producción: lo
+ *   corriente —arriendo, servicios, honorarios, fletes—. La clase entera.
+ * - **14 a 17**: cuando lo que se compra queda como activo —inventarios que
+ *   no son del catálogo, un computador, un intangible, un diferido—. Acá van
+ *   grupos y no la clase, porque la clase 1 también tiene la caja, los bancos
+ *   y la cartera, y mandar un arriendo a un banco no es un error de tipeo:
+ *   **es un asiento que cuadra y miente**.
+ *
+ * Fuera quedan los pasivos (2), el patrimonio (3) y los ingresos (4), donde
+ * una compra no se debita nunca.
+ */
+const CUENTAS_DE_COMPRA = ['5', '6', '7', '14', '15', '16', '17'];
 
 /** El sufijo de `2365{sufijo}` para cada concepto — mismos seis que siembra `plan-cuentas.reglas.ts`. */
 const SUFIJO_CONCEPTO_RETENCION: Record<string, string> = {
@@ -201,7 +227,12 @@ export class CompraService {
         'La fecha de la compra no puede ser posterior a hoy.',
       );
     }
-    const productoIds = dto.lineas.map((l) => l.productoId);
+    // Las de gasto quedan fuera de esta cuenta: dos renglones contra la
+    // misma cuenta son corrientes en una factura de servicios, y cada uno
+    // tiene su detalle.
+    const productoIds = dto.lineas.flatMap((l) =>
+      l.productoId === undefined ? [] : [l.productoId],
+    );
     if (new Set(productoIds).size !== productoIds.length) {
       throw new BadRequestException(
         'No repitas el mismo producto en dos líneas — sumá la cantidad en una sola.',
@@ -259,27 +290,36 @@ export class CompraService {
       ]);
 
       const entradas: LineaCompraEntrada[] = [];
-      const cuentaInventarioDe: string[] = [];
+      /** Contra qué cuenta se debita cada línea: la del producto o la del gasto. */
+      const cuentaDebitoDe: string[] = [];
 
       for (const l of dto.lineas) {
-        const producto = await this.inventario.producto(ctx, l.productoId, t);
-        if (producto === null || !producto.activo) {
-          throw new BadRequestException(
-            `El producto ${l.productoId} no existe o está inactivo.`,
-          );
-        }
+        // Una línea es un producto o un gasto. Lo único que cambia entre las
+        // dos es de dónde salen la cuenta y la tarifa; el cálculo del valor,
+        // el IVA y el asiento son idénticos.
+        const producto =
+          l.productoId === undefined
+            ? null
+            : await this.productoDeLinea(ctx, l.productoId, t);
 
-        cuentaInventarioDe.push(producto.cuenta_inventario_id);
+        cuentaDebitoDe.push(
+          producto === null
+            ? await this.cuentaDeGasto(ctx, l.cuentaId ?? '', t)
+            : producto.cuenta_inventario_id,
+        );
+
         entradas.push({
           cantidad: l.cantidad,
           costoUnitario: l.costoUnitario,
-          // Tres condiciones y no dos: el proveedor, el producto, y lo que la
-          // factura efectivamente dice. `sinIva` solo baja a cero —poner IVA
-          // donde el proveedor no lo cobró sería inventar un descontable que
-          // nadie pagó—.
+          // Tres condiciones y no dos: el proveedor, lo que se compró, y lo
+          // que la factura efectivamente dice. `sinIva` solo baja a cero
+          // —poner IVA donde el proveedor no lo cobró sería inventar un
+          // descontable que nadie pagó—.
           ivaTarifa:
             proveedor.responsableIva && l.sinIva !== true
-              ? Number(producto.iva_tarifa)
+              ? (producto === null
+                  ? (l.ivaTarifa ?? 0)
+                  : Number(producto.iva_tarifa))
               : 0,
           ivaDescontable: responsableIva,
         });
@@ -362,7 +402,7 @@ export class CompraService {
       const lineasAsiento: LineaAsientoDto[] = [];
       lineas.forEach((l, i) => {
         lineasAsiento.push({
-          cuentaId: cuentaInventarioDe[i],
+          cuentaId: cuentaDebitoDe[i],
           debito: l.valorKardex,
           credito: 0,
         });
@@ -439,15 +479,19 @@ export class CompraService {
         const insertada = fila<CompraDocumentoLineaResumen>(
           await t.query(
             `INSERT INTO compra_documento_linea
-               (empresa_id, compra_documento_id, orden, producto_id, cantidad,
-                costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+               (empresa_id, compra_documento_id, orden, producto_id, cuenta_id, detalle,
+                cantidad, costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
              RETURNING ${CAMPOS_LINEA}`,
             [
               ctx.empresaId,
               documento.id,
               i + 1,
-              dto.lineas[i].productoId,
+              dto.lineas[i].productoId ?? null,
+              // La cuenta contra la que se debitó, sea de producto o de gasto:
+              // es la misma que acaba de ir al asiento.
+              cuentaDebitoDe[i],
+              dto.lineas[i].detalle ?? null,
               l.cantidad,
               l.costoUnitario,
               l.ivaTarifa,
@@ -495,9 +539,12 @@ export class CompraService {
       // Recién ahora se escribe el kardex — el asiento y la compra ya
       // existen, así que `incrementarPorCompra` los enlaza, no los adivina.
       for (let i = 0; i < lineas.length; i++) {
+        // Un gasto no entra a la bodega.
+        const productoId = dto.lineas[i].productoId;
+        if (productoId === undefined) continue;
         await this.inventario.incrementarPorCompra(
           ctx,
-          dto.lineas[i].productoId,
+          productoId,
           lineas[i].cantidad,
           lineas[i].costoUnitarioKardex,
           dto.fecha,
@@ -1041,6 +1088,55 @@ export class CompraService {
     }
 
     return resueltas;
+  }
+
+  /** El producto de una línea, activo. Lo reusan las notas. */
+  async productoDeLinea(ctx: CtxEmpresa, id: string, t: Tx) {
+    const producto = await this.inventario.producto(ctx, id, t);
+    if (producto === null || !producto.activo) {
+      throw new BadRequestException(
+        `El producto ${id} no existe o está inactivo.`,
+      );
+    }
+    return producto;
+  }
+
+  /**
+   * La cuenta contra la que se debita un gasto.
+   *
+   * Tres condiciones, y cada una evita un asiento imposible de corregir:
+   *
+   * - **Que exista y esté activa**, como cualquier cuenta del plan.
+   * - **Que reciba movimientos.** Una cuenta que agrupa no acepta líneas de
+   *   asiento; si se colara, la compra fallaría más adelante con un error de
+   *   contabilidad que nadie relaciona con la línea que lo causó.
+   * - **Que sea de una clase donde un gasto tenga sentido.** Mandar un
+   *   arriendo a la cuenta de un banco o a la de un cliente no es un error de
+   *   tipeo: es un asiento que cuadra y miente.
+   */
+  async cuentaDeGasto(
+    ctx: CtxEmpresa,
+    id: string,
+    t: Tx,
+  ): Promise<string> {
+    const cuenta = await this.nucleo.cuentaPorId(ctx, id, t);
+    if (cuenta === null || !cuenta.activa) {
+      throw new BadRequestException(
+        'Esa cuenta no existe o está inactiva en el plan de la empresa.',
+      );
+    }
+    if (!cuenta.es_auxiliar) {
+      throw new BadRequestException(
+        `La cuenta ${cuenta.codigo} agrupa y no recibe movimientos. Elegí una auxiliar.`,
+      );
+    }
+    if (!CUENTAS_DE_COMPRA.some((p) => cuenta.codigo.startsWith(p))) {
+      throw new BadRequestException(
+        `La cuenta ${cuenta.codigo} no es de gasto, costo, compra ni de un activo que se compre. ` +
+          'Una línea de compra se debita contra una de esas.',
+      );
+    }
+    return cuenta.id;
   }
 
   /** Si alguna de las condiciones vigentes a la fecha está en la lista dada. */

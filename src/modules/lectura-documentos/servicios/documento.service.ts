@@ -44,6 +44,14 @@ export interface Documento {
    * sabe cuál es cada una es quien conoce el tipo.
    */
   extraido: unknown;
+  /**
+   * En qué compra terminó esta lectura, si una persona la confirmó. `null`
+   * mientras nadie la registró, que es el estado normal de una recién leída.
+   *
+   * Solo lo trae `listarFacturas`: `porId` mira una sola fila y no vale hacerle
+   * el JOIN a las tres de configuración, que nunca terminan en una compra.
+   */
+  compra: { id: string; numero: string; estado: string } | null;
   error: string | null;
   creadoEn: string;
   leidoEn: string | null;
@@ -55,6 +63,9 @@ interface FilaDocumento {
   estado: EstadoDocumento;
   clave_almacenamiento: string;
   extraido: unknown;
+  compra_id?: string | null;
+  compra_numero?: string | null;
+  compra_estado?: string | null;
   error: string | null;
   creado_en: Date | string;
   leido_en: Date | string | null;
@@ -137,14 +148,24 @@ export class DocumentoService {
   /**
    * Las últimas facturas leídas, las más nuevas primero. Todas, no una por
    * tipo: son muchas y cada una es su propio caso.
+   *
+   * Trae **en qué compra terminó cada una**, si terminó en alguna. Sin eso la
+   * lista miente: tres lecturas de la misma cuenta de cobro se ven idénticas
+   * —«me faltan 2 datos»— cuando una de ellas ya es una compra registrada, y
+   * la pantalla sigue ofreciendo registrarla.
    */
   async listarFacturas(ctx: CtxEmpresa, tope = 50): Promise<Documento[]> {
     return this.tx.enContexto(ctx, async (t) => {
       const encontradas = filas<FilaDocumento>(
         await t.query(
-          `SELECT * FROM documento_leido
-            WHERE empresa_id = $1 AND tipo = 'FACTURA_COMPRA'
-            ORDER BY creado_en DESC
+          `SELECT d.*,
+                  c.id                       AS compra_id,
+                  c.numero_factura_proveedor AS compra_numero,
+                  c.estado                   AS compra_estado
+             FROM documento_leido d
+             LEFT JOIN compra_documento c ON c.documento_leido_id = d.id
+            WHERE d.empresa_id = $1 AND d.tipo = 'FACTURA_COMPRA'
+            ORDER BY d.creado_en DESC
             LIMIT $2`,
           [ctx.empresaId, tope],
         ),
@@ -236,6 +257,14 @@ function aDocumento(f: FilaDocumento): Documento {
     claveAlmacenamiento: f.clave_almacenamiento,
     datos: Array.isArray(f.extraido) ? (f.extraido as DatoExtraido[]) : [],
     extraido: f.extraido ?? null,
+    compra:
+      f.compra_id == null
+        ? null
+        : {
+            id: f.compra_id,
+            numero: f.compra_numero ?? '',
+            estado: f.compra_estado ?? '',
+          },
     error: f.error,
     creadoEn: comoTexto(f.creado_en),
     leidoEn: f.leido_en === null ? null : comoTexto(f.leido_en),

@@ -66,13 +66,20 @@ describe('ConfirmacionFacturaService — registrar lo confirmado', () => {
 
     await servicio.confirmar(ctx, 'doc-1');
 
-    expect(registrar).toHaveBeenCalledWith(ctx, {
-      terceroId: 'prov-1',
-      fecha: '2026-07-28',
-      numeroFacturaProveedor: '215183',
-      lineas: [{ productoId: 'prod-1', cantidad: 2, costoUnitario: 50_000 }],
-      formaPago: 'CREDITO',
-    });
+    expect(registrar).toHaveBeenCalledWith(
+      ctx,
+      {
+        terceroId: 'prov-1',
+        fecha: '2026-07-28',
+        numeroFacturaProveedor: '215183',
+        lineas: [{ productoId: 'prod-1', cantidad: 2, costoUnitario: 50_000 }],
+        formaPago: 'CREDITO',
+      },
+      // De qué documento salió, en un argumento aparte del DTO: si viajara en
+      // el cuerpo de la petición, cualquiera podría registrar una compra a
+      // mano y decir que la leyó María.
+      { documentoLeidoId: 'doc-1' },
+    );
   });
 
   it('el prefijo va pegado al número, como lo imprime el proveedor', async () => {

@@ -11,6 +11,7 @@ import type { CrearCompraDto, PagarDto } from './dto/compra.dto';
 import {
   CompraService,
   type CompraDocumentoDetalle,
+  type OrigenDeLaCompra,
   type CompraDocumentoResumen,
 } from './servicios/compra.service';
 
@@ -106,8 +107,9 @@ export class ComprasApi {
   async registrar(
     ctx: CtxEmpresa,
     dto: CrearCompraDto,
+    origen?: OrigenDeLaCompra,
   ): Promise<CompraDocumentoDetalle> {
-    return this.compras.crear(ctx, dto);
+    return this.compras.crear(ctx, dto, origen);
   }
 
   /** El pago de verdad, en la transacción de quien llama. */

@@ -104,7 +104,11 @@ export class ConfirmacionFacturaService {
       // Crédito salvo que digan otra cosa: contado exige rol CAJA o DIRECTOR y
       // los medios de pago, que no salen de la factura.
       formaPago: respuestas.formaPago ?? 'CREDITO',
-    });
+    },
+    // De qué documento salió. Va por acá y no en el cuerpo de la petición:
+    // si viniera del navegador, cualquiera podría decir que una compra
+    // digitada salió de un documento que María leyó.
+    { documentoLeidoId: documentoId });
 
     this.log.log(
       `Factura ${documentoId} registrada como compra ${compra.id} (${conPrefijo}), ${lineas.length} líneas.`,

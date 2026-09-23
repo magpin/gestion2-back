@@ -207,6 +207,18 @@ const SUFIJO_CONCEPTO_RETENCION: Record<string, string> = {
  *   5. `InventarioApi.incrementarPorCompra` por línea — recién ahora
  *      escribe el kardex.
  */
+/**
+ * De dónde salió una compra, cuando no la digitó una persona.
+ *
+ * **No viaja en el DTO, a propósito.** Si viniera del navegador, cualquiera
+ * podría registrar una compra a mano y decir que salió de un documento que
+ * María leyó: la trazabilidad valdría exactamente nada. Lo pone el servicio
+ * que sí sabe —`ConfirmacionFacturaService`—, del lado del servidor.
+ */
+export interface OrigenDeLaCompra {
+  documentoLeidoId: string;
+}
+
 @Injectable()
 export class CompraService {
   constructor(
@@ -221,6 +233,7 @@ export class CompraService {
   async crear(
     ctx: CtxEmpresa,
     dto: CrearCompraDto,
+    origen?: OrigenDeLaCompra,
   ): Promise<CompraDocumentoDetalle> {
     if (esFechaFutura(dto.fecha)) {
       throw new BadRequestException(
@@ -450,8 +463,8 @@ export class CompraService {
           `INSERT INTO compra_documento
              (id, empresa_id, tercero_id, fecha, numero_factura_proveedor,
               subtotal, total_iva, total, total_retenciones, neto_a_pagar,
-              asiento_id, creado_por)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+              asiento_id, creado_por, documento_leido_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
            RETURNING ${CAMPOS_DOCUMENTO}`,
           [
             documentoId,
@@ -466,6 +479,7 @@ export class CompraService {
             neto,
             asiento.id,
             ctx.usuarioId,
+            origen?.documentoLeidoId ?? null,
           ],
         ),
       );

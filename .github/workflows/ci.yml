@@ -1,0 +1,56 @@
+# En cada pull request a develop o main: lint, tests, build y que la imagen de
+# producción construya. Si algo falla, la protección de ramas no deja mergear.
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+
+      # Sin `--fix`: en CI se reporta, no se corrige.
+      # TODO: quitar `continue-on-error` cuando se limpie el lint. Al 24 sep 2026
+      # hay 447 errores en 32 archivos (403 son de formato, prettier); mientras
+      # tanto se muestran pero no bloquean el merge.
+      - name: Lint
+        continue-on-error: true
+        run: yarn eslint "{src,apps,libs,test}/**/*.ts"
+
+      - name: Tests
+        run: yarn test
+
+      - name: Build
+        run: yarn build
+
+  imagen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: La imagen de producción construye
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: produccion
+          push: false
+          cache-from: type=gha,scope=back

@@ -154,7 +154,7 @@ services:
     volumes:
       - ../frontend/src:/app/src
       - ../frontend/public:/app/public
-    command: yarn dev
+    command: pnpm dev
 
 volumes:
   datos_db:

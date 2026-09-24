@@ -1,0 +1,244 @@
+# Contable en el servidor: un solo archivo para PROD y para QA.
+#
+# Lo que cambia entre entornos —nombre del proyecto, puertos, secretos, límites
+# de memoria, qué versión corre— vive en el `.env` de cada carpeta:
+#
+#   /opt/contable/prod/.env    COMPOSE_PROJECT_NAME=contable-prod, puertos 3100…
+#   /opt/contable/qa/.env      COMPOSE_PROJECT_NAME=contable-qa,   puertos 3200…
+#
+# Cada entorno es un proyecto compose aparte: su red, sus volúmenes, su base.
+# QA no ve los datos de PROD.
+#
+# Diferencias con `../docker-compose.yml` (el de desarrollo):
+#   - Las imágenes vienen construidas de GHCR; el servidor no construye nada.
+#   - Todo puerto se publica en 127.0.0.1: Docker se salta el firewall, así que
+#     es la única forma de que no queden abiertos a internet. Nginx es la única
+#     puerta de entrada.
+#   - La API entra como `gestion_app` (sujeto a RLS), nunca como el dueño.
+#   - MinIO: la app usa una llave propia que solo alcanza su bucket; la root
+#     solo la usa `minio-init`.
+#   - Límites de memoria y tope a los logs: el servidor lo comparte Sine.
+#
+# Uso (desde /opt/contable/<entorno>):
+#   docker compose up -d                      levanta todo (y migra)
+#   docker compose ps                         estado
+#   docker compose logs --tail 100 api        los últimos logs de la API
+#   docker compose run --rm migrar node scripts/verificar-aislamiento.js
+#   docker compose run --rm migrar node scripts/crear-super-admin.js --email … --nombre "…"
+
+x-logs: &logs
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+# La conexión como dueño de la base. Solo la reciben `migrar` y los scripts de
+# instalación, nunca la API.
+x-db-duenio: &db-duenio
+  DB_HOST: db
+  DB_PORT: "5432"
+  DB_NAME: ${DB_NAME:?falta DB_NAME}
+  DB_USERNAME: ${DB_USERNAME:?falta DB_USERNAME}
+  DB_PASSWORD: ${DB_PASSWORD:?falta DB_PASSWORD}
+  DB_APP_USERNAME: ${DB_APP_USERNAME:?falta DB_APP_USERNAME}
+  DB_APP_PASSWORD: ${DB_APP_PASSWORD:?falta DB_APP_PASSWORD}
+  DB_PROVISION_USERNAME: ${DB_PROVISION_USERNAME:?falta DB_PROVISION_USERNAME}
+  DB_PROVISION_PASSWORD: ${DB_PROVISION_PASSWORD:?falta DB_PROVISION_PASSWORD}
+
+services:
+  db:
+    image: postgres:16-alpine
+    <<: *logs
+    restart: unless-stopped
+    mem_limit: ${MEM_DB:-512m}
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    # Solo para entrar con DBeaver por túnel SSH.
+    ports:
+      - "127.0.0.1:${PUERTO_DB:?falta PUERTO_DB}:5432"
+    volumes:
+      - datos_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: quay.io/minio/minio:latest
+    <<: *logs
+    restart: unless-stopped
+    mem_limit: ${MEM_MINIO:-256m}
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?falta MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?falta MINIO_ROOT_PASSWORD}
+    ports:
+      # La API S3: Nginx la publica en archivos.<dominio> para las URLs firmadas.
+      - "127.0.0.1:${PUERTO_S3:?falta PUERTO_S3}:9000"
+      # La consola: no se publica en Nginx, se entra por túnel SSH.
+      - "127.0.0.1:${PUERTO_S3_CONSOLA:?falta PUERTO_S3_CONSOLA}:9001"
+    volumes:
+      - datos_minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Deja el bucket y la llave de la app listos, y se apaga. Se puede correr las
+  # veces que sea: si ya existen, los deja como están (y si cambió la clave de
+  # la app en `.env`, la actualiza).
+  minio-init:
+    image: quay.io/minio/mc:latest
+    <<: *logs
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MC_ROOT_USER: ${MINIO_ROOT_USER}
+      MC_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      BUCKET: ${S3_BUCKET:-gestion}
+      APP_KEY: ${S3_ACCESS_KEY:?falta S3_ACCESS_KEY}
+      APP_SECRET: ${S3_SECRET_KEY:?falta S3_SECRET_KEY}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set local http://minio:9000 "$$MC_ROOT_USER" "$$MC_ROOT_PASSWORD" >/dev/null
+        mc mb --ignore-existing "local/$$BUCKET"
+        # Privado: el navegador solo entra con URLs firmadas por la API.
+        mc anonymous set none "local/$$BUCKET"
+        cat > /tmp/politica.json <<EOF
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            { "Effect": "Allow",
+              "Action": ["s3:GetBucketLocation", "s3:ListBucket"],
+              "Resource": ["arn:aws:s3:::$$BUCKET"] },
+            { "Effect": "Allow",
+              "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+              "Resource": ["arn:aws:s3:::$$BUCKET/*"] }
+          ]
+        }
+        EOF
+        mc admin policy create local contable-app /tmp/politica.json
+        mc admin user add local "$$APP_KEY" "$$APP_SECRET"
+        mc admin policy attach local contable-app --user "$$APP_KEY" 2>/dev/null || true
+        echo "minio-init: bucket $$BUCKET y llave de la app listos"
+
+  # Los dos que arman un PDF. Sin puertos: solo la API los alcanza, por la red
+  # interna del proyecto.
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    <<: *logs
+    restart: unless-stopped
+    mem_limit: ${MEM_GOTENBERG:-768m}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  quickchart:
+    image: ianw/quickchart
+    <<: *logs
+    restart: unless-stopped
+    mem_limit: ${MEM_QUICKCHART:-256m}
+
+  # Corre las migraciones, deja los roles listos para entrar y se apaga. La API
+  # depende de que termine bien: si una migración falla, la API nueva no
+  # arranca y la anterior sigue sirviendo.
+  #
+  # También es la caja de herramientas para los scripts de instalación, porque
+  # es el único servicio con la conexión del dueño:
+  #   docker compose run --rm migrar node scripts/verificar-aislamiento.js
+  migrar:
+    image: ghcr.io/magpin/gestion2-back:${TAG_API:?falta TAG_API}
+    <<: *logs
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *db-duenio
+      NODE_ENV: production
+    command:
+      - sh
+      - -ec
+      - |
+        node node_modules/typeorm/cli.js migration:run -d dist/database/data-source.js
+        node scripts/preparar-roles.js
+
+  api:
+    image: ghcr.io/magpin/gestion2-back:${TAG_API}
+    <<: *logs
+    restart: unless-stopped
+    mem_limit: ${MEM_API:-512m}
+    depends_on:
+      migrar:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+      gotenberg:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${PUERTO_API:?falta PUERTO_API}:3001"
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      API_PREFIX: api/v1
+      # Sin la contraseña del dueño a propósito: la API solo sabe entrar como
+      # gestion_app, así que aunque la configuración falle, no puede saltarse
+      # RLS.
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_APP_USERNAME: ${DB_APP_USERNAME}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD}
+      DB_PROVISION_USERNAME: ${DB_PROVISION_USERNAME}
+      DB_PROVISION_PASSWORD: ${DB_PROVISION_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?falta JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      CLAVE_CIFRADO: ${CLAVE_CIFRADO:?falta CLAVE_CIFRADO}
+      CLAVE_PROVISION: ${CLAVE_PROVISION:?falta CLAVE_PROVISION}
+      CLAVE_CONSUMO_IA: ${CLAVE_CONSUMO_IA:-}
+      S3_ENDPOINT: http://minio:9000
+      S3_ENDPOINT_PUBLICO: ${S3_ENDPOINT_PUBLICO:?falta S3_ENDPOINT_PUBLICO}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-gestion}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      GOTENBERG_URL: http://gotenberg:3000
+      QUICKCHART_URL: http://quickchart:3400
+      # Detrás de Nginx el host que llega a la API es 127.0.0.1: las fuentes de
+      # los reportes necesitan la dirección que ve el navegador.
+      API_URL_PUBLICA: ${API_URL_PUBLICA:?falta API_URL_PUBLICA}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      MODELO_CONVERSACION: ${MODELO_CONVERSACION:-}
+      MODELO_LECTURA: ${MODELO_LECTURA:-}
+      MODELO_FACTURAS: ${MODELO_FACTURAS:-}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/v1/salud"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  web:
+    # La URL de la API va horneada en la imagen (NEXT_PUBLIC_API_URL): la de QA
+    # y la de PROD son imágenes distintas, con tags `qa-<sha>` y `<sha>`.
+    image: ghcr.io/magpin/gestion2-front:${TAG_WEB:?falta TAG_WEB}
+    <<: *logs
+    restart: unless-stopped
+    mem_limit: ${MEM_WEB:-512m}
+    ports:
+      - "127.0.0.1:${PUERTO_WEB:?falta PUERTO_WEB}:3000"
+
+volumes:
+  datos_db:
+  datos_minio:

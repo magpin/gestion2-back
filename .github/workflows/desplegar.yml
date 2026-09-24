@@ -1,0 +1,144 @@
+# Construye la imagen en GitHub, la sube a GHCR y la despliega en el VPS.
+#
+#   push a develop  →  tag qa-<sha>  →  QA
+#   push a main     →  tag <sha>     →  PROD (espera la aprobación del
+#                                        environment `produccion`)
+#   Run workflow    →  vuelve a desplegar un tag que ya existe, sin construir
+#
+# El VPS no construye nada: solo baja la imagen y corre
+# /opt/contable/scripts/desplegar.sh, que respalda, migra, levanta, revisa
+# /api/v1/salud y vuelve solo a la versión anterior si algo sale mal.
+#
+# Secretos de cada environment (`qa` y `produccion`):
+#   VPS_HOST, VPS_PORT, VPS_USER, VPS_SSH_KEY, VPS_KNOWN_HOSTS
+name: Desplegar
+
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+    inputs:
+      entorno:
+        description: Entorno
+        type: choice
+        options: [qa, prod]
+        required: true
+      tag:
+        description: Tag que ya está en GHCR (por ejemplo a1b2c3d o qa-a1b2c3d)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGEN: ghcr.io/magpin/gestion2-back
+
+jobs:
+  preparar:
+    runs-on: ubuntu-latest
+    outputs:
+      entorno: ${{ steps.p.outputs.entorno }}
+      environment: ${{ steps.p.outputs.environment }}
+      tag: ${{ steps.p.outputs.tag }}
+      construir: ${{ steps.p.outputs.construir }}
+    steps:
+      - id: p
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            entorno="${{ inputs.entorno }}"
+            tag="${{ inputs.tag }}"
+            construir=false
+          elif [[ "${{ github.ref_name }}" == "main" ]]; then
+            entorno=prod; tag="${GITHUB_SHA::7}"; construir=true
+          else
+            entorno=qa; tag="qa-${GITHUB_SHA::7}"; construir=true
+          fi
+          [[ "$tag" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Tag inválido: $tag"; exit 1; }
+          echo "entorno=$entorno" >> "$GITHUB_OUTPUT"
+          echo "environment=$([[ $entorno == prod ]] && echo produccion || echo qa)" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "construir=$construir" >> "$GITHUB_OUTPUT"
+
+  construir:
+    needs: preparar
+    if: needs.preparar.outputs.construir == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: produccion
+          push: true
+          tags: ${{ env.IMAGEN }}:${{ needs.preparar.outputs.tag }}
+          cache-from: type=gha,scope=back
+          cache-to: type=gha,scope=back,mode=max
+
+  desplegar:
+    needs: [preparar, construir]
+    # Corre aunque `construir` se haya saltado (Run workflow), pero no si falló.
+    if: always() && needs.preparar.result == 'success' && needs.construir.result != 'failure' && needs.construir.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ needs.preparar.outputs.environment }}
+    # Un despliegue por entorno a la vez; el siguiente espera, no cancela.
+    concurrency:
+      group: desplegar-${{ needs.preparar.outputs.entorno }}
+      cancel-in-progress: false
+    env:
+      ENTORNO: ${{ needs.preparar.outputs.entorno }}
+      TAG: ${{ needs.preparar.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Llave SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/despliegue
+          chmod 600 ~/.ssh/despliegue
+          echo "${{ secrets.VPS_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host vps
+            HostName ${{ secrets.VPS_HOST }}
+            Port ${{ secrets.VPS_PORT }}
+            User ${{ secrets.VPS_USER }}
+            IdentityFile ~/.ssh/despliegue
+            StrictHostKeyChecking yes
+          EOF
+
+      # El compose y los scripts viajan con el backend. El compose llega como
+      # `.nuevo`: desplegar.sh lo valida antes de usarlo.
+      - name: Copiar compose y scripts
+        run: |
+          scp despliegue/scripts/*.sh vps:/opt/contable/scripts/
+          scp despliegue/docker-compose.prod.yml "vps:/opt/contable/$ENTORNO/docker-compose.yml.nuevo"
+          ssh vps 'chmod 750 /opt/contable/scripts/*.sh'
+
+      # El token de GitHub de este job sirve para bajar la imagen y vence
+      # cuando el job termina: en el servidor no queda ninguna credencial fija.
+      # Va por la entrada estándar, no en la línea de comandos (se vería en
+      # `ps`). DOCKER_CONFIG aparte para no tocar las credenciales de Docker de
+      # root; los plugins (compose) se enlazan si viven en la carpeta de root.
+      - name: Entrar a GHCR desde el VPS
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$TOKEN" | ssh vps "mkdir -p /opt/contable/.docker && chmod 700 /opt/contable/.docker \
+            && { [ -d ~/.docker/cli-plugins ] && ln -sfn ~/.docker/cli-plugins /opt/contable/.docker/cli-plugins || true; } \
+            && DOCKER_CONFIG=/opt/contable/.docker docker login ghcr.io -u '${{ github.actor }}' --password-stdin >/dev/null"
+
+      - name: Desplegar
+        run: ssh vps "DOCKER_CONFIG=/opt/contable/.docker /opt/contable/scripts/desplegar.sh '$ENTORNO' api '$TAG'"
+
+      - name: Salir de GHCR
+        if: always()
+        run: ssh vps 'DOCKER_CONFIG=/opt/contable/.docker docker logout ghcr.io >/dev/null' || true

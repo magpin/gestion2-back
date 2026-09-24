@@ -1,0 +1,4 @@
+# Los scripts y archivos del servidor corren en Linux: con los CRLF de Windows,
+# bash falla con errores como `$'\r': command not found`.
+*.sh               text eol=lf
+despliegue/**      text eol=lf

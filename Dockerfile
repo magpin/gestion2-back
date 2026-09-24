@@ -25,10 +25,16 @@ FROM node:24-alpine AS produccion
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json yarn.lock ./
-RUN corepack enable && yarn install --frozen-lockfile --production
+RUN corepack enable && yarn install --frozen-lockfile --production && yarn cache clean
 COPY --from=construccion /app/dist ./dist
 # El DDL viaja con la imagen: las migraciones lo leen en tiempo de ejecución
 # con `leerSql`, así que sin esto `migration:run` falla en producción.
 COPY --from=construccion /app/db ./db
+# Los scripts de instalación que se corren en el servidor con
+# `docker compose run --rm migrar node scripts/<script>.js`. Solo estos: `sembrar.js`
+# y los de prueba no tienen nada que hacer en una base de producción.
+COPY scripts/preparar-roles.js scripts/crear-super-admin.js \
+     scripts/crear-cuenta.js scripts/verificar-aislamiento.js ./scripts/
+USER node
 EXPOSE 3001
 CMD ["node", "dist/main"]

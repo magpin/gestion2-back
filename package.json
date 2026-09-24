@@ -12,6 +12,8 @@
     "migration:run": "yarn typeorm migration:run",
     "migration:revert": "yarn typeorm migration:revert",
     "migration:show": "yarn typeorm migration:show",
+    "migration:run:prod": "typeorm migration:run -d dist/database/data-source.js",
+    "migration:show:prod": "typeorm migration:show -d dist/database/data-source.js",
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",

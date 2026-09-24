@@ -453,7 +453,7 @@ describe('CajaArqueoService.cerrar', () => {
         saldoContado: 75_000,
         tratamientoFaltante: 'EMPRESA',
       }),
-    ).rejects.toThrow(/Faltante asumido por la empresa/);
+    ).rejects.toThrow(/Faltante de caja asumido por la empresa/);
     expect(asentar).not.toHaveBeenCalled();
     expect(registrarAjusteArqueo).not.toHaveBeenCalled();
     expect(updates).toHaveLength(0);

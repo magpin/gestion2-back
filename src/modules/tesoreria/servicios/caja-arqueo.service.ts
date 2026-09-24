@@ -190,7 +190,7 @@ export class CajaArqueoService {
         const cuentaAjusteId = await cuentaDeConcepto(t, ctx, ajuste.concepto);
         if (cuentaAjusteId === null) {
           throw new BadRequestException(
-            `Falta la cuenta de «${CONCEPTOS_ARQUEO[ajuste.concepto].etiqueta}»: configúrala en Tesorería → Configuración.`,
+            `Falta la cuenta de «${CONCEPTOS_ARQUEO[ajuste.concepto].etiqueta}»: elígela en Plan de cuentas → Cuentas automáticas.`,
           );
         }
         const movimientoId = randomUUID();

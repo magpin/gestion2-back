@@ -17,12 +17,20 @@ const CONFIG_PROMEDIO_PONDERADO = {
   decimales_valor: '2',
 };
 
-/** `NucleoApi` falso: solo lo que `exigirPromedioPonderado` necesita. */
+/**
+ * `NucleoApi` falso: lo que `exigirPromedioPonderado` necesita, y el hecho
+ * VENDE_SIN_EXISTENCIA, que cada prueba decide en su transacción falsa.
+ */
 function nucleoFalso(
   config: Record<string, unknown> = CONFIG_PROMEDIO_PONDERADO,
 ) {
   return {
     configuracionContable: jest.fn(() => Promise.resolve(config)),
+    tieneHechoOperativo: jest.fn((_ctx: unknown, _hecho: string, tx: unknown) =>
+      Promise.resolve(
+        (tx as { vendeSinExistencia?: boolean }).vendeSinExistencia === true,
+      ),
+    ),
   } as unknown as ConstructorParameters<typeof KardexService>[1];
 }
 
@@ -39,9 +47,6 @@ function txFalso(
     query: jest.fn((sql: string, params?: unknown[]) => {
       if (sql.includes('FROM producto WHERE')) {
         return [{ id: 'p-1', cuenta_inventario_id: 'c-inv' }];
-      }
-      if (sql.includes('FROM inventario_configuracion')) {
-        return [{ permite_existencia_negativa: permiteExistenciaNegativa }];
       }
       if (sql.startsWith('SELECT saldo_cantidad')) {
         return saldo === undefined ? [] : [saldo];
@@ -85,6 +90,8 @@ function txFalso(
       }
       throw new Error(`Query inesperada en el test: ${sql}`);
     }),
+    // Lo lee el `NucleoApi` falso: si la empresa declaró VENDE_SIN_EXISTENCIA.
+    vendeSinExistencia: permiteExistenciaNegativa,
   } as unknown as Tx;
   return { tx, insertadas };
 }

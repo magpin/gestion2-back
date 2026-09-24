@@ -52,8 +52,13 @@ export class CrearProductoDto {
    * existe o pertenece a otra empresa, la FK compuesta de `producto` lo
    * rechaza y el filtro de errores lo traduce.
    */
+  /**
+   * Sin ella, el producto toma la cuenta de inventario de la empresa
+   * (cuentas automáticas). Se manda solo para usar otra.
+   */
+  @IsOptional()
   @IsUUID()
-  cuentaInventarioId!: string;
+  cuentaInventarioId?: string;
 
   /**
    * La cuenta de costo (6135/6145 según el giro) contra la que se debita

@@ -32,6 +32,12 @@ export interface VistaAsiento {
   }[];
 }
 
+/** Cuánto se ha usado una cuenta: sus líneas de asiento y la fecha de la última. */
+export interface UsoDeCuenta {
+  movimientos: number;
+  ultimaFecha: string | null;
+}
+
 @Injectable()
 export class ContabilidadApi {
   constructor(
@@ -39,6 +45,44 @@ export class ContabilidadApi {
     private readonly periodos: PeriodoService,
     private readonly comprobantes: ComprobanteService,
   ) {}
+
+  /**
+   * Cuántas líneas de asiento tiene cada cuenta y la fecha del último asiento
+   * que la tocó. Solo asientos REGISTRADOS: uno anulado no es un uso.
+   *
+   * Es lo que responde «¿el sistema está usando esta cuenta?» en las cuentas
+   * automáticas: una cuenta asignada que nunca se movió todavía no se usó, y
+   * eso también es información.
+   */
+  async usoDeCuentas(
+    cuentaIds: string[],
+    t: Tx,
+  ): Promise<Map<string, UsoDeCuenta>> {
+    const uso = new Map<string, UsoDeCuenta>();
+    if (cuentaIds.length === 0) return uso;
+    const filasUso = filas<{
+      cuenta_id: string;
+      movimientos: number;
+      ultima: string | null;
+    }>(
+      await t.query(
+        `SELECT al.cuenta_id, count(*)::int AS movimientos,
+                to_char(max(a.fecha), 'YYYY-MM-DD') AS ultima
+           FROM asiento_linea al
+           JOIN asiento a ON a.id = al.asiento_id
+          WHERE al.cuenta_id = ANY($1::uuid[]) AND a.estado = 'REGISTRADO'
+          GROUP BY al.cuenta_id`,
+        [cuentaIds],
+      ),
+    );
+    for (const f of filasUso) {
+      uso.set(f.cuenta_id, {
+        movimientos: f.movimientos,
+        ultimaFecha: f.ultima,
+      });
+    }
+    return uso;
+  }
 
   /**
    * Los asientos creados **en la transacción en curso**, con sus líneas.

@@ -20,6 +20,11 @@ import type {
 } from '../dto/movimiento.dto';
 import { ConfiguracionService } from './configuracion.service';
 import {
+  CONCEPTOS_INVENTARIO,
+  conceptoDelFaltante,
+  type ConceptoInventario,
+} from './cuentas-inventario.reglas';
+import {
   calcularEntrada,
   calcularReversaDeEntrada,
   calcularSalida,
@@ -143,6 +148,8 @@ export class KardexService {
         dto.motivo,
         resultado.valorMovimiento,
         'DEBITO',
+        'SOBRANTE',
+        null,
         movimientoId,
         t,
       );
@@ -182,6 +189,20 @@ export class KardexService {
         throw new BadRequestException(resultado.motivo);
       }
 
+      const faltante = conceptoDelFaltante(dto.tratamientoFaltante);
+      if (!faltante.ok) {
+        throw new BadRequestException(faltante.motivo);
+      }
+      const responsableId =
+        dto.tratamientoFaltante === 'RESPONSABLE'
+          ? (dto.responsableTerceroId ?? null)
+          : null;
+      if (dto.tratamientoFaltante === 'RESPONSABLE' && responsableId === null) {
+        throw new BadRequestException(
+          'Para cobrar el faltante, elige a quién se le cobra.',
+        );
+      }
+
       const movimientoId = randomUUID();
       const asientoId = await this.asentarAjuste(
         ctx,
@@ -190,6 +211,8 @@ export class KardexService {
         dto.motivo,
         resultado.valorMovimiento,
         'CREDITO',
+        faltante.concepto,
+        responsableId,
         movimientoId,
         t,
       );
@@ -206,6 +229,7 @@ export class KardexService {
         resultado,
         dto.motivo,
         asientoId,
+        { tratamiento: dto.tratamientoFaltante, responsableId },
       );
     });
   }
@@ -260,23 +284,16 @@ export class KardexService {
   }
 
   /**
-   * ¿Puede esta empresa quedar en descubierto? Lo decide quien responde por el
-   * inventario, una vez, en la configuración del módulo — no cada digitador
-   * documento por documento. La confirmación de quien factura es además de
-   * esto, no en vez de esto.
+   * ¿Puede esta empresa quedar en descubierto? Lo contesta la empresa una vez,
+   * en el asistente («¿Vendes productos sin tenerlos en existencia?»): es el
+   * hecho operativo `VENDE_SIN_EXISTENCIA`, el mismo que lee el trigger del
+   * kardex. La confirmación de quien factura es además de esto, no en vez.
    */
   private async permiteExistenciaNegativa(
     ctx: CtxEmpresa,
     tx: Tx,
   ): Promise<boolean> {
-    const config = fila<{ permite_existencia_negativa: boolean }>(
-      await tx.query(
-        `SELECT permite_existencia_negativa FROM inventario_configuracion
-          WHERE empresa_id = $1`,
-        [ctx.empresaId],
-      ),
-    );
-    return config?.permite_existencia_negativa ?? false;
+    return this.nucleo.tieneHechoOperativo(ctx, 'VENDE_SIN_EXISTENCIA', tx);
   }
 
   /**
@@ -406,10 +423,19 @@ export class KardexService {
       await this.exigirPromedioPonderado(ctx, tx);
 
     for (const m of movido) {
-      const entra = { cantidad: Number(m.cantidad_entra), valor: Number(m.valor_entra) };
-      const sale = { cantidad: Number(m.cantidad_sale), valor: Number(m.valor_sale) };
+      const entra = {
+        cantidad: Number(m.cantidad_entra),
+        valor: Number(m.valor_entra),
+      };
+      const sale = {
+        cantidad: Number(m.cantidad_sale),
+        valor: Number(m.valor_sale),
+      };
       // Ya en cero: una anulación bien hecha, o una que ya se reparó.
-      if (entra.cantidad === sale.cantidad && Math.abs(entra.valor - sale.valor) <= 0.01) {
+      if (
+        entra.cantidad === sale.cantidad &&
+        Math.abs(entra.valor - sale.valor) <= 0.01
+      ) {
         continue;
       }
 
@@ -417,7 +443,10 @@ export class KardexService {
 
       // 1. Lo que salió vuelve, al costo con que salió.
       if (sale.cantidad > 0) {
-        const costo = redondearCosto(sale.valor / sale.cantidad, decimalesCosto);
+        const costo = redondearCosto(
+          sale.valor / sale.cantidad,
+          decimalesCosto,
+        );
         const actual = (await this.ultimoMovimiento(m.producto_id, tx)) ?? {
           cantidad: 0,
           costoPromedio: 0,
@@ -432,7 +461,13 @@ export class KardexService {
             fecha,
             sale.cantidad,
             costo,
-            calcularEntrada(actual, sale.cantidad, costo, decimalesCantidad, decimalesCosto),
+            calcularEntrada(
+              actual,
+              sale.cantidad,
+              costo,
+              decimalesCantidad,
+              decimalesCosto,
+            ),
             motivo,
             asientoId,
           ),
@@ -441,7 +476,10 @@ export class KardexService {
 
       // 2. Lo que entró sale, al costo con que entró.
       if (entra.cantidad > 0) {
-        const costo = redondearCosto(entra.valor / entra.cantidad, decimalesCosto);
+        const costo = redondearCosto(
+          entra.valor / entra.cantidad,
+          decimalesCosto,
+        );
         const actual = (await this.ultimoMovimiento(m.producto_id, tx)) ?? {
           cantidad: 0,
           costoPromedio: 0,
@@ -659,9 +697,10 @@ export class KardexService {
 
   /**
    * El asiento de un ajuste: debita o acredita la cuenta del producto contra
-   * la cuenta de ajuste configurada. `origenId` es el id del movimiento que
-   * se va a insertar a continuación, en la MISMA transacción — se genera
-   * antes para poder enlazarlo en los dos lados.
+   * la cuenta del concepto —sobrante, faltante asumido o faltante cobrable, con
+   * su tercero—. `origenId` es el id del movimiento que se va a insertar a
+   * continuación, en la MISMA transacción — se genera antes para poder
+   * enlazarlo en los dos lados.
    */
   private async asentarAjuste(
     ctx: CtxEmpresa,
@@ -670,13 +709,15 @@ export class KardexService {
     motivo: string,
     valor: number,
     ladoProducto: 'DEBITO' | 'CREDITO',
+    concepto: ConceptoInventario,
+    responsableId: string | null,
     movimientoId: string,
     t: Tx,
   ): Promise<string> {
-    const config = await this.configuracion.obtener(ctx, t);
-    if (config.cuenta_ajuste_id === null) {
+    const cuentaAjusteId = await this.configuracion.cuentaDe(ctx, concepto, t);
+    if (cuentaAjusteId === null) {
       throw new BadRequestException(
-        'Configura primero la cuenta de ajuste de inventario (PUT /inventario/configuracion).',
+        `La cuenta de «${CONCEPTOS_INVENTARIO[concepto].etiqueta}» tiene varios auxiliares: elige uno en Plan de cuentas → Cuentas automáticas.`,
       );
     }
 
@@ -704,9 +745,10 @@ export class KardexService {
             credito: ladoProducto === 'CREDITO' ? valor : 0,
           },
           {
-            cuentaId: config.cuenta_ajuste_id,
+            cuentaId: cuentaAjusteId,
             debito: ladoProducto === 'CREDITO' ? valor : 0,
             credito: ladoProducto === 'DEBITO' ? valor : 0,
+            terceroId: responsableId ?? undefined,
           },
         ],
       },
@@ -733,6 +775,10 @@ export class KardexService {
     resultado: ResultadoEntrada,
     motivo: string,
     asientoId: string | null,
+    faltante: {
+      tratamiento: 'EMPRESA' | 'RESPONSABLE';
+      responsableId: string | null;
+    } | null = null,
   ): Promise<MovimientoResumen> {
     const saldoValor =
       Math.round(
@@ -743,8 +789,9 @@ export class KardexService {
       await t.query(
         `INSERT INTO producto_movimiento
            (id, empresa_id, producto_id, fecha, tipo, cantidad, costo_unitario, valor_total,
-            saldo_cantidad, saldo_costo_promedio, saldo_valor, motivo, asiento_id, creado_por)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+            saldo_cantidad, saldo_costo_promedio, saldo_valor, motivo, asiento_id, creado_por,
+            tratamiento_faltante, responsable_tercero_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
          RETURNING ${CAMPOS}`,
         [
           id,
@@ -761,6 +808,8 @@ export class KardexService {
           motivo,
           asientoId,
           ctx.usuarioId,
+          faltante?.tratamiento ?? null,
+          faltante?.responsableId ?? null,
         ],
       ),
     );

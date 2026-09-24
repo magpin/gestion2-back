@@ -35,6 +35,7 @@ export class TercerosController {
     return this.terceros.listar(ctx, q, {
       esCliente: q.esCliente,
       esProveedor: q.esProveedor,
+      esEmpleado: q.esEmpleado,
       incluirInactivos: q.incluirInactivos,
       soloInactivos: q.soloInactivos,
     });

@@ -175,6 +175,41 @@ export class NucleoApi {
     return this.plan.cuenta(ctx, codigo, tx);
   }
 
+  /** Una cuenta y sus auxiliares activos. Ver `PlanCuentasService.cuentaConAuxiliares`. */
+  async cuentaConAuxiliares(ctx: CtxEmpresa, codigo: string, tx?: Tx) {
+    return this.plan.cuentaConAuxiliares(ctx, codigo, tx);
+  }
+
+  /**
+   * Crea una cuenta del decreto si la empresa no la tiene. `null` si ya
+   * existía, aunque esté inactiva. Ver `PlanCuentasService.asegurarCuenta`.
+   */
+  async asegurarCuenta(
+    ctx: CtxEmpresa,
+    datos: { codigo: string; nombre: string; exigeTercero?: boolean },
+    tx?: Tx,
+  ) {
+    return this.plan.asegurarCuenta(ctx, datos, tx);
+  }
+
+  /** Las sedes de la empresa: id y nombre, la principal primero. */
+  async sedes(ctx: CtxEmpresa, tx?: Tx) {
+    return this.empresas.sedesResumen(ctx, tx);
+  }
+
+  /**
+   * Si la empresa declaró un hecho operativo (`MANEJA_CAJA_MENOR`,
+   * `TIENE_EMPLEADOS`…). Es lo que ningún documento dice y solo la persona
+   * contesta en el asistente.
+   */
+  async tieneHechoOperativo(
+    ctx: CtxEmpresa,
+    hecho: string,
+    tx?: Tx,
+  ): Promise<boolean> {
+    return (await this.legal.hechosOperativos(ctx, tx)).includes(hecho);
+  }
+
   /**
    * Una cuenta por id, con su bandera de activa: la eligió una persona en una
    * lista, así que «no existe» y «está inactiva» son dos problemas distintos.

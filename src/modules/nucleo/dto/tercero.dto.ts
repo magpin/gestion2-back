@@ -87,6 +87,11 @@ export class CrearTerceroDto {
   @IsBoolean()
   esProveedor?: boolean;
 
+  /** Trabaja para la empresa: responde por una caja. */
+  @IsOptional()
+  @IsBoolean()
+  esEmpleado?: boolean;
+
   @IsOptional()
   @IsBoolean()
   responsableIva?: boolean;
@@ -162,6 +167,11 @@ export class EditarTerceroDto {
   @IsBoolean()
   esProveedor?: boolean;
 
+  /** Trabaja para la empresa: responde por una caja. */
+  @IsOptional()
+  @IsBoolean()
+  esEmpleado?: boolean;
+
   @IsOptional()
   @IsBoolean()
   responsableIva?: boolean;
@@ -202,6 +212,11 @@ export class ListarTercerosDto extends PaginacionDto {
   @Transform(aBooleano)
   @IsBoolean()
   esProveedor?: boolean;
+
+  @IsOptional()
+  @Transform(aBooleano)
+  @IsBoolean()
+  esEmpleado?: boolean;
 
   @IsOptional()
   @Transform(aBooleano)

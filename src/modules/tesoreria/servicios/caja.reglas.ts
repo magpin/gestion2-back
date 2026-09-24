@@ -171,3 +171,117 @@ export function resolverConteo(
   }
   return { ok: true, saldoContado: total, denominaciones: contadas };
 }
+
+// ---------------------------------------------------------------------------
+// Las cuentas de un arqueo con diferencia
+// ---------------------------------------------------------------------------
+
+/**
+ * Una diferencia de arqueo no es una sola cosa. Plata de más es un ingreso sin
+ * explicar; plata de menos o la paga quien respondía por la caja —y es una
+ * cuenta por cobrar a esa persona— o la asume la empresa como gasto.
+ */
+export type ConceptoArqueo =
+  'SOBRANTE' | 'FALTANTE_COBRABLE' | 'FALTANTE_ASUMIDO';
+
+export type TratamientoFaltante = 'EMPRESA' | 'RESPONSABLE';
+
+export const CONCEPTOS_ARQUEO: Record<
+  ConceptoArqueo,
+  {
+    /** La cuenta del decreto que se usa si la empresa no dice otra cosa. */
+    codigo: string;
+    /** Cómo se llama la cuenta cuando el sistema la crea. */
+    nombreCuenta: string;
+    /** Cómo se le dice al concepto en pantalla. */
+    etiqueta: string;
+    /** Un faltante cobrable no sirve sin saber a quién se le cobra. */
+    exigeTercero: boolean;
+  }
+> = {
+  SOBRANTE: {
+    codigo: '429553',
+    nombreCuenta: 'Sobrantes de caja',
+    etiqueta: 'Sobrante de caja',
+    exigeTercero: false,
+  },
+  FALTANTE_COBRABLE: {
+    codigo: '136530',
+    nombreCuenta: 'Faltantes de caja por cobrar',
+    etiqueta: 'Faltante cobrable al responsable',
+    exigeTercero: true,
+  },
+  FALTANTE_ASUMIDO: {
+    codigo: '531595',
+    nombreCuenta: 'Faltantes de caja asumidos',
+    etiqueta: 'Faltante asumido por la empresa',
+    exigeTercero: false,
+  },
+};
+
+export const ORDEN_CONCEPTOS: ConceptoArqueo[] = [
+  'SOBRANTE',
+  'FALTANTE_COBRABLE',
+  'FALTANTE_ASUMIDO',
+];
+
+export interface CuentaElegible {
+  id: string;
+  codigo: string;
+  nombre: string;
+  esAuxiliar: boolean;
+}
+
+/**
+ * Entre qué cuentas se elige un concepto, y cuál queda si no hay nada que
+ * elegir.
+ *
+ * - Si la cuenta abrió auxiliares, esos son las opciones: la madre ya no
+ *   recibe asientos. Con uno solo, no hay pregunta.
+ * - Sin auxiliares, la cuenta misma, si recibe asientos.
+ * - Sin cuenta ni auxiliares, nada: hay que crearla.
+ */
+export function resolverCuentaConcepto(familia: {
+  cuenta: CuentaElegible | null;
+  auxiliares: CuentaElegible[];
+}): { opciones: CuentaElegible[]; cuentaId: string | null } {
+  const opciones =
+    familia.auxiliares.length > 0
+      ? familia.auxiliares
+      : familia.cuenta !== null && familia.cuenta.esAuxiliar
+        ? [familia.cuenta]
+        : [];
+  return {
+    opciones,
+    cuentaId: opciones.length === 1 ? opciones[0].id : null,
+  };
+}
+
+export type CuentaDeAjuste =
+  { ok: true; concepto: ConceptoArqueo } | { ok: false; motivo: string };
+
+/**
+ * Qué concepto lleva el ajuste de un arqueo. El sobrante no pregunta; el
+ * faltante sí, porque qué pasó con la plata lo sabe quien cerró la caja, no
+ * el sistema.
+ */
+export function conceptoDelAjuste(
+  diferencia: number,
+  tratamiento: TratamientoFaltante | undefined,
+): CuentaDeAjuste {
+  if (diferencia > 0) {
+    return { ok: true, concepto: 'SOBRANTE' };
+  }
+  if (tratamiento === undefined) {
+    return {
+      ok: false,
+      motivo:
+        'Hay un faltante: indica si lo asume la empresa o lo paga el responsable de la caja.',
+    };
+  }
+  return {
+    ok: true,
+    concepto:
+      tratamiento === 'RESPONSABLE' ? 'FALTANTE_COBRABLE' : 'FALTANTE_ASUMIDO',
+  };
+}

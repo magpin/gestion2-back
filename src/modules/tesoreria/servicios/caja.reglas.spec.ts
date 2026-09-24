@@ -1,5 +1,7 @@
 import {
   calcularDiferenciaArqueo,
+  conceptoDelAjuste,
+  resolverCuentaConcepto,
   calcularEgreso,
   calcularIngreso,
   redondear,
@@ -157,5 +159,79 @@ describe('resolverConteo', () => {
         { tipo: 'MONEDA', denominacion: 200, cantidad: 3 },
       ]).ok,
     ).toBe(false);
+  });
+});
+
+describe('resolverCuentaConcepto', () => {
+  const madre = {
+    id: 'm',
+    codigo: '429553',
+    nombre: 'Sobrantes',
+    esAuxiliar: true,
+  };
+  const aux = (n: number) => ({
+    id: `a${n}`,
+    codigo: `4295530${n}`,
+    nombre: `Sobrantes ${n}`,
+    esAuxiliar: true,
+  });
+
+  it('sin auxiliares, la cuenta misma queda elegida', () => {
+    expect(resolverCuentaConcepto({ cuenta: madre, auxiliares: [] })).toEqual({
+      opciones: [madre],
+      cuentaId: 'm',
+    });
+  });
+
+  it('con un solo auxiliar, ese queda elegido y la madre sale de las opciones', () => {
+    expect(
+      resolverCuentaConcepto({ cuenta: madre, auxiliares: [aux(1)] }),
+    ).toEqual({ opciones: [aux(1)], cuentaId: 'a1' });
+  });
+
+  it('con varios auxiliares, hay que elegir', () => {
+    expect(
+      resolverCuentaConcepto({ cuenta: madre, auxiliares: [aux(1), aux(2)] }),
+    ).toEqual({ opciones: [aux(1), aux(2)], cuentaId: null });
+  });
+
+  it('una madre que no recibe asientos y sin auxiliares no sirve', () => {
+    expect(
+      resolverCuentaConcepto({
+        cuenta: { ...madre, esAuxiliar: false },
+        auxiliares: [],
+      }),
+    ).toEqual({ opciones: [], cuentaId: null });
+  });
+
+  it('sin cuenta ni auxiliares, no hay nada', () => {
+    expect(resolverCuentaConcepto({ cuenta: null, auxiliares: [] })).toEqual({
+      opciones: [],
+      cuentaId: null,
+    });
+  });
+});
+
+describe('conceptoDelAjuste', () => {
+  it('un sobrante no pregunta', () => {
+    expect(conceptoDelAjuste(10, undefined)).toEqual({
+      ok: true,
+      concepto: 'SOBRANTE',
+    });
+  });
+
+  it('un faltante sin tratamiento se rechaza', () => {
+    expect(conceptoDelAjuste(-10, undefined).ok).toBe(false);
+  });
+
+  it('un faltante lo asume la empresa o lo paga el responsable', () => {
+    expect(conceptoDelAjuste(-10, 'EMPRESA')).toEqual({
+      ok: true,
+      concepto: 'FALTANTE_ASUMIDO',
+    });
+    expect(conceptoDelAjuste(-10, 'RESPONSABLE')).toEqual({
+      ok: true,
+      concepto: 'FALTANTE_COBRABLE',
+    });
   });
 });

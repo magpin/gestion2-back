@@ -649,13 +649,18 @@ export class RevisionService {
         )
         SELECT p.id, p.codigo, p.nombre, u.saldo_cantidad AS existencias,
                coalesce(pp.precio_venta, 0) <= 0 AS sin_precio,
-               (p.cuenta_ingreso_id IS NULL OR p.cuenta_costo_venta_id IS NULL) AS sin_cuentas
+               -- Sin cuenta es sin la propia NI la de la empresa: un producto
+               -- sin cuentas toma las automáticas al venderse.
+               (coalesce(p.cuenta_ingreso_id, ic.cuenta_ingreso_id) IS NULL
+                OR coalesce(p.cuenta_costo_venta_id, ic.cuenta_costo_venta_id) IS NULL) AS sin_cuentas
           FROM producto p
           JOIN ultimo u ON u.producto_id = p.id AND u.saldo_cantidad > 0
           LEFT JOIN producto_precio pp ON pp.producto_id = p.id AND pp.fecha_fin IS NULL
+          LEFT JOIN inventario_configuracion ic ON ic.empresa_id = p.empresa_id
          WHERE p.activo
            AND (coalesce(pp.precio_venta, 0) <= 0
-                OR p.cuenta_ingreso_id IS NULL OR p.cuenta_costo_venta_id IS NULL)
+                OR coalesce(p.cuenta_ingreso_id, ic.cuenta_ingreso_id) IS NULL
+                OR coalesce(p.cuenta_costo_venta_id, ic.cuenta_costo_venta_id) IS NULL)
          ORDER BY p.codigo`),
     );
     return r.map((f) => ({

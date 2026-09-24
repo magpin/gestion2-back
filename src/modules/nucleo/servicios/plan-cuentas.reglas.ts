@@ -726,6 +726,23 @@ function bloqueGiro(h: HechosPlan): CuentaSugerida[] {
         porque:
           'Marcaste COMERCIO: lo que se revende se inventaría antes de venderse.',
       }),
+      // Donde se ajusta un conteo de bodega que no cuadra. Espejo de
+      // `CONCEPTOS_INVENTARIO`, que las usa por defecto.
+      cuenta({
+        codigo: '429505',
+        nombre: 'Sobrantes de inventario',
+        codigoPuc: '429505',
+        bloque: 'GIRO',
+        porque:
+          'Unidades de más al contar la bodega: un ingreso que no se había registrado.',
+      }),
+      cuenta({
+        codigo: '529595',
+        nombre: 'Faltantes de inventario',
+        codigoPuc: '529595',
+        bloque: 'GIRO',
+        porque: 'Merma, daño o pérdida de mercancía que la empresa asume.',
+      }),
     );
   }
 

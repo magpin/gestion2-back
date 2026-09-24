@@ -68,6 +68,7 @@ describe('InventarioApi', () => {
     txServiceFalso(),
     // AlmacenamientoApi: `ultimoSaldo` no firma ninguna URL.
     { disponible: false } as never,
+    {} as never, // ConfiguracionService: leer un producto no lo toca
   );
   const kardex = new KardexService(
     txServiceFalso(),

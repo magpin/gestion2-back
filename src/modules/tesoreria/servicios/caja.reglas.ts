@@ -1,3 +1,8 @@
+import {
+  resolverCuentaConcepto,
+  type DefinicionConcepto,
+} from '../../../common/contabilidad/cuentas-automaticas';
+
 /**
  * El saldo corrido de una caja, en memoria. Sin base de datos.
  *
@@ -186,36 +191,33 @@ export type ConceptoArqueo =
 
 export type TratamientoFaltante = 'EMPRESA' | 'RESPONSABLE';
 
-export const CONCEPTOS_ARQUEO: Record<
-  ConceptoArqueo,
-  {
-    /** La cuenta del decreto que se usa si la empresa no dice otra cosa. */
-    codigo: string;
-    /** Cómo se llama la cuenta cuando el sistema la crea. */
-    nombreCuenta: string;
-    /** Cómo se le dice al concepto en pantalla. */
-    etiqueta: string;
-    /** Un faltante cobrable no sirve sin saber a quién se le cobra. */
-    exigeTercero: boolean;
-  }
-> = {
+export const CONCEPTOS_ARQUEO: Record<ConceptoArqueo, DefinicionConcepto> = {
   SOBRANTE: {
-    codigo: '429553',
+    familia: '429553',
+    codigoCrear: '429553',
     nombreCuenta: 'Sobrantes de caja',
     etiqueta: 'Sobrante de caja',
-    exigeTercero: false,
+    explicacion:
+      'Plata de más al contar la caja: un ingreso que no se registró.',
+    columna: 'cuenta_sobrante_id',
   },
   FALTANTE_COBRABLE: {
-    codigo: '136530',
+    familia: '136530',
+    codigoCrear: '136530',
     nombreCuenta: 'Faltantes de caja por cobrar',
-    etiqueta: 'Faltante cobrable al responsable',
+    etiqueta: 'Faltante de caja cobrable al responsable',
+    explicacion:
+      'Plata de menos que paga quien respondía por la caja: queda como cuenta por cobrar a esa persona.',
     exigeTercero: true,
+    columna: 'cuenta_faltante_cobrable_id',
   },
   FALTANTE_ASUMIDO: {
-    codigo: '531595',
+    familia: '531595',
+    codigoCrear: '531595',
     nombreCuenta: 'Faltantes de caja asumidos',
-    etiqueta: 'Faltante asumido por la empresa',
-    exigeTercero: false,
+    etiqueta: 'Faltante de caja asumido por la empresa',
+    explicacion: 'Plata de menos que la empresa asume como gasto.',
+    columna: 'cuenta_faltante_asumido_id',
   },
 };
 
@@ -225,37 +227,9 @@ export const ORDEN_CONCEPTOS: ConceptoArqueo[] = [
   'FALTANTE_ASUMIDO',
 ];
 
-export interface CuentaElegible {
-  id: string;
-  codigo: string;
-  nombre: string;
-  esAuxiliar: boolean;
-}
-
-/**
- * Entre qué cuentas se elige un concepto, y cuál queda si no hay nada que
- * elegir.
- *
- * - Si la cuenta abrió auxiliares, esos son las opciones: la madre ya no
- *   recibe asientos. Con uno solo, no hay pregunta.
- * - Sin auxiliares, la cuenta misma, si recibe asientos.
- * - Sin cuenta ni auxiliares, nada: hay que crearla.
- */
-export function resolverCuentaConcepto(familia: {
-  cuenta: CuentaElegible | null;
-  auxiliares: CuentaElegible[];
-}): { opciones: CuentaElegible[]; cuentaId: string | null } {
-  const opciones =
-    familia.auxiliares.length > 0
-      ? familia.auxiliares
-      : familia.cuenta !== null && familia.cuenta.esAuxiliar
-        ? [familia.cuenta]
-        : [];
-  return {
-    opciones,
-    cuentaId: opciones.length === 1 ? opciones[0].id : null,
-  };
-}
+// La regla de auxiliares es la de todas las cuentas automáticas: vive en
+// `common/contabilidad`. Se reexporta porque es parte de las reglas de caja.
+export { resolverCuentaConcepto };
 
 export type CuentaDeAjuste =
   { ok: true; concepto: ConceptoArqueo } | { ok: false; motivo: string };

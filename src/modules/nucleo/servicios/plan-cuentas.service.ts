@@ -189,24 +189,80 @@ export class PlanCuentasService {
       ctx,
       async (t) => {
         const [f] = await t.query<Array<Record<string, unknown>>>(
-          `SELECT id, codigo, nombre, codigo_puc, naturaleza, es_auxiliar,
-                  exige_tercero, exige_centro_costo, exige_base_gravable
+          `SELECT ${CAMPOS_RESUMEN}
              FROM empresa_cuenta
             WHERE codigo = $1 AND activa`,
           [codigo],
         );
-        if (f === undefined) return null;
+        return f === undefined ? null : resumirCuenta(f);
+      },
+      tx,
+    );
+  }
+
+  /**
+   * Una cuenta y sus auxiliares: las cuentas activas que cuelgan de ella y
+   * reciben asientos (`429553` → `42955301`, `42955302`).
+   *
+   * Sirve para decidir contra qué se asienta un concepto: si la cuenta abrió
+   * auxiliares, la cuenta madre ya no es la que recibe el movimiento, y quien
+   * configura tiene que elegir entre ellos. `cuenta` es `null` si no existe:
+   * puede haber auxiliares sin madre, cuando la empresa los creó sueltos.
+   */
+  async cuentaConAuxiliares(
+    ctx: CtxEmpresa,
+    codigo: string,
+    tx?: Tx,
+  ): Promise<{ cuenta: CuentaResumen | null; auxiliares: CuentaResumen[] }> {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const filas = await t.query<Array<Record<string, unknown>>>(
+          `SELECT ${CAMPOS_RESUMEN}
+             FROM empresa_cuenta
+            WHERE activa AND codigo LIKE $1 || '%'
+            ORDER BY codigo`,
+          [codigo],
+        );
+        const madre = filas.find((f) => f.codigo === codigo);
         return {
-          id: f.id as string,
-          codigo: f.codigo as string,
-          nombre: f.nombre as string,
-          codigoPuc: f.codigo_puc as string,
-          naturaleza: f.naturaleza as 'DEBITO' | 'CREDITO',
-          esAuxiliar: f.es_auxiliar === true,
-          exigeTercero: f.exige_tercero === true,
-          exigeCentroCosto: f.exige_centro_costo === true,
-          exigeBaseGravable: f.exige_base_gravable === true,
+          cuenta: madre === undefined ? null : resumirCuenta(madre),
+          auxiliares: filas
+            .filter((f) => f.codigo !== codigo && f.es_auxiliar === true)
+            .map(resumirCuenta),
         };
+      },
+      tx,
+    );
+  }
+
+  /**
+   * Crea la cuenta si la empresa no la tiene, con el código del decreto tal
+   * cual. Si ya existe —activa o no—, no la toca y devuelve `null`: quien la
+   * desactivó tuvo un motivo, y reactivarla por la espalda lo pisaría.
+   *
+   * Existe para lo que el sistema configura solo (las cuentas de arqueo): la
+   * cuenta se crea igual que si alguien la hubiera agregado del catálogo.
+   */
+  async asegurarCuenta(
+    ctx: CtxEmpresa,
+    datos: { codigo: string; nombre: string; exigeTercero?: boolean },
+    tx?: Tx,
+  ): Promise<CuentaResumen | null> {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const [existe] = await t.query<Array<{ id: string }>>(
+          'SELECT id FROM empresa_cuenta WHERE codigo = $1',
+          [datos.codigo],
+        );
+        if (existe !== undefined) return null;
+        const creada = await this.insertar(t, ctx, {
+          codigo: datos.codigo,
+          nombre: datos.nombre,
+          exigeTercero: datos.exigeTercero ?? false,
+        });
+        return resumirCuenta(creada);
       },
       tx,
     );
@@ -583,4 +639,21 @@ export class PlanCuentasService {
       codigosExistentes: (fila.codigos as string[]) ?? [],
     };
   }
+}
+
+const CAMPOS_RESUMEN = `id, codigo, nombre, codigo_puc, naturaleza, es_auxiliar,
+                exige_tercero, exige_centro_costo, exige_base_gravable`;
+
+function resumirCuenta(f: Record<string, unknown>): CuentaResumen {
+  return {
+    id: f.id as string,
+    codigo: f.codigo as string,
+    nombre: f.nombre as string,
+    codigoPuc: f.codigo_puc as string,
+    naturaleza: f.naturaleza as 'DEBITO' | 'CREDITO',
+    esAuxiliar: f.es_auxiliar === true,
+    exigeTercero: f.exige_tercero === true,
+    exigeCentroCosto: f.exige_centro_costo === true,
+    exigeBaseGravable: f.exige_base_gravable === true,
+  };
 }

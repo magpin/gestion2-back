@@ -332,6 +332,36 @@ function bloqueBase(h: HechosPlan): CuentaSugerida[] {
     );
   });
 
+  // Donde se ajusta un arqueo que no cuadra. Toda caja se cuenta, y tarde o
+  // temprano una no cuadra: tener las cuentas desde el principio evita que el
+  // cierre se trabe pidiendo configuración. Espejo de `CONCEPTOS_ARQUEO` en
+  // tesorería, que las usa por defecto.
+  lista.push(
+    cuenta({
+      codigo: '429553',
+      nombre: 'Sobrantes de caja',
+      codigoPuc: '429553',
+      bloque: 'BASE',
+      porque: 'Plata de más en un arqueo: un ingreso que no se registró.',
+    }),
+    cuenta({
+      codigo: '136530',
+      nombre: 'Faltantes de caja por cobrar',
+      codigoPuc: '136530',
+      exigeTercero: true,
+      bloque: 'BASE',
+      porque:
+        'Plata de menos que paga quien respondía por la caja: se le cobra a esa persona.',
+    }),
+    cuenta({
+      codigo: '531595',
+      nombre: 'Faltantes de caja asumidos',
+      codigoPuc: '531595',
+      bloque: 'BASE',
+      porque: 'Plata de menos que la empresa asume como gasto.',
+    }),
+  );
+
   return lista;
 }
 

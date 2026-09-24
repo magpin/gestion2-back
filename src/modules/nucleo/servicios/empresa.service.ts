@@ -241,6 +241,21 @@ export class EmpresaService {
     });
   }
 
+  /** Id y nombre de las sedes, para los módulos que arman algo por sede. */
+  async sedesResumen(
+    ctx: CtxEmpresa,
+    tx?: Tx,
+  ): Promise<Array<{ id: string; nombre: string }>> {
+    return this.tx.enContexto(
+      ctx,
+      (t) =>
+        t.query(
+          'SELECT id, nombre FROM empresa_sede ORDER BY es_principal DESC, nombre',
+        ),
+      tx,
+    );
+  }
+
   async listarSedes(ctx: CtxEmpresa): Promise<Array<Record<string, unknown>>> {
     return this.tx.enContexto(ctx, (t) =>
       t.query(

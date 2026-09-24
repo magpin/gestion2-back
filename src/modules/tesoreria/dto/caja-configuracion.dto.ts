@@ -1,6 +1,7 @@
 import { IsUUID } from 'class-validator';
 
-export class FijarCuentaDiferenciaDto {
+/** El concepto va por la ruta (`PUT /tesoreria/configuracion/SOBRANTE`). */
+export class FijarCuentaConceptoDto {
   @IsUUID()
-  cuentaDiferenciaId!: string;
+  cuentaId!: string;
 }

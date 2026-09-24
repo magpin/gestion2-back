@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   IsIn,
   IsInt,
+  IsUUID,
   IsNumber,
   IsOptional,
   IsString,
@@ -63,6 +64,19 @@ export class CerrarArqueoDto {
   @IsString()
   @Length(0, 300)
   nota?: string;
+
+  /**
+   * Solo con faltante, y ahí es obligatorio: EMPRESA lo lleva a gasto,
+   * RESPONSABLE lo cobra al responsable de la caja. Con sobrante se ignora.
+   */
+  @IsOptional()
+  @IsIn(['EMPRESA', 'RESPONSABLE'])
+  tratamientoFaltante?: 'EMPRESA' | 'RESPONSABLE';
+
+  /** A quién se le cobra, si no es el responsable de la caja. */
+  @IsOptional()
+  @IsUUID()
+  responsableTerceroId?: string;
 }
 
 /** `cajaId` va por la ruta: el historial siempre es de UNA caja. */

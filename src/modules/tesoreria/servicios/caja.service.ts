@@ -16,6 +16,13 @@ export interface Caja {
   sede_id: string | null;
   cuenta_id: string;
   activa: boolean;
+  /** El empleado que responde por la caja: a quién se le cobra un faltante. */
+  responsable: {
+    id: string;
+    nombre: string;
+    tipoDocumento: string;
+    numeroDocumento: string;
+  } | null;
   /** Cuánta plata hay adentro hoy. `0` si la caja nunca se movió. */
   saldo: string;
   /** El día del último movimiento, o `null` si no hubo ninguno. */
@@ -36,6 +43,13 @@ const ultimo = (columna: string, porDefecto: string) =>
         LIMIT 1), ${porDefecto}))`;
 
 const CAMPOS = `id, nombre, tipo, sede_id, cuenta_id, activa,
+                (SELECT json_build_object(
+                          'id', tr.id,
+                          'nombre', COALESCE(NULLIF(BTRIM(tr.razon_social), ''),
+                                      BTRIM(CONCAT_WS(' ', tr.primer_nombre, tr.primer_apellido))),
+                          'tipoDocumento', tr.tipo_documento,
+                          'numeroDocumento', tr.numero_documento)
+                   FROM tercero tr WHERE tr.id = caja.responsable_tercero_id) AS responsable,
                 ${ultimo('saldo_valor', '0')} AS saldo,
                 ${ultimo('fecha', 'NULL')} AS ultimo_movimiento`;
 
@@ -52,8 +66,9 @@ export class CajaService {
     return this.tx.enContexto(ctx, async (t) => {
       const creada = fila<Caja>(
         await t.query(
-          `INSERT INTO caja (empresa_id, nombre, tipo, sede_id, cuenta_id, creado_por)
-           VALUES ($1, $2, $3, $4, $5, $6)
+          `INSERT INTO caja (empresa_id, nombre, tipo, sede_id, cuenta_id, creado_por,
+                             responsable_tercero_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
            RETURNING ${CAMPOS}`,
           [
             ctx.empresaId,
@@ -62,6 +77,7 @@ export class CajaService {
             dto.sedeId ?? null,
             dto.cuentaId,
             ctx.usuarioId,
+            dto.responsableTerceroId ?? null,
           ],
         ),
       );
@@ -122,10 +138,17 @@ export class CajaService {
     return this.tx.enContexto(ctx, async (t) => {
       const editada = fila<Caja>(
         await t.query(
-          `UPDATE caja SET nombre = COALESCE($2, nombre)
+          // `responsable` distingue «no lo tocó» (undefined) de «lo quitó» (null).
+          `UPDATE caja SET nombre = COALESCE($2, nombre),
+                  responsable_tercero_id = CASE WHEN $3 THEN $4::uuid ELSE responsable_tercero_id END
             WHERE id = $1
           RETURNING ${CAMPOS}`,
-          [id, dto.nombre ?? null],
+          [
+            id,
+            dto.nombre ?? null,
+            dto.responsableTerceroId !== undefined,
+            dto.responsableTerceroId ?? null,
+          ],
         ),
       );
       if (editada === undefined) {

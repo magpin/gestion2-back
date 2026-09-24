@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { ContabilidadModule } from '../contabilidad/contabilidad.module';
+import { NucleoModule } from '../nucleo/nucleo.module';
 import { BancoCortesController } from './controladores/banco-cortes.controller';
 import { BancoMovimientosController } from './controladores/banco-movimientos.controller';
 import { CajaArqueosController } from './controladores/caja-arqueos.controller';
@@ -29,6 +30,9 @@ import { TesoreriaApi } from './tesoreria.api';
  * de una sola vez en el paso 10, acá cada servicio/controlador nuevo se
  * registra en este módulo al construirse, no al final.
  *
+ * Importa `NucleoModule` porque `CajaConfiguracionService` necesita el plan
+ * de cuentas, las sedes y los hechos operativos para dejar tesorería lista.
+ *
  * Importa `ContabilidadModule` porque `CajaMovimientoService`/
  * `CajaArqueoService` (y, más adelante, `BancoMovimientoService`)
  * necesitan `ContabilidadApi` para asentar — mismo motivo que
@@ -39,7 +43,7 @@ import { TesoreriaApi } from './tesoreria.api';
  * importa directamente.
  */
 @Module({
-  imports: [ContabilidadModule],
+  imports: [NucleoModule, ContabilidadModule],
   controllers: [
     CajasController,
     CajaMovimientosController,

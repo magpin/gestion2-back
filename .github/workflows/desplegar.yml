@@ -54,8 +54,11 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             entorno="${{ inputs.entorno }}"
             tag="${{ inputs.tag }}"
+            # Con if y no con `[[ ]] && echo` dentro de $(…): con `bash -e`, esa
+            # forma devuelve error cuando la condición no se cumple (prod) y
+            # corta el paso.
             if [[ -z "$tag" ]]; then
-              tag="$([[ $entorno == qa ]] && echo qa-)${GITHUB_SHA::7}"
+              if [[ $entorno == qa ]]; then tag="qa-${GITHUB_SHA::7}"; else tag="${GITHUB_SHA::7}"; fi
             fi
             construir=false; desplegar=true
           elif [[ "${{ github.ref_name }}" == "main" ]]; then

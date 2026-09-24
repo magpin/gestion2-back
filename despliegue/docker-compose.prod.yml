@@ -185,6 +185,10 @@ services:
         condition: service_completed_successfully
       gotenberg:
         condition: service_healthy
+      # Sin esto, `up -d api` (lo que corre desplegar.sh) nunca lo crea: solo
+      # arranca aquello de lo que la API depende.
+      quickchart:
+        condition: service_started
     ports:
       - "127.0.0.1:${PUERTO_API:?falta PUERTO_API}:3001"
     environment:

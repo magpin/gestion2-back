@@ -1,9 +1,13 @@
 # Construye la imagen en GitHub, la sube a GHCR y la despliega en el VPS.
 #
-#   push a develop  →  tag qa-<sha>  →  QA
-#   push a main     →  tag <sha>     →  PROD (espera la aprobación del
-#                                        environment `produccion`)
-#   Run workflow    →  vuelve a desplegar un tag que ya existe, sin construir
+#   push a develop  →  construye qa-<sha>  →  despliega QA solo
+#   push a main     →  construye <sha>     →  NO despliega
+#   Run workflow    →  despliega un tag que ya está en GHCR, sin construir
+#
+# A PROD solo se llega con Run workflow (desde main, entorno prod): ese clic es
+# la aprobación. El plan de GitHub no incluye «Required reviewers» en repos
+# privados, así que la barrera es que nada despliega a PROD solo. El
+# environment `produccion` además solo acepta la rama main.
 #
 # El VPS no construye nada: solo baja la imagen y corre
 # /opt/contable/scripts/desplegar.sh, que respalda, migra, levanta, revisa
@@ -24,9 +28,9 @@ on:
         options: [qa, prod]
         required: true
       tag:
-        description: Tag que ya está en GHCR (por ejemplo a1b2c3d o qa-a1b2c3d)
+        description: Tag que ya está en GHCR. Vacío = el del último commit de la rama elegida
         type: string
-        required: true
+        required: false
 
 permissions:
   contents: read
@@ -43,23 +47,31 @@ jobs:
       environment: ${{ steps.p.outputs.environment }}
       tag: ${{ steps.p.outputs.tag }}
       construir: ${{ steps.p.outputs.construir }}
+      desplegar: ${{ steps.p.outputs.desplegar }}
     steps:
       - id: p
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             entorno="${{ inputs.entorno }}"
             tag="${{ inputs.tag }}"
-            construir=false
+            if [[ -z "$tag" ]]; then
+              tag="$([[ $entorno == qa ]] && echo qa-)${GITHUB_SHA::7}"
+            fi
+            construir=false; desplegar=true
           elif [[ "${{ github.ref_name }}" == "main" ]]; then
-            entorno=prod; tag="${GITHUB_SHA::7}"; construir=true
+            entorno=prod; tag="${GITHUB_SHA::7}"; construir=true; desplegar=false
           else
-            entorno=qa; tag="qa-${GITHUB_SHA::7}"; construir=true
+            entorno=qa; tag="qa-${GITHUB_SHA::7}"; construir=true; desplegar=true
           fi
           [[ "$tag" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Tag inválido: $tag"; exit 1; }
           echo "entorno=$entorno" >> "$GITHUB_OUTPUT"
           echo "environment=$([[ $entorno == prod ]] && echo produccion || echo qa)" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "construir=$construir" >> "$GITHUB_OUTPUT"
+          echo "desplegar=$desplegar" >> "$GITHUB_OUTPUT"
+          if [[ $desplegar == false ]]; then
+            echo "::notice::Imagen $tag lista. Para ponerla en PROD: Actions → Desplegar → Run workflow (rama main, entorno prod)."
+          fi
 
   construir:
     needs: preparar
@@ -86,7 +98,7 @@ jobs:
   desplegar:
     needs: [preparar, construir]
     # Corre aunque `construir` se haya saltado (Run workflow), pero no si falló.
-    if: always() && needs.preparar.result == 'success' && needs.construir.result != 'failure' && needs.construir.result != 'cancelled'
+    if: always() && needs.preparar.result == 'success' && needs.preparar.outputs.desplegar == 'true' && needs.construir.result != 'failure' && needs.construir.result != 'cancelled'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: ${{ needs.preparar.outputs.environment }}

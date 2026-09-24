@@ -36,6 +36,7 @@ fi
   echo "Falta $DIR/.env o $DIR/docker-compose.yml" >&2; exit 1; }
 
 cd "$DIR"
+VAR="TAG_$(echo "$SERVICIO" | tr a-z A-Z)"
 log() { echo "[$(date +%H:%M:%S)] $*"; }
 
 # Dos despliegues a la vez sobre el mismo entorno se pisan el `.env`.
@@ -44,7 +45,6 @@ if command -v flock >/dev/null; then
   flock -w 600 9 || { echo "Otro despliegue de $ENTORNO lleva más de 10 minutos." >&2; exit 1; }
 fi
 
-VAR="TAG_$(echo "$SERVICIO" | tr a-z A-Z)"
 leer_tag() { grep -E "^$1=" .env | head -1 | cut -d= -f2-; }
 fijar_tag() {
   local tmp; tmp="$(mktemp .env.XXXX)"; chmod 600 "$tmp"
@@ -58,7 +58,9 @@ fijar_tag() {
 
 # ── 1. Compose nuevo ────────────────────────────────────────────────────────
 if [[ -f docker-compose.yml.nuevo ]]; then
-  if docker compose -f docker-compose.yml.nuevo config --quiet; then
+  # Se valida con el tag que se va a desplegar: en el primer despliegue el
+  # `.env` todavía no tiene ninguno y el compose exige los dos.
+  if env "$VAR=$TAG" docker compose -f docker-compose.yml.nuevo config --quiet; then
     cp docker-compose.yml docker-compose.yml.anterior
     mv docker-compose.yml.nuevo docker-compose.yml
     log "Compose actualizado (el anterior quedó en docker-compose.yml.anterior)."

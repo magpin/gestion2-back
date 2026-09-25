@@ -1,6 +1,9 @@
 // Lo que comparten los scripts que hablan con la API como un usuario: pedir y
 // entrar a una empresa.
-const BASE = `http://localhost:${process.env.PORT || 3001}/${process.env.API_PREFIX || 'api/v1'}`;
+// `API_BASE` apunta a otro entorno —QA, por ejemplo—; sin ella, la API local.
+const BASE =
+  process.env.API_BASE ||
+  `http://localhost:${process.env.PORT || 3001}/${process.env.API_PREFIX || 'api/v1'}`;
 
 async function pedir(metodo, ruta, { token, cuerpo } = {}) {
   const res = await fetch(BASE + ruta, {

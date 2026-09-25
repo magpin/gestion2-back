@@ -12,9 +12,11 @@ import { FacturasLeidasController } from './controladores/facturas-leidas.contro
 import { AltasController } from './controladores/altas.controller';
 import { LotesController } from './controladores/lotes.controller';
 import { PedidosLeidosController } from './controladores/pedidos-leidos.controller';
+import { VentasHistoricasLeidasController } from './controladores/ventas-historicas-leidas.controller';
 import { LecturaDocumentosApi } from './lectura-documentos.api';
 import { ClaudeProveedor } from './proveedores/claude.proveedor';
 import { EXTRACTOR_PUERTO } from './proveedores/extractor.puerto';
+import { CargaVentasHistoricasService } from './servicios/carga-ventas-historicas.service';
 import { ConfirmacionFacturaService } from './servicios/confirmacion-factura.service';
 import { ConfirmacionService } from './servicios/confirmacion.service';
 import { CruceService } from './servicios/cruce.service';
@@ -52,6 +54,7 @@ import { ProgresoService } from './servicios/progreso.service';
     ConfirmacionController,
     FacturasLeidasController,
     PedidosLeidosController,
+    VentasHistoricasLeidasController,
     LotesController,
     AltasController,
   ],
@@ -63,6 +66,7 @@ import { ProgresoService } from './servicios/progreso.service';
     ConfirmacionFacturaService,
     CruceService,
     FacturacionPedidoService,
+    CargaVentasHistoricasService,
     MemoriaService,
     LoteService,
     { provide: EXTRACTOR_PUERTO, useClass: ClaudeProveedor },

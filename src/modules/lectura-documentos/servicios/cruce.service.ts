@@ -26,6 +26,10 @@ import {
   type PedidoLeido,
   type RenglonPedido,
 } from '../reglas/pedido-venta.reglas';
+import type {
+  RenglonVentaHistorica,
+  VentaHistoricaLeida,
+} from '../reglas/venta-historica.reglas';
 import { MemoriaService, type Recordado } from './memoria.service';
 
 /**
@@ -115,6 +119,37 @@ export interface PedidoCruzado {
   juntadas: number;
   preguntas: Pregunta[];
   completa: boolean;
+}
+
+/** Un renglón de una venta del sistema anterior, después de cruzarlo. */
+export interface RenglonHistoricoCruzado {
+  orden: number;
+  leido: RenglonVentaHistorica;
+  resuelto: { id: string; codigo: string; nombre: string } | null;
+  motivo: string;
+  forma?: FormaDeCruce;
+}
+
+/**
+ * Una factura del sistema anterior, lista para proponer cargarla como
+ * histórica (fase 11). Si ya está en el sistema **no se dice acá**: eso se mira
+ * al mostrarla, porque entre leerla y cargarla pudo entrar por otro camino.
+ */
+export interface VentaHistoricaCruzada {
+  factura: VentaHistoricaLeida;
+  comprobaciones: Comprobacion[];
+  cliente: { id: string; nombre: string } | null;
+  renglones: RenglonHistoricoCruzado[];
+  preguntas: Pregunta[];
+  /** Sin preguntas y con las cuentas dando: se puede cargar. */
+  completa: boolean;
+}
+
+/** Lo que se guarda de un archivo con ventas del sistema anterior. */
+export interface VentasHistoricasCruzadas {
+  facturas: VentaHistoricaCruzada[];
+  /** Lo que impidió cruzar el archivo entero. Vacío si se cruzó. */
+  preguntas: Pregunta[];
 }
 
 @Injectable()
@@ -392,6 +427,100 @@ export class CruceService {
   }
 
   /**
+   * Cada factura del sistema anterior contra el sistema: el cliente por NIT y
+   * cada renglón por código o nombre. **El precio no se busca**: se carga el
+   * que se cobró, que es el impreso.
+   */
+  async cruzarVentasHistoricas(
+    ctx: CtxEmpresa,
+    facturas: Array<{
+      factura: VentaHistoricaLeida;
+      comprobaciones: Comprobacion[];
+    }>,
+  ): Promise<VentasHistoricasCruzadas> {
+    const cruzadas: VentaHistoricaCruzada[] = [];
+    for (const { factura, comprobaciones } of facturas) {
+      const preguntas: Pregunta[] = [];
+
+      const candidatos =
+        factura.cliente.nit === null
+          ? []
+          : await this.nucleo.terceroPorDocumento(ctx, factura.cliente.nit);
+      const cruceCliente = elegirCliente(factura.cliente, candidatos, {
+        documento: 'La factura',
+        antesDe: 'cargarla',
+      });
+      if (cruceCliente.encontrado === null) {
+        preguntas.push({ sobre: 'cliente', texto: cruceCliente.motivo });
+      }
+
+      // El punto de los miles leído como decimal deja «$ 30.000» en 30, y las
+      // sumas igual dan —todo quedó dividido por mil—. Pasó en la primera
+      // lectura del escaneo de prueba. Una venta de menos de mil pesos es tan
+      // rara que se pregunta antes de cargarla.
+      if (factura.impreso.total > 0 && factura.impreso.total < MINIMO_CREIBLE) {
+        preguntas.push({
+          sobre: 'montos',
+          texto: `Leí un total de $ ${factura.impreso.total}. Si la factura dice más —por ejemplo $ ${factura.impreso.total}.000—, se leyó mal: subila de nuevo.`,
+        });
+      }
+
+      const renglones: RenglonHistoricoCruzado[] = [];
+      for (const [indice, leido] of factura.renglones.entries()) {
+        const orden = indice + 1;
+        const cruce = await this.cruzarProducto(ctx, leido);
+        const producto = cruce.encontrado;
+        renglones.push({
+          orden,
+          leido,
+          resuelto:
+            producto === null
+              ? null
+              : {
+                  id: producto.id,
+                  codigo: producto.codigo,
+                  nombre: producto.nombre,
+                },
+          motivo: cruce.motivo,
+          ...(cruce.forma !== undefined && { forma: cruce.forma }),
+        });
+        if (producto === null) {
+          preguntas.push({
+            sobre: `renglon-${orden}`,
+            texto: `Renglón ${orden} («${leido.descripcion}»): ${cruce.motivo}`,
+          });
+        }
+        if (![0, 5, 19].includes(leido.ivaTarifa)) {
+          preguntas.push({
+            sobre: `iva-${orden}`,
+            texto: `Renglón ${orden}: leí un IVA de ${leido.ivaTarifa} %, y solo puede ser 0, 5 o 19.`,
+          });
+        }
+      }
+
+      cruzadas.push({
+        factura,
+        comprobaciones,
+        cliente:
+          cruceCliente.encontrado === null
+            ? null
+            : {
+                id: cruceCliente.encontrado.id,
+                nombre: cruceCliente.encontrado.nombre,
+              },
+        renglones,
+        preguntas,
+        completa: preguntas.length === 0 && cuadra(comprobaciones),
+      });
+    }
+
+    this.log.log(
+      `Ventas anteriores cruzadas: ${cruzadas.length} facturas, ${cruzadas.filter((c) => c.completa).length} completas.`,
+    );
+    return { facturas: cruzadas, preguntas: [] };
+  }
+
+  /**
    * Lo recordado, si todavía sirve. Si el producto se inactivó o la cuenta
    * dejó de recibir movimientos, no se usa: se vuelve a preguntar, sin error.
    */
@@ -529,6 +658,9 @@ export class CruceService {
  * barras, unidades— que es donde las dos fuentes se escriben distinto.
  */
 const LARGO_DE_BUSQUEDA = 40;
+
+/** Por debajo de esto, el total de una venta anterior se pregunta: ver arriba. */
+const MINIMO_CREIBLE = 1000;
 
 function comoProducto<T extends { id: string; codigo: string; nombre: string }>(
   cruce: Cruce<T>,

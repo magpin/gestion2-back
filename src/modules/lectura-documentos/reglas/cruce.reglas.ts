@@ -214,10 +214,18 @@ export function elegirCliente<
     nombre: string;
     esCliente: boolean;
   },
->(leido: { nombre: string; nit: string | null }, candidatos: T[]): Cruce<T> {
+>(
+  leido: { nombre: string; nit: string | null },
+  candidatos: T[],
+  // Una factura del sistema anterior no se factura: se carga (fase 11).
+  textos: { documento: string; antesDe: string } = {
+    documento: 'El pedido',
+    antesDe: 'facturar',
+  },
+): Cruce<T> {
   if (leido.nit === null) {
     return sinEncontrar(
-      `El pedido no trae el NIT de «${leido.nombre}». ¿Quién es el cliente?`,
+      `${textos.documento} no trae el NIT de «${leido.nombre}». ¿Quién es el cliente?`,
     );
   }
 
@@ -227,7 +235,7 @@ export function elegirCliente<
   if (porNit.length !== 1) {
     return sinEncontrar(
       porNit.length === 0
-        ? `No tengo ningún tercero con el NIT ${leido.nit}. Hay que crearlo como cliente antes de facturar.`
+        ? `No tengo ningún tercero con el NIT ${leido.nit}. Hay que crearlo como cliente antes de ${textos.antesDe}.`
         : `Hay ${porNit.length} terceros con el NIT ${leido.nit}. ¿Cuál es?`,
     );
   }
@@ -235,7 +243,7 @@ export function elegirCliente<
   const [cliente] = porNit;
   if (!cliente.esCliente) {
     return sinEncontrar(
-      `«${cliente.nombre}» está en el sistema pero no figura como cliente. Hay que marcarlo antes de facturar.`,
+      `«${cliente.nombre}» está en el sistema pero no figura como cliente. Hay que marcarlo antes de ${textos.antesDe}.`,
     );
   }
 

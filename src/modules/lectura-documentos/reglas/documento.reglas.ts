@@ -245,6 +245,8 @@ export function nombreDocumento(tipo: TipoDocumento): string {
       return 'la factura';
     case 'PEDIDO_VENTA':
       return 'el pedido';
+    case 'VENTA_HISTORICA':
+      return 'las facturas de venta';
   }
 }
 

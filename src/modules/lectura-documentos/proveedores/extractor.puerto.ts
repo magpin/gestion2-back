@@ -4,6 +4,7 @@ import type {
   FacturaCompraLeida,
 } from '../reglas/factura-compra.reglas';
 import type { PedidoLeido } from '../reglas/pedido-venta.reglas';
+import type { VentaHistoricaLeida } from '../reglas/venta-historica.reglas';
 
 /**
  * La frontera del módulo con el mundo de afuera.
@@ -33,7 +34,10 @@ export type TipoDocumentoConfiguracion =
  * se pisan.
  */
 export type TipoDocumento =
-  TipoDocumentoConfiguracion | 'FACTURA_COMPRA' | 'PEDIDO_VENTA';
+  | TipoDocumentoConfiguracion
+  | 'FACTURA_COMPRA'
+  | 'PEDIDO_VENTA'
+  | 'VENTA_HISTORICA';
 
 /**
  * `DUDOSA` **no se aplica nunca**: va a la lista de preguntas. Es el mismo
@@ -170,6 +174,21 @@ export type ResultadoLecturaPedido =
     }
   | FallaLectura;
 
+/**
+ * Las facturas de venta del sistema anterior que traía un archivo, cada una con
+ * sus comprobaciones al lado (fase 11).
+ */
+export type ResultadoLecturaVentas =
+  | {
+      leido: true;
+      facturas: Array<{
+        factura: VentaHistoricaLeida;
+        comprobaciones: Comprobacion[];
+      }>;
+      medicion: MedicionLectura;
+    }
+  | FallaLectura;
+
 export interface ExtractorPuerto {
   /**
    * `false` cuando falta la clave. El modo IA entonces no se ofrece y el
@@ -210,6 +229,15 @@ export interface ExtractorPuerto {
     archivo: ArchivoParaLeer;
     corte?: AbortSignal;
   }): Promise<ResultadoLecturaPedido>;
+
+  /**
+   * Las facturas de venta que la empresa emitió en el sistema anterior. Un
+   * archivo puede traer varias; cada una se comprueba contra sus totales.
+   */
+  leerVentasHistoricas(entrada: {
+    archivo: ArchivoParaLeer;
+    corte?: AbortSignal;
+  }): Promise<ResultadoLecturaVentas>;
 
   /**
    * Qué es un archivo cualquiera —PDF, foto, Excel, Word, texto—, dicho en

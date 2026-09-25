@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   ArrayNotEmpty,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsObject,
@@ -28,6 +29,7 @@ const TIPOS: readonly TipoDocumento[] = [
   'RESOLUCION_DIAN',
   'FACTURA_COMPRA',
   'PEDIDO_VENTA',
+  'VENTA_HISTORICA',
 ];
 
 /** Lo que el navegador manda antes de subir: qué va a subir y de qué tipo. */
@@ -169,4 +171,26 @@ export class DescartarLecturaDto {
   @IsString()
   @Length(3, 300)
   motivo!: string;
+}
+
+/** Una factura del sistema anterior que una persona eligió cargar (fase 11). */
+export class FacturaElegidaDto {
+  /** Como se leyó: «FEV 13892». */
+  @IsString()
+  @Length(1, 40)
+  numero!: string;
+
+  /** Si ya se había cobrado entera. Si no, queda en la cartera. */
+  @IsBoolean()
+  pagada!: boolean;
+}
+
+/** Cuáles cargar de una lectura de ventas anteriores. Todas o ninguna. */
+export class CargarVentasLeidasDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => FacturaElegidaDto)
+  facturas!: FacturaElegidaDto[];
 }

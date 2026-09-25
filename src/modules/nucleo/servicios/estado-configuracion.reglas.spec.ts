@@ -71,6 +71,27 @@ describe('calcularEstado · panorama', () => {
   });
 });
 
+describe('calcularEstado · bienvenida de Maria (0072)', () => {
+  it('sin fecha, la bienvenida no se vio', () => {
+    expect(calcularEstado(completa).bienvenidaVista).toBe(false);
+    expect(
+      calcularEstado(
+        con({ empresa: { ...completa.empresa, bienvenidaVistaEn: null } }),
+      ).bienvenidaVista,
+    ).toBe(false);
+  });
+
+  it('con fecha, ya se vio', () => {
+    const h = con({
+      empresa: {
+        ...completa.empresa,
+        bienvenidaVistaEn: new Date('2026-09-25T15:00:00Z'),
+      },
+    });
+    expect(calcularEstado(h).bienvenidaVista).toBe(true);
+  });
+});
+
 describe('calcularEstado · siguiente paso', () => {
   it('prefiere lo empezado a medias sobre lo que nunca se toco', () => {
     // Situacion legal esta a medias y resoluciones ni se empezo. Terminar algo

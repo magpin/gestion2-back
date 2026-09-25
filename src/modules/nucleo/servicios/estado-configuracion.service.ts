@@ -42,6 +42,7 @@ export class EstadoConfiguracionService {
          e.razon_social,
          e.tipo_persona,
          e.modo_configuracion,
+         e.bienvenida_vista_en,
          COALESCE((SELECT array_agg(sec.sector ORDER BY sec.sector)
                      FROM empresa_sector sec WHERE sec.empresa_id = e.id),
                   ARRAY[]::text[])                                     AS sectores,
@@ -126,6 +127,7 @@ export class EstadoConfiguracionService {
         tipoPersona: fila.tipo_persona as 'JURIDICA' | 'NATURAL',
         modoConfiguracion:
           (fila.modo_configuracion as 'IA' | 'MANUAL' | null) ?? null,
+        bienvenidaVistaEn: (fila.bienvenida_vista_en as Date | null) ?? null,
         sectores: (fila.sectores as string[] | null) ?? [],
         seccionesActividades:
           (fila.secciones_actividades as string[] | null) ?? [],

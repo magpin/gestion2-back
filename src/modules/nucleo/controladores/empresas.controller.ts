@@ -91,6 +91,28 @@ export class EmpresasController {
     await this.empresas.fijarModoConfiguracion(ctx, dto.modo);
   }
 
+  /**
+   * La bienvenida de María se mostró (0072): de ahí en adelante se entra
+   * directo al tablero. La marca la pantalla al mostrarla, no al tocar su
+   * botón: una recarga no tiene que volver a darla.
+   *
+   * Sin `@Roles`, como el estado: la ve quien termine la configuración, y
+   * marcarla no cambia nada de la empresa salvo eso. Con la configuración a
+   * medias no hay bienvenida que marcar.
+   */
+  @ExigeEmpresa()
+  @Post('actual/bienvenida-vista')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async bienvenidaVista(@ActorEmpresa() ctx: CtxEmpresa): Promise<void> {
+    const estado = await this.estado.estado(ctx);
+    if (!estado.completa) {
+      throw new BadRequestException(
+        'La configuración todavía no está completa: no hay bienvenida que marcar.',
+      );
+    }
+    await this.empresas.marcarBienvenidaVista(ctx);
+  }
+
   @ExigeEmpresa()
   @Get('actual')
   actual(@ActorEmpresa() ctx: CtxEmpresa) {

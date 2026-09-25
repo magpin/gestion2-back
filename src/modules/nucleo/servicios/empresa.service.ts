@@ -197,6 +197,20 @@ export class EmpresaService {
     );
   }
 
+  /**
+   * La bienvenida de María quedó vista (0072). Solo la primera vez: si ya
+   * estaba marcada no se toca, así la fecha dice cuándo se vio de verdad y
+   * llamarlo dos veces —una recarga, dos pestañas— no cambia nada.
+   */
+  async marcarBienvenidaVista(ctx: CtxEmpresa): Promise<void> {
+    await this.tx.enContexto(ctx, (t) =>
+      t.query(
+        'UPDATE empresa SET bienvenida_vista_en = now() WHERE id = $1 AND bienvenida_vista_en IS NULL',
+        [ctx.empresaId],
+      ),
+    );
+  }
+
   async desactivar(ctx: CtxEmpresa, id: string): Promise<void> {
     await this.tx.enContexto(ctx, (t) =>
       t.query('UPDATE empresa SET activo = false WHERE id = $1', [id]),

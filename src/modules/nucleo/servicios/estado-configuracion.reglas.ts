@@ -66,6 +66,11 @@ export interface EstadoConfiguracion {
    * terminar: los pasos manuales lo sacaban del modo.
    */
   modo: 'IA' | 'MANUAL' | null;
+  /**
+   * Si ya se mostró la bienvenida de María al terminar (0072). Una vez por
+   * empresa: quien entre después va directo al tablero.
+   */
+  bienvenidaVista: boolean;
 }
 
 /** Lo que el servicio lee de la base. Sin interpretar. */
@@ -75,6 +80,8 @@ export interface HechosConfiguracion {
     tipoPersona: 'JURIDICA' | 'NATURAL';
     /** Con qué modo se eligió configurarla (0068). `null`: no se eligió. */
     modoConfiguracion?: 'IA' | 'MANUAL' | null;
+    /** Cuándo se mostró la bienvenida (0072). `null`: todavía no. */
+    bienvenidaVistaEn?: Date | string | null;
     /** Puede estar vacio: al dar de alta no se exige marcar ninguno. */
     sectores: string[];
     /** Secciones CIIU de las actividades vigentes. Respaldan a los sectores. */
@@ -383,5 +390,6 @@ export function calcularEstado(h: HechosConfiguracion): EstadoConfiguracion {
     completa: completados === obligatorios.length,
     siguiente: siguiente?.clave ?? null,
     modo: h.empresa.modoConfiguracion ?? null,
+    bienvenidaVista: (h.empresa.bienvenidaVistaEn ?? null) !== null,
   };
 }

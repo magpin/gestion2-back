@@ -220,8 +220,18 @@ export class AsientoService {
             `La fecha del asiento tiene que ser AAAA-MM-DD; llegó "${String(dto.fecha)}".`,
           );
         }
-        const fecha = new Date(`${dto.fecha}T12:00:00`);
-        const periodo = await this.periodos.exigirAbierto(ctx, fecha, t);
+        // El calendario es automático: si el mes del documento ya se cerró, el
+        // asiento va al mes abierto, el primer día, y la glosa guarda la fecha
+        // original. El documento (factura, compra) conserva la suya.
+        const destino = await this.periodos.periodoParaAsentar(
+          ctx,
+          dto.fecha,
+          t,
+        );
+        const periodo = destino.periodo;
+        const glosa = destino.movida
+          ? `${dto.glosa} (documento del ${dto.fecha}: su mes ya estaba cerrado)`
+          : dto.glosa;
 
         // Los automáticos no pasan por acá: un asiento de venta puede ser de
         // naturaleza que una persona no podría digitar.
@@ -247,9 +257,9 @@ export class AsientoService {
               ctx.empresaId,
               dto.comprobanteTipoId,
               numero,
-              dto.fecha,
+              destino.fecha,
               periodo.id,
-              dto.glosa,
+              glosa,
               totalDebito,
               totalCredito,
               origen?.origenTipo ?? null,

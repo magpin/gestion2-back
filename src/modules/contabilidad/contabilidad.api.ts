@@ -184,8 +184,14 @@ export class ContabilidadApi {
     fecha: Date,
     tx?: Tx,
   ): Promise<boolean> {
-    const periodo = await this.periodos.porFecha(ctx, fecha, tx);
-    return periodo !== null && periodo.estado === 'ABIERTO';
+    // Con el calendario automático, una fecha de un mes cerrado igual se
+    // asienta (en el mes abierto). Solo no se puede en el futuro, o si alguien
+    // cerró a mano el mes en curso.
+    return this.periodos.puedeAsentar(
+      ctx,
+      fecha.toISOString().slice(0, 10),
+      tx,
+    );
   }
 
   /**

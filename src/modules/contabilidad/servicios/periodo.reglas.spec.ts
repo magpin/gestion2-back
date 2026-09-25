@@ -6,6 +6,9 @@ import {
   mesSiguiente,
   mismoPeriodo,
   periodoDeFecha,
+  grupoDe,
+  mesesACrear,
+  primerDiaDelPeriodo,
   type Periodo,
 } from './periodo.reglas';
 
@@ -125,5 +128,66 @@ describe('dejaHueco', () => {
   it('cruza el año correctamente', () => {
     expect(dejaHueco([p(2025, 12)], p(2026, 1))).toBe(false);
     expect(dejaHueco([p(2025, 11)], p(2026, 1))).toBe(true);
+  });
+});
+
+describe('mesesACrear', () => {
+  it('sin períodos, solo el actual', () => {
+    expect(mesesACrear([], { anio: 2026, mes: 9 })).toEqual([
+      { anio: 2026, mes: 9 },
+    ]);
+  });
+
+  it('desde el siguiente al último hasta el actual, sin huecos', () => {
+    expect(
+      mesesACrear([{ anio: 2026, mes: 6 }], { anio: 2026, mes: 9 }),
+    ).toEqual([
+      { anio: 2026, mes: 7 },
+      { anio: 2026, mes: 8 },
+      { anio: 2026, mes: 9 },
+    ]);
+  });
+
+  it('cruza el año', () => {
+    expect(
+      mesesACrear([{ anio: 2026, mes: 11 }], { anio: 2027, mes: 1 }),
+    ).toEqual([
+      { anio: 2026, mes: 12 },
+      { anio: 2027, mes: 1 },
+    ]);
+  });
+
+  it('si el actual ya existe, nada', () => {
+    expect(
+      mesesACrear([{ anio: 2026, mes: 9 }], { anio: 2026, mes: 9 }),
+    ).toEqual([]);
+  });
+});
+
+describe('primerDiaDelPeriodo', () => {
+  it('año calendario', () => {
+    expect(primerDiaDelPeriodo({ anio: 2026, mes: 9 }, 12)).toBe('2026-09-01');
+  });
+
+  it('año fiscal que cierra en junio: julio del ejercicio 2027 es 2026', () => {
+    expect(primerDiaDelPeriodo({ anio: 2027, mes: 7 }, 6)).toBe('2026-07-01');
+    expect(primerDiaDelPeriodo({ anio: 2027, mes: 3 }, 6)).toBe('2027-03-01');
+  });
+});
+
+describe('grupoDe', () => {
+  const p = { anio: 2026, mes: 8 };
+  it('agrupa por mes, trimestre, semestre y año', () => {
+    expect(grupoDe(p, 'MENSUAL')).toBe('2026-08');
+    expect(grupoDe(p, 'TRIMESTRAL')).toBe('2026-T3');
+    expect(grupoDe(p, 'SEMESTRAL')).toBe('2026-S2');
+    expect(grupoDe(p, 'ANUAL')).toBe('2026');
+  });
+
+  it('los bordes de trimestre y semestre', () => {
+    expect(grupoDe({ anio: 2026, mes: 3 }, 'TRIMESTRAL')).toBe('2026-T1');
+    expect(grupoDe({ anio: 2026, mes: 4 }, 'TRIMESTRAL')).toBe('2026-T2');
+    expect(grupoDe({ anio: 2026, mes: 6 }, 'SEMESTRAL')).toBe('2026-S1');
+    expect(grupoDe({ anio: 2026, mes: 7 }, 'SEMESTRAL')).toBe('2026-S2');
   });
 });

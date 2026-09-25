@@ -87,3 +87,64 @@ export function dejaHueco(
   const anterior = mesAnterior(nuevo);
   return !existentes.some((p) => mismoPeriodo(p, anterior));
 }
+
+// ---------------------------------------------------------------------------
+// Períodos automáticos
+// ---------------------------------------------------------------------------
+
+/**
+ * Los meses que hay que crear para llegar al actual sin dejar huecos: desde el
+ * siguiente al último que existe hasta el actual, inclusive. Sin ninguno, solo
+ * el actual: es el primer período de la empresa.
+ */
+export function mesesACrear(
+  existentes: readonly Periodo[],
+  actual: Periodo,
+): Periodo[] {
+  if (existentes.length === 0) return [actual];
+  const ultimo = [...existentes].sort(compararPeriodos).at(-1)!;
+  const faltan: Periodo[] = [];
+  let p = mesSiguiente(ultimo);
+  while (compararPeriodos(p, actual) <= 0) {
+    faltan.push(p);
+    p = mesSiguiente(p);
+  }
+  return faltan;
+}
+
+/**
+ * El primer día de un período, en fecha de calendario (AAAA-MM-DD).
+ *
+ * Con año fiscal distinto del calendario, el `anio` del período es el del
+ * ejercicio: julio del ejercicio 2027 (cierre en junio) es julio de 2026.
+ */
+export function primerDiaDelPeriodo(
+  { anio, mes }: Periodo,
+  mesCierreFiscal: number,
+): string {
+  const anioCalendario =
+    mesCierreFiscal !== 12 && mes > mesCierreFiscal ? anio - 1 : anio;
+  return `${anioCalendario}-${String(mes).padStart(2, '0')}-01`;
+}
+
+export type Agrupacion = 'MENSUAL' | 'TRIMESTRAL' | 'SEMESTRAL' | 'ANUAL';
+
+/**
+ * A qué grupo pertenece un mes: `2026-09`, `2026-T3`, `2026-S2` o `2026`.
+ * Trimestres y semestres son de calendario: enero a marzo es el primero.
+ */
+export function grupoDe(
+  { anio, mes }: Periodo,
+  agrupacion: Agrupacion,
+): string {
+  switch (agrupacion) {
+    case 'MENSUAL':
+      return etiquetaPeriodo({ anio, mes });
+    case 'TRIMESTRAL':
+      return `${anio}-T${Math.ceil(mes / 3)}`;
+    case 'SEMESTRAL':
+      return `${anio}-S${mes <= 6 ? 1 : 2}`;
+    case 'ANUAL':
+      return String(anio);
+  }
+}

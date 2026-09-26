@@ -16,8 +16,11 @@
 // Qué hace, por fila de la existencia:
 //   - Solo productos. Las secciones CONTABILIZACIONES AUTOMATICAS, PROPIEDAD
 //     HORIZONTAL y SERVICIOS no se tocan: van al reporte.
-//   - PRECIO: el Precio1 de la lista, si es mayor que cero y distinto del
-//     vigente. Rige desde --fecha.
+//   - PRECIO: el Precio1 de la lista **trae el IVA incluido** —la tinta de
+//     $30.000 se facturaba 25.210 + 4.790— y el sistema guarda el precio SIN
+//     IVA y lo suma al facturar. Se guarda la base (`lib/precios.js`), en
+//     centavos, para que al facturar vuelva a dar el de la lista. Rige desde
+//     --fecha, si es distinta del vigente.
 //   - EXISTENCIA: la carga inicial del kardex, con la cantidad y el costo
 //     promedio del sistema anterior, tal cual (hasta 6 decimales, lo que guarda
 //     la base). Solo si hay cantidad y costo, y solo una vez por producto: si
@@ -28,10 +31,11 @@
 //     inventario valdría menos de lo que vale. Va al reporte.
 //   - GRAMOS: los polvillos que el sistema anterior llevaba en gramos pasan a
 //     KG: 720 g a $46 el gramo son 0,72 kg a $46.000 el kilo. Mismo valor.
-//   - SERVICIOS en el catálogo: los de SERVICIOS_A_INACTIVAR se inactivan (no
-//     se borran). Las licencias se quedan: se compran y se revenden con costo.
+//   - SERVICIOS: este script no los crea ni los inactiva. En QA se crearon
+//     aparte como productos con 10.000 de existencia a costo 0 (decisión del
+//     dueño, 25 sep): ver docs/planes/informes-importacion/qa-computintas-servicios.csv.
 //   - FALTANTES: los de PRODUCTOS_A_CREAR se crean con su precio y su IVA.
-//   - IVA: no se cambia. Si la lista dice otro distinto del del producto, va
+//   - IVA: el de la lista (0, 5 o 19). Uno raro —7 %, 1,6 %— no se toca y va
 //     al reporte.
 //
 // Todo pasa por la API: cada cambio con las mismas validaciones que en la
@@ -41,21 +45,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { leerXlsx } = require('./lib/xlsx');
-
-/**
- * Servicios que el importador del 14 dejó como productos. Revisados a mano el
- * 25 de septiembre sobre 68 candidatos: los demás («KIT DE MANTENIMIENTO»,
- * «CUCHILLA DE LIMPIEZA», «SOPORTE PARA TELEVISOR») son repuestos.
- */
-const SERVICIOS_A_INACTIVAR = new Set([
-  '310100011', // ADMINISTRACION
-  'P24OOO119', // DESFRAGMENTACIÓN DE DISCO DURO
-  'S54OOO13', // ORGANIZACION DE PUNTOS DE RED
-  'P240071', // AJUSTE DE PIÑONERIA IMPRESORA
-  'PONCHE', // PONCHADA DE CABLE DE RED
-  'P35ACC003', // SUMINISTRO Y CAMBIO DEL BALLAST UNIT
-  'S58OOO6', // IMPRESORA EPSON L355 MTTO
-]);
+const { baseSinIva } = require('./lib/precios');
 
 /**
  * Productos que no están en el catálogo: cuatro que el importador descartó por
@@ -199,30 +189,19 @@ function csv(filas) {
       }
     }
 
-    // --- Servicios que quedaron como producto -----------------------------
-    if (SERVICIOS_A_INACTIVAR.has(clave)) {
-      if (!producto) anotar(r, 'FUERA', 'servicio');
-      else if (!producto.activo) anotar(r, 'YA_INACTIVO', 'servicio');
-      else if (simular) anotar(r, 'INACTIVAR', 'servicio');
-      else {
-        const res = await pedir('POST', `/productos/${producto.id}/desactivar`, { token });
-        anotar(r, res.estado < 300 ? 'INACTIVAR' : 'FALLÓ', res.estado < 300 ? 'servicio' : `inactivar: ${mensaje(res)}`);
-      }
-      continue;
-    }
-
     // --- Faltantes ---------------------------------------------------------
     if (!producto) {
       if (!PRODUCTOS_A_CREAR.has(clave)) {
         anotar(r, 'FUERA', 'no está en el catálogo');
         continue;
       }
+      const ivaNuevo = lista && [0, 5, 19].includes(lista.iva) ? lista.iva : 19;
       const cuerpo = {
         codigo: r.codigo,
         nombre: r.nombre.toUpperCase().slice(0, 200),
         unidadMedida: 'UND',
-        ivaTarifa: lista && [0, 5, 19].includes(lista.iva) ? lista.iva : 19,
-        precioVenta: lista && lista.precio > 0 ? lista.precio : 0,
+        ivaTarifa: ivaNuevo,
+        precioVenta: lista && lista.precio > 0 ? baseSinIva(lista.precio, ivaNuevo).base : 0,
       };
       if (simular) {
         anotar(r, 'CREAR', `IVA ${cuerpo.ivaTarifa} · precio ${cuerpo.precioVenta}`);
@@ -238,13 +217,26 @@ function csv(filas) {
       }
     }
 
-    // --- IVA: se dice, no se cambia ----------------------------------------
-    if (lista && !producto.creado && Number(producto.iva_tarifa) !== lista.iva) {
-      anotar(r, 'IVA_DISTINTO', `catálogo ${Number(producto.iva_tarifa)} % · lista ${lista.iva} %`);
+    // --- IVA: el de la lista ---------------------------------------------
+    let iva = Number(producto.iva_tarifa);
+    if (lista && !producto.creado && iva !== lista.iva) {
+      if (![0, 5, 19].includes(lista.iva)) {
+        anotar(r, 'IVA_RARO', `lista ${lista.iva} %: se deja ${iva} %`);
+      } else if (simular) {
+        anotar(r, 'IVA', `${iva} → ${lista.iva}`);
+        iva = lista.iva;
+      } else {
+        const res = await pedir('PATCH', `/productos/${producto.id}`, { token, cuerpo: { ivaTarifa: lista.iva } });
+        if (res.estado < 300) {
+          anotar(r, 'IVA', `${iva} → ${lista.iva}`);
+          iva = lista.iva;
+        } else anotar(r, 'FALLÓ', `IVA: ${mensaje(res)}`);
+      }
     }
 
     // --- Precio ------------------------------------------------------------
     if (!producto.creado && lista && lista.precio > 0) {
+      const { base, total } = baseSinIva(lista.precio, iva);
       let vigente = null;
       if (producto.id) {
         const h = await pedir('GET', `/productos/${producto.id}/precios`, { token });
@@ -252,16 +244,17 @@ function csv(filas) {
         const actual = historial.find((p) => p.fecha_fin === null);
         vigente = actual ? Number(actual.precio_venta) : null;
       }
-      if (vigente === lista.precio) {
-        anotar(r, 'PRECIO_IGUAL', String(lista.precio));
+      const detalle = `${vigente ?? '—'} → ${base} sin IVA (${total} con IVA; lista ${lista.precio})`;
+      if (vigente === base) {
+        anotar(r, 'PRECIO_IGUAL', String(base));
       } else if (simular) {
-        anotar(r, 'PRECIO', `${vigente ?? '—'} → ${lista.precio}`);
+        anotar(r, 'PRECIO', detalle);
       } else {
         const res = await pedir('POST', `/productos/${producto.id}/precio`, {
           token,
-          cuerpo: { precioVenta: lista.precio, fechaInicio: fecha, nota: 'Lista de precios del sistema anterior' },
+          cuerpo: { precioVenta: base, fechaInicio: fecha, nota: 'Lista del sistema anterior, sin IVA' },
         });
-        anotar(r, res.estado < 300 ? 'PRECIO' : 'FALLÓ', res.estado < 300 ? `${vigente ?? '—'} → ${lista.precio}` : `precio: ${mensaje(res)}`);
+        anotar(r, res.estado < 300 ? 'PRECIO' : 'FALLÓ', res.estado < 300 ? detalle : `precio: ${mensaje(res)}`);
       }
     } else if (!lista || lista.precio <= 0) {
       anotar(r, 'SIN_PRECIO', 'la lista no le da precio');

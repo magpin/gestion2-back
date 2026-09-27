@@ -178,7 +178,7 @@ GRANT SELECT ON retencion_tarifa TO gestion_app, gestion_provision;
 GRANT INSERT, UPDATE ON retencion_tarifa TO gestion_provision;
 
 -- Atajo para la semilla: el id del concepto por su código.
-CREATE FUNCTION pg_temp.c(codigo text) RETURNS uuid
+CREATE OR REPLACE FUNCTION pg_temp.c(codigo text) RETURNS uuid
   LANGUAGE sql AS $$ SELECT id FROM retencion_concepto_nacional WHERE codigo = $1 $$;
 
 -- Compras y servicios generales: las cuatro vigencias (especificación §4.3).

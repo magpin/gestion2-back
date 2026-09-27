@@ -18,7 +18,7 @@
 -- * Decreto 2650 de 1993, subcuentas 135517 y 135518 adicionadas por el
 --   Decreto 2116 de 1996.
 
-CREATE FUNCTION pg_temp.c(codigo text) RETURNS uuid
+CREATE OR REPLACE FUNCTION pg_temp.c(codigo text) RETURNS uuid
   LANGUAGE sql AS $$ SELECT id FROM retencion_concepto_nacional WHERE codigo = $1 $$;
 
 -- -----------------------------------------------------------------------------

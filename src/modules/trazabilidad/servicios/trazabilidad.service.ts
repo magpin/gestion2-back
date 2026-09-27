@@ -141,6 +141,11 @@ export class TrazabilidadService {
             ),
           );
 
+    const retencion =
+      asiento.origen_tipo === 'COMPRA' && asiento.origen_id !== null
+        ? await this.retencion(t, asiento.origen_id)
+        : undefined;
+
     // Los nombres, de una vez: pocas personas, y casi siempre las mismas.
     const ids = [
       asiento.creado_por,
@@ -210,7 +215,51 @@ export class TrazabilidadService {
                 creadoEn: iso(registro.creado_en),
                 creadoPor: persona(registro.creado_por),
               },
+        retencion,
       },
+    };
+  }
+
+  /**
+   * Lo que el motor de retenciones decidió al registrar la compra. Las
+   * compras de antes del motor no tienen decisión y no suman paso.
+   */
+  private async retencion(t: Tx, compraId: string) {
+    const [compra] = filas<{
+      decision: string | null;
+      motivo: string | null;
+      proveedor: string;
+    }>(
+      await t.query(
+        `SELECT c.retencion_decision AS decision, c.retencion_motivo AS motivo,
+                coalesce(nullif(te.razon_social, ''), concat_ws(' ', te.primer_nombre, te.primer_apellido)) AS proveedor
+           FROM compra_documento c JOIN tercero te ON te.id = c.tercero_id
+          WHERE c.id = $1`,
+        [compraId],
+      ),
+    );
+    if (
+      compra === undefined ||
+      compra.decision === null ||
+      compra.decision === 'MANUAL'
+    ) {
+      return undefined;
+    }
+    const calculadas = filas<{ texto: string; norma: string; origen: string }>(
+      await t.query(
+        `SELECT coalesce(explicacion->>'texto', '') AS texto, norma_aplicada AS norma,
+                origen_clasificacion AS origen
+           FROM retencion_calculada
+          WHERE documento_tipo = 'COMPRA' AND documento_id = $1 AND estado = 'CONFIRMADA'
+          ORDER BY creado_en`,
+        [compraId],
+      ),
+    );
+    return {
+      decision: compra.decision,
+      motivo: compra.motivo,
+      proveedor: compra.proveedor,
+      calculadas,
     };
   }
 

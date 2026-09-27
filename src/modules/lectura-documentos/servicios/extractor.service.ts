@@ -9,6 +9,7 @@ import {
 import type { CtxEmpresa, RolCodigo } from '../../../common/ctx';
 import { PausaIaService } from '../../../common/ia/pausa-ia.service';
 import { AlmacenamientoApi } from '../../almacenamiento/almacenamiento.api';
+import { RetencionesApi } from '../../retenciones/retenciones.api';
 import { nombreDocumento } from '../reglas/documento.reglas';
 import {
   EXTRACTOR_PUERTO,
@@ -57,6 +58,8 @@ export class ExtractorService {
     @Inject(EXTRACTOR_PUERTO) private readonly extractor: ExtractorPuerto,
     // Opcional: las pruebas arman el servicio sin él. En la app siempre está.
     @Optional() private readonly pausa?: PausaIaService,
+    // Opcional por lo mismo: propone cambios al perfil del proveedor (§8.8).
+    @Optional() private readonly retenciones?: RetencionesApi,
   ) {}
 
   /** `false` cuando falta la clave: el modo IA entonces no se ofrece. */
@@ -342,6 +345,33 @@ export class ExtractorService {
       },
       resultado.medicion,
     );
+
+    // Lo que la factura dice del proveedor y no coincide con su perfil queda
+    // como propuesta (plan motor de retenciones, Fase 8, §8.8). Si falla, la
+    // lectura ya quedó guardada: no se pierde por esto.
+    const tributario = resultado.factura.proveedor.tributario;
+    if (
+      this.retenciones !== undefined &&
+      cruzada?.proveedor != null &&
+      tributario !== undefined
+    ) {
+      try {
+        await this.retenciones.proponerPerfilDesdeFactura(ctx, {
+          terceroId: cruzada.proveedor.id,
+          documentoLeidoId: documento.id,
+          referencia:
+            [resultado.factura.prefijo, resultado.factura.numero]
+              .filter((x) => x !== null && x !== '')
+              .join('') || null,
+          fecha: resultado.factura.fecha,
+          leido: tributario,
+        });
+      } catch (error: unknown) {
+        this.log.warn(
+          `No pude proponer cambios al perfil del proveedor de ${documento.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
 
     this.progreso.emitir(ctx.empresaId, {
       etapa: 'LISTO',

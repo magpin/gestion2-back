@@ -1,0 +1,96 @@
+código;CIIU;tipo;tarifa_por_mil;descripción
+101;1031,1032,1033,1051,1052,1062,1063,1071,1072,1081-1084,1089,1090;industrial;3.4;Alimentos y concentrados
+102;1011,1040;industrial;3.4;Cárnicos y lácteos
+103;1020;industrial;3.4;Frutas y verduras
+104;1012;industrial;3.4;Pescado
+105;1104;industrial;4.9;Bebidas no alcohólicas
+106;1101,1102,1103;industrial;7;Bebidas alcohólicas
+107;2013,2014,2211,2212,2219,2221,2229;industrial;5.4;Plástico y caucho
+108;1701,1702,1709;industrial;4.4;Papel y cartón
+109;1420,1511,1512;industrial;4.4;Cuero
+110;1610,1620,1630,1640,1690;industrial;4.4;Madera y corcho
+111;2011,2012,2021,2022,2023,2029,2030,2100;industrial;4.4;Químicos y farmacéuticos
+112;1311,1312,1313,1391-1394,1399,1430;industrial;3.4;Textiles e hilados
+113;1410;industrial;2.4;Prendas de vestir
+114;1521,1522,1523;industrial;2.4;Calzado
+115;1200;industrial;5.4;Tabaco
+116;2410,2421,2429,2431,2432,2511,2512,2513,2520,2591,2592,2593,2599;industrial;3.9;Productos de metal
+117;2811-2819,2821-2826,2829;industrial;3.9;Maquinaria y equipo
+118;2610,2711,2712,2720,2731,2732,2740,2750,2790;industrial;3.4;Elementos eléctricos
+119;2620,2630,2640;industrial;3.4;Equipos de radio, TV y comunicaciones
+120;2651,2660,2670,2680,3250;industrial;5.4;Instrumentos médicos, ópticos y de precisión
+121;2652,3211,3212;industrial;5.4;Relojes y joyas
+122;2910,2920,2930,3040,3091;industrial;2.4;Vehículos y motocicletas
+123;1921,1922;industrial;5.4;Derivados del petróleo
+125;2310,2391-2395,2399;industrial;5.4;Vidrio, cerámica y cemento
+126;1061;industrial;5.4;Trilladoras de café
+127;0510,0520,0610,0620,0710,0721-0729,0811,0812,0820,0891,0892,0899,0910,0990;industrial;5.4;Explotación de minerales
+128;1513,1811,1812,1820,1910,2396,3011,3012,3020,3030,3092,3099,3110,3120,3220,3230,3240,3290;industrial;5.4;Demás industriales
+201;4721A,4722A,4723A;comercial;4.8;Víveres, carnes, lácteos y granos
+202;4711A,4724A;comercial;6;Tiendas mixtas sin licor
+203;4711B,4724B;comercial;7;Tiendas con licor
+204;4610,4631A,4632,4644,4690;comercial;7;Mayoristas mixtos
+205;4711C,4719A;comercial;7;Supermercados y cadenas
+206;4711D,4721B,4722B,4723B,4729,4755,4769B,4771A,4791A;comercial;8;Grandes superficies y tiendas por departamento
+207;4530,4541A,4651,4652,4659,4741,4742A;comercial;6;Maquinaria, repuestos y accesorios
+208;4663,4752;comercial;4;Materiales de construcción y ferreterías
+209;4620A;comercial;6;Semillas e insumos agrícolas
+210;4664;comercial;7;Productos químicos
+211;4642,4643,4771B,4772,4782A;comercial;4.2;Prendas y calzado
+212;4641,4751,4753,4782B;comercial;4.7;Textiles
+213;4511,4512,4541B;comercial;10;Vehículos y motos
+214;4761,4775A;comercial;4.2;Librerías y papelerías
+215;4769A;comercial;7;Música y video
+216;4653;comercial;6;Maquinaria agrícola
+217;4762;comercial;7;Artículos deportivos
+218;4759A;comercial;7;Artesanías
+219;4754A;comercial;6;Muebles de oficina
+220;4742B,4754B;comercial;7;Electrodomésticos
+221;4620B,4631B;comercial;7;Café
+222;4759B,4773A;comercial;7;Tiendas naturistas y veterinarias
+223;4649,4774A;comercial;7.5;Joyas y relojes
+224;4665;comercial;7;Reciclaje
+225;4661,4731,4732;comercial;8;Combustibles y lubricantes
+226;6512A;comercial;7;Planes exequiales
+227;4645,4773B;comercial;4.8;Medicamentos
+228;4775B;comercial;10;Compraventa con pacto de retroventa
+229;4662,4669,4719B,4759C,4773C,4774B,4775C,4781,4789,4791B,4792,4799;comercial;7.5;Demás comerciales
+301;4111A,4112A,4210A,4220A,4290A,4311A,4312A,4330A,4390A,7111A,7112A;servicios;5.5;Urbanizadores, constructores, interventores y consultores (personas jurídicas)
+302;4111B,4112B,4210B,4220B,4290B,4311B,4312B,4330B,4390B;servicios;7;Contratistas de construcción
+303;5912A,5913A,5914,7722;servicios;7;Cines y video
+304;7710,7721,7730;servicios;10;Alquiler de vehículos y maquinaria
+305;9603A;servicios;7;Funerarias
+306;5811A,5812A,5813A,5819A,7310A;servicios;10;Imprenta, publicidad y edición
+307;4774C,7729A;servicios;5.5;Floristería
+308;6110,6120,6130,6190,6311A,8219A;servicios;8;Internet, telecomunicaciones, fotocopias
+309;8220;servicios;5;Call center y BPO
+310;3511-3514,3520,3600,3700,3811,3812,3821,3822,3900;servicios;10;Servicios públicos domiciliarios
+311;4921A;servicios;5;Transporte masivo (sube a 7 cuando se integre)
+312;7420A,8553A,9002A-9005A;servicios;7;Estudios fotográficos y artísticos (en el Ac. 036 aparece como 321, parece errata)
+313;3311-3315,3319,4520A,4542,9511A,9512A,9521A,9522A,9524A,9529A;servicios;7;Mantenimiento y reparación
+314;5210;servicios;10;Almacenamiento
+315;6810,6820;servicios;9;Inmobiliarias
+316;5310,5320A;servicios;10;Mensajería
+317;5229A,6621A,7810,7820,7830,7911A,7912A,7990A;servicios;10;Aduanas, seguros, empleo y viajes
+318;4911,4912,4921B,4922A,4923A,5011,5012,5021A,5022A,5111A-5122A,5221A,5222,5223,5224A,5229B;servicios;10;Transporte de carga y pasajeros
+319;6515A,8610,8621A,8622A,8691,8692A,8699A,8710,8720,8730;servicios;7;Salud (personas jurídicas)
+320;7500A,9609A;servicios;10;Veterinarias
+321;9523A;servicios;5.5;Reparación de calzado
+322;5511A-5520A,5590A;servicios;9;Hoteles sin Registro Nacional de Turismo
+323;8010,8020A,8030A;servicios;7;Vigilancia
+324;5611A,5612A,5613A,5619A,5621A,5629A;servicios;10;Restaurantes sin RNT
+325;9601A;servicios;7;Lavanderías
+326;9602A,9609B;servicios;7;Peluquerías y spa
+327;5911A,5912B,5913B,5920A,6010,6020,6391;servicios;10;Radio, prensa y TV
+328;5530,5630A,9329A;servicios;10;Moteles y bares
+329;4921C,5511B-5520B,5590B,5611B-5630B,7911B,7912B,7990B;servicios;5;Turismo con RNT
+330;6910A;servicios;10;Notarías y curadurías
+331;8511-8560A;servicios;3;Educación privada
+332;4520B,5221B;servicios;10;Parqueaderos y lavaderos
+333;6614A,6615A;servicios;10;Casas de cambio no financieras
+334;5820A,6201A,6202A,6209A;servicios;10;Software (personas jurídicas)
+335;0161,0162,0164,0240,3320,3530,3830,4321A,4322A,4329A,4620C,4930,6312,6399A,6629A,6910B,7010,7120A,7210A,7220A,7320A,7410A,7490A,7729B,7740,8110A-8130A,8211A,8230A,8291,8292,8299A,8790,8810,8899,9321,9329B,9609C;servicios;10;Demás servicios
+336;6920,7020,4112C,4220C,4311C-4390C,4921D,4922B,4923B,5021B-5122B,5221C,5224B,5229C,5320B,5811B-5920B,6201B-6399B,6621B,6629B,6910C,7111B-7500B,8020B-8299B,8552B-8560B,8621B-8699B,9511B-9609D;servicios;2;Personas naturales: profesiones y servicios personales
+401;6411-6496,6499,6511,6512B,6513,6515B,6611-6630,6614B,6615B;financiera;14;Sector financiero (Ac. 036/2025)
+501;4620D,4631C,4711E;comercial;4;Cooperativas no financieras (Dec. 204/2023)
+502;6424,6492;financiera;5;Cooperativas financieras (Dec. 204/2023)

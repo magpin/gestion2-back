@@ -6,6 +6,14 @@ import { NotaCreditoService } from './nota-credito.service';
 import type { VentaDocumentoDetalle } from './venta-documento.service';
 import { hoyEnColombia } from '../../../common/fecha';
 
+/** RetencionesApi: la autorretención de la venta, que acá no hay. */
+function retencionesVentaFalsas() {
+  return {
+    anularAutorretencion: jest.fn(() => Promise.resolve()),
+    reversarAutorretencionPorNota: jest.fn(() => Promise.resolve([])),
+  } as never;
+}
+
 /** Ver la nota de `factura.service.spec.ts`: la fecha de emisión es hoy. */
 const HOY = hoyEnColombia();
 
@@ -178,6 +186,7 @@ describe('NotaCreditoService.crear', () => {
       nucleoFalso().fake,
       contabilidad,
       ventasFalso(facturaVigente),
+      retencionesVentaFalsas(),
     );
 
     const nota = await servicio.crear(ctx, {
@@ -220,6 +229,7 @@ describe('NotaCreditoService.crear', () => {
       nucleoFalso().fake,
       contabilidad,
       ventasFalso(facturaVigente),
+      retencionesVentaFalsas(),
     );
 
     await servicio.crear(ctx, {
@@ -261,6 +271,7 @@ describe('NotaCreditoService.crear', () => {
       nucleoFalso().fake,
       contabilidadFalso().fake,
       ventasFalso(facturaVigente),
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -280,6 +291,7 @@ describe('NotaCreditoService.crear', () => {
       nucleoFalso().fake,
       contabilidadFalso().fake,
       ventasFalso(facturaVigente),
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -300,6 +312,7 @@ describe('NotaCreditoService.crear', () => {
       nucleoFalso().fake,
       contabilidadFalso().fake,
       ventasFalso(facturaVigente),
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -318,6 +331,7 @@ describe('NotaCreditoService.crear', () => {
       nucleoFalso().fake,
       contabilidadFalso().fake,
       ventasFalso({ ...facturaVigente, estado: 'ANULADA' }),
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -339,6 +353,7 @@ describe('NotaCreditoService.crear', () => {
       nucleoFalso().fake,
       contabilidadFalso().fake,
       ventasFalso(facturaVigente),
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -357,6 +372,7 @@ describe('NotaCreditoService.crear', () => {
       nucleoFalso().fake,
       contabilidadFalso(false).fake,
       ventasFalso(facturaVigente),
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -376,6 +392,7 @@ describe('NotaCreditoService.crear', () => {
       nucleo,
       contabilidadFalso().fake,
       ventasFalso({ ...facturaVigente, total_iva: '0' }),
+      retencionesVentaFalsas(),
     );
 
     await servicio.crear(ctx, {

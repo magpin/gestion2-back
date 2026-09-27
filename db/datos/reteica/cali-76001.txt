@@ -1,0 +1,441 @@
+código;CIIU;tipo;tarifa_por_mil;descripción
+101-01;1011;industrial;3.3;Procesamiento y conservación de carne y productos cárnicos
+101-02;1012;industrial;3.3;Procesamiento y conservación de pescados, crustáceos y moluscos
+101-03;1020;industrial;3.3;Procesamiento y conservación de frutas, legumbres, hortalizas y tubérculos
+101-04;1031;industrial;3.3;Extracción de aceites de origen vegetat crudos
+101-05;1032;industrial;3.3;Elaboración de aceites y grasas de origen vegetal refinados
+101-06;1033;industrial;3.3;Elaboración de aceites y grasas de origen animal
+101-07;1040;industrial;3.3;Elaboración de productos lácteos
+101-08;1051;industrial;3.3;Elaboración de productos de molinería
+101-09;1052;industrial;3.3;Elaboración de atmidones y productos derivados del almidón
+101-10;1061;industrial;3.3;Trilla de café
+101-11;1062;industrial;3.3;Descafeinado, tostión y molienda del café
+101-13;1071;industrial;3.3;Elaboración y refinación de azúcar
+101-14;1072;industrial;3.3;Elaboración de panela
+101-15;1081;industrial;3.3;Elaboración de productos de panadería
+101-16;1082;industrial;3.3;Elaboración de. cacao, chocolate Y confitería
+101-17;1083;industrial;3.3;Elaboración de macarrones, fideos, alcuzcuz y productos farináceos similares
+101-18;1084;industrial;3.3;Elaboración de comidas y platos preparados
+101-19;1089;industrial;3.3;Elaboración de otros productos alimenticios ncp
+101-20;1090;industrial;3.3;Elaboración de alimentos preparados para animaies
+101-21;1104;industrial;3.3;Elaboración de bebidas no alcohólicas, producción de aguas minerales y de otras aguas embotelladas
+102-01;0811;industrial;6.6;Extracción de piedra, arena, arcillas comunes, yeso y anhidrita
+102-02;1101;industrial;6.6;Destilación, rectificación y mezcla de bebidas alcohólicas
+102-03;1102;industrial;6.6;Elaboración de bebidas fermentadas no destiladas
+102-04;1103;industrial;6.6;Producción de malta, elaboración de cervezas y otras bebidas malteadas
+102-05;11041;industrial;6.6;Producción de hielo, incluido hielo para elaboración de productos alimenticios y para otros fines
+102-06;1200;industrial;6.6;Elaboración de productos de tabaco
+102-07;1311;industrial;6.6;Preparación e hilatura de fibras textiles
+102-08;1312;industrial;6.6;Tejeduría de productos textiles
+102-09;1313;industrial;6.6;Acabado de productos textiles
+102-10;1391;industrial;6.6;Fabricación de tejidos de punto y ganchillo
+102-11;1392;industrial;6.6;Confección de artículos con materiales textiles, excepto prendas de vestir
+102-12;1393;industrial;6.6;Fabricación de. tapetes y alfombras para pisos
+102-13;1394;industrial;6.6;Fabricación de cuerdas, cordeles. cables, bramantes y redes
+102-14;1399;industrial;6.6;Fabricación de otros añículos textiles ncp
+102-15;1410;industrial;6.6;Confección de prendas de vestir, excepto prendas de piel
+102-16;1420;industrial;6.6;Fabricación de artículos de piel
+102-17;1430;industrial;6.6;Fabricación de articulos de punto y ganchillo
+102-18;1511;industrial;6.6;Curtido y recurtido de cueros: recurtido y teñido de pieles
+102-19;1512;industrial;6.6;Fabricación de aflículos de viaje, bolsos de mano y artículos similares elaborados en cuero, y fabricación de artículos de talabartería y guarnicionería
+102-20;1513;industrial;6.6;Fabricación de artículos de viaje, bolsos de mano y artículos similares, artículos de taiabarteria y guarnicionería elaborados en otros materiales
+102-21;1521;industrial;6.6;Fabricación de calzado de cuero y piel, con cualquier tipo de suela
+102-22;1522;industrial;6.6;Fabricación de otros tipos de calzado, excepto calzado de cuero y piel
+102-23;1523;industrial;6.6;Fabricación de partes del calzado
+102-24;1610;industrial;6.6;Aserrado, acepillado e impregnación de la madera
+102-25;1620;industrial;6.6;Fabricación de hojas de madera para enchapado, fabricación de tableros contrachapados, tableros laminados, tableros de partículas y otros tableros y paneles
+102-26;1630;industrial;6.6;Fabricación de partes y piezas de madera, de carpintería y ebanistería para la construcción
+102-27;1640;industrial;6.6;Fabricación de recipientes de madera
+102-28;1690;industrial;6.6;Fabricación de otros productos de madera, fabricación de artículos de corcho, cestería y espartería
+102-29;1701;industrial;6.6;Fabricación de püipas (pastas) cefulósicas: papei y cartón
+102-30;1702;industrial;6.6;Fabricación de papel y cartón ondulado (corrugado), fabricación de envases, empaques y de embalajes de papel y cartón
+102-31;1709;industrial;6.6;Fabricación de otros artículos de papel y cartón
+102-32;1811;industrial;6.6;Actividades de impresión
+102-33;1812;industrial;6.6;Actividades de servicios relacionados con la impresión
+102-34;1910;industrial;6.6;Fabricación de productos de hornos de coque
+102-35;1921;industrial;6.6;Fabricación de productos de la refinación del petróleo
+102-36;1922;industrial;6.6;Actividad de mezcla de combustibles
+102-37;2011;industrial;6.6;Fabricación de sustancias y productos químicos básicos
+102-38;2012;industrial;6.6;Fabricación de abonos y compuestos inorgánicos nitrogenados
+102-39;2013;industrial;6.6;Fabricación de plásticos en formas primarias
+102-40;2014;industrial;6.6;Fabricación de caucho sintético en formas primarias
+102-41;2021;industrial;6.6;Fabricación de plaguicidas y otros productos quimicos de uso agropecuario
+102-42;2022;industrial;6.6;Fabricación de pinturas, barnices y revestimientos similares, tintas para impresión y masillas
+102-43;2023;industrial;6.6;Fabricación de jabones y detergentes, preparados para limpiar y pulir, perfumes y preparados de tocador
+102-44;2029;industrial;6.6;Fabricación de otros productos químicos ncp
+102-45;2030;industrial;6.6;Fabricación de fibras sintéticas y artificiales
+102-46;2211;industrial;6.6;Fabricación de llantas y neumáticos de caucho
+102-47;2212;industrial;6.6;Reencauche de llantas usadas
+102-48;2219;industrial;6.6;Fabricación de formas básicas de caucho y otros productos de caucho ncp
+102-49;2221;industrial;6.6;Fabricación de formas básicas de plástico
+102-50;2229;industrial;6.6;Fabricación de artículos de plástico ncp
+102-51;2310;industrial;6.6;Fabricación de vidrio y productos cle vidrio
+102-52;2391;industrial;6.6;Fabricación de productos refractarios
+102-53;2392;industrial;6.6;Fabricación de materiales de arcilla para la construcción
+102-54;2393;industrial;6.6;Fabricación de otros productos de cerámica y porcelana
+102-55;2394;industrial;6.6;Fabricación de cemento, cal y yeso
+102-56;2395;industrial;6.6;Fabricación de artículos de hormigón, cemento y yes O
+102-57;2396;industrial;6.6;Corte, tallado y acabado de Ea piedra
+102-58;2399;industrial;6.6;Fabricación de otras productos minerales no metálicos nep
+102-59;2410;industrial;6.6;Industrias básicas cie hierro y de acero
+102-60;2421;industrial;6.6;Industrias básicas de metates preciosos
+102-61;2429;industrial;6.6;Industrias básicas de otros metates no ferrosos
+102-62;2431;industrial;6.6;Fundición de hierro y de acero
+102-63;2432;industrial;6.6;Fundición de metales no ferrosos
+102-64;2511;industrial;6.6;Fabricación de productos metálicos para uso estructural
+102-65;2512;industrial;6.6;Fabricación de tanques, depósitos y recipientes de metal, excepto los utilizados para el envase o transporte de mercancías
+102-66;2513;industrial;6.6;Fabricación de generadores de vapor, excepto calderas de agua caliente para calefacción central
+102-67;2520;industrial;6.6;Fabricación de armas y municiones
+102-68;2591;industrial;6.6;Forja, prensado, estampado y laminada de metal, pulvimetalurgia
+102-69;2593;industrial;6.6;Fabricación de art(culos de cuchillería, herramientas de mano y artículos de ferretería
+102-70;2599;industrial;6.6;Fabricación de otros productos elaborados de metal ncp
+102-71;2610;industrial;6.6;Fabricación de componentes y tableros electrónicos
+102-72;2620;industrial;6.6;Fabricación de computadoras y de equipo periférico
+102-73;2630;industrial;6.6;Fabricación de equipos de comunicación
+102-74;2640;industrial;6.6;Fabricación de aparatos electrónicos de consumo
+102-75;2651;industrial;6.6;Fabricación de equipo de medicióm prueba, navegación y control
+102-76;2652;industrial;6.6;Fabricación de relojes
+102-77;2660;industrial;6.6;Fabricación de equipo de irradiación y equipo electrónico de uso médico y terapéutico
+102-78;2670;industrial;6.6;Fabricación de instrumentos ópticos y equipo fotográfico
+102-79;2680;industrial;6.6;Fabricación de medios magnéticos y ópticos para almacenamiento de datos
+102-80;2711;industrial;6.6;Fabricación de motores, generadores y transformadores eléctricos
+102-81;2712;industrial;6.6;Fabricación de aparatos de distribución y control de Ea energía eléctrica
+102-82;2720;industrial;6.6;Fabricación de pilas, baterías y acumuladores eléctricos
+102-83;2731;industrial;6.6;Fabricación de hilos y cables eléctricos y de fibra óptica
+102-84;2732;industrial;6.6;Fabricación de dispositivos de cableado
+102-85;2740;industrial;6.6;Fabricación de equipos eléctricos de iluminación
+102-86;2750;industrial;6.6;Fabricación de. aparatos de uso doméstico
+102-87;2790;industrial;6.6;Fabricación de otros tipos de equipo eléctrico ncp
+102-88;2811;industrial;6.6;Fabricación de motores, turbinas, y partes para motores de combustión interna
+102-89;2812;industrial;6.6;Fabricación de equipos de potencia hidráuiica y neumática
+102-90;2813;industrial;6.6;Fabricación de otras bombas, compresores, grifos y válvulas
+102-91;2814;industrial;6.6;Fabricación de cojinetes, trenes de engranajes y piezas de transmisión
+102-92;2815;industrial;6.6;Fabricación de hornos, hogares y quemadores industriales
+102-93;2816;industrial;6.6;Fabricación de equipo de elevación y
+102-94;2817;industrial;6.6;Fabricación de maquinaria y equipo de oficina (excepto computadoras y equipo periférico)
+102-95;2818;industrial;6.6;Fabricación de herramientas manuales con motor
+102-96;2819;industrial;6.6;Fabricación de otros tipos de maquinaria y equipo de general ncp
+102-97;2821;industrial;6.6;Fabricación de maquinaria agropecuaria y forestal
+102-98;2822;industrial;6.6;Fabricación de máquinas formadoras de metal y de máquinas herramienta
+102-99;2823;industrial;6.6;Fabricación de maquinaria para la metalurgia
+102-100;2824;industrial;6.6;Fabricación de maquinaria para explotación de ininas canteras y para obras de construcción
+102-101;2825;industrial;6.6;Fabricación cie maquinaria para la eiaboración de alimentos, bebidas y tabaco
+102-102;2826;industrial;6.6;Fabricación de maquinaria para ía elaboración de productos textiles, prendas de vestir y cueros
+102-103;2829;industrial;6.6;Fabricación de otros tipos de maquinaria y equipo de uso especiat nc,p
+102-104;2910;industrial;6.6;Fabricación de. vehículos automotores y sus motores
+102-105;2920;industrial;6.6;Fabricación de carrocerias para vehículos automotores, fabricación de remolques y semirremolques
+102-106;2930;industrial;6.6;Fabricación de partes, piezas (autopartes) y accesorios (lujos) para vehículos automotores
+102-107;3012;industrial;6.6;Construcción de embarcaciones de recreo y deporte
+102-108;3020;industrial;6.6;Fabricación de locomotoras y de materiai rodante para ferrocarriles
+102-109;3091;industrial;6.6;Fabricación de motocicletas
+102-110;3092;industrial;6.6;Fabricación de bicicletas y de sillas de ruedas para personas con discapacidad
+102-111;3110;industrial;6.6;Fabricación de muebles
+102-112;3120;industrial;6.6;Fabricación de colchones y somieres
+102-113;3211;industrial;6.6;Fabricación de joyas y artículos conexos
+102-114;3212;industrial;6.6;Fabricación de bisutería y articulos conexos
+102-115;3220;industrial;6.6;Fabricación de instrumentos musicales
+102-116;3230;industrial;6.6;Fabricación de artículos y equipo para la práctica del deporte
+102-117;3240;industrial;6.6;Fabricación de juegos, juguetes y rompecabezas
+102-118;3250;industrial;6.6;Fabricación de instrumentos, aparatos y materiales médicos y odontológicos (incluido mobifiario)
+102-119;3290;industrial;6.6;Otras industrias manufactureras ncp
+102-120;35201;industrial;6.6;Producción de gas
+102-121;36001;industrial;6.6;Captaciónt tratamiento de agua
+102-122;3830;industrial;6.6;Recuperación de materiales
+102-123;5811;industrial;6.6;Edición de libros
+102-124;5812;industrial;6.6;Edición de directorios y fjstas de correo
+102-125;5813;industrial;6.6;Edición de periódicos, revistas y otras publicaciones periódicas
+102-126;5819;industrial;6.6;Otros trabajos de edición
+102-127;5920;industrial;6.6;Actividades de grabación de sonido y edición de música
+102-128;3011;industrial;6.6;Construcción de barcos y de estructuras flotantes
+102-129;3030;industrial;6.6;Fabricación de aeronaves, naves espaciales y de maquinaria conexa
+102-130;3040;industrial;6.6;Fabricación de vehículos de combate
+102-131;3099;industrial;6.6;Fabricación de otros tipos de equipo de transporte NCP
+103-01;7911;industrial;3.3;Actividades de las agencias de viaje
+103-02;7912;industrial;6.6;Actividades de operadores turisticos
+103-99;7990;industrial;6.6;Otros servicios de reserva y actividades relacionadas
+104-01;2100;industrial;12;Fabricación de productos farmacéuticos, sustancias químicas medicinales y productos botánicos de uso farmacéutico
+201-01;46101;comercial;3.3;Comercio al por mayor a cambio de Lina retribución o por contrata de productos agropecuarios, café pergamino.
+201-02;46201;comercial;3.3;Comercio al por mayor de materias primas agríco,as en bruto (alimentos
+201-03;46202;comercial;3.3;Comercio al por mayor de café pergamino.
+201-04;46203;comercial;3.3;Comercio al por mayor de café trillado
+201-05;4631;comercial;3.3;Comercio al por mayor de productos alimenticios
+201-06;46321;comercial;3.3;Comercio de bebidas no alcohólicas
+201-07;46451;comercial;3.3;Comercio al por mayor de productos farmacéuticos, medicinales
+201-08;46452;comercial;3.3;Comercio al por mayor de equipos médicos y quirúrgicos y de aparatos ortésicos y protésicos
+201-09;4711;comercial;3.3;Comercio al por menor en establecimientos no especializados con surtido compuesto principalmente por alimentos, bebidas (alcohólicas y no alcohólicas) o tabaco
+201-10;4721;comercial;3.3;Comercio al por menor de productos agrícolas para el consumo en establecimientos especializados
+201-11;4722;comercial;3.3;Comercio al por menor de leche, productos lácteos y huevos, en establecimientos especializados
+201-12;4723;comercial;3.3;Comercio al por menor de carnes (incluye aves de corral), productos cárnicos, pescados y productos de mar, en establecimientos especializados
+201-13;4731;comercial;3.3;Comercio al por menor de combustible para automotores
+201-14;47731;comercial;3.3;Comercio al por menor de productos farmacéuticos, medicinales y odontológicos
+201-15;4781;comercial;3.3;Comercio al por menor de alimentos, bebidas y tabaco, en puestos de venta móviles
+201-99;4729;comercial;3.3;Comercio al por menor de otros productos alimenticios ncp, en establecimientos especializados
+202-00;47111;comercial;5.5;Comercio al por menor en establecimientos no especializados con surtido compuesto principalmente de alimentos (víveres en general) que además expendan otras misceláneas para consumo de los hogares (vestuario, electrodomésticos, muebles, ferreterías, juguetería, cosméticos, drogas, miscelánea y similares)
+202-01;4511;comercial;5.2;Comercio de vehículos automotores nuevos
+202-02;45411;comercial;5.2;Comercio de motocicletas
+203-01;45412;comercial;7.7;Comercio de accesorios para motocicletas
+203-02;3514;comercial;7.7;Comercialización de energía eléctrica
+203-03;4512;comercial;7.7;Comercio de vehiculos automotores usados
+203-04;4530;comercial;7.7;Comercio de partes, piezas (autopartes) y accesorios (lujos) para vehículos automotores
+203-05;46102;comercial;7.7;Comercio al por mayor a cambio de una retribución o por contrata de combustibles, artículos de ferretería y materiales de construcción.
+203-06;46103;comercial;7.7;Comercio al por mayor a cambio de una retribución o por contrata de otros bienes.
+203-07;46204;comercial;7.7;Comercio al por mayor de flores y plantas ornamentales, materas y accesorios
+203-08;46205;comercial;7.7;Comercio al por mayor de materias primas pecuarias y de animales vivos y sus productos.
+203-09;4632;comercial;7.7;Comercio al por mayor de bebidas y tabaco
+203-10;4641;comercial;7.7;Comercio al por mayor de productos textiles, productos confeccionados para uso doméstico
+203-11;4642;comercial;7.7;Comercio al por mayor de prendas de vestir
+203-12;4643;comercial;7.7;Comercio al por mayor de calzado
+203-13;4644;comercial;7.7;Comercio al por mayor de aparatos y equipo de uso doméstico
+203-14;46453;comercial;7.7;Comercio al por mayor de productos cosméticos y de tocador, excepto productos farmacéuticos medicinales
+203-15;46454;comercial;7.7;Comercio de droga para uso animal
+203-16;4651;comercial;7.7;Comercio al por mayor de computadores, equipo periférico y programas de informática
+203-17;4649;comercial;7.7;Comercio al por mayor de otros utensilios domésticos ncp
+203-18;4652;comercial;7.7;Comercio al por mayor de equipo, partes y piezas electrónicos y de telecomunicaciones
+203-19;4653;comercial;7.7;Comercio al por mayor de maquinaria y equipo agropecuarios
+203-20;4659;comercial;7.7;Comercio al por mayor de otros tipos de maquinaria y equipo ncp
+203-21;4661;comercial;7.7;Comercio al por mayor de combustibles sólidos, líquidos, gaseosos y productos conexos
+203-22;4662;comercial;7.7;Comercio al por mayor de metales y productos metalíferos
+203-23;4663;comercial;7.7;Comercio at por mayor de materiales de construcción, artículos de ferretería, pinturas, productos de vidrio, equipo y materiales de fontanería y calefacción
+203-24;4664;comercial;7.7;Comercio por mayor de productos químicos básicos, cauchos y plásticos en formas primarias y productos químicos de uso agropecuario
+203-25;4665;comercial;7.7;Comercio al por mayor de desperdicios, desechos y chatarra
+203-26;4669;comercial;7.7;Comercio al por mayor de otros productos ncp
+203-27;4690;comercial;7.7;Comercio al por mayor no especializado
+203-28;4719;comercial;7.7;Comercio al por menor en establecimientos no especializados, con surtido compuesto principalmente por productos diferentes de alimentos (víveres en general), bebidas (alcohóticas y no alcohólicas) y tabaco.
+203-29;4724;comercial;7.7;Comercio al por menor de bebidas y productos del tabaco, en establecimientos especializados
+203-30;4732;comercial;7.7;Comercio al por menor de lubricantes (aceites, grasas), aditivos y productos de limpieza para vehículos automotores
+203-31;4741;comercial;7.7;Comercio al por menor de computadores, equipos periféricos, programas de informática y equipos de telecomunicaciones en establecimientos especializados
+203-32;4742;comercial;7.7;Comercio a, por menor de equipos y aparatos de sonido y de videol en establecimientos especializados
+203-33;4751;comercial;7.7;Comercio al por menor de productos textiles en establecimientos especializados
+203-34;4752;comercial;7.7;Comercio al por menor de artículos de ferretería, pinturas y productos de vidrio en establecimientos especializados
+203-35;4753;comercial;7.7;Comercio al por menor de tapices, alfombras y recubrimientos para paredes y pisos en establecimientos especializados
+203-36;4754;comercial;7.7;Comercio al por menor de electrodomésticos y gasodomésticos de uso doméstico, muebles y equipos de iluminación en establecimientos especializados.
+203-37;4755;comercial;7.7;Comercio al por menor de artículos y utensilios de uso doméstico en establecimientos especializados.
+203-38;4759;comercial;7.7;Comercio al por menor de otros artículos domésticos en establecimientos especiadizados
+203-39;4761;comercial;7.7;Comercio al por menor de libros, periódicos, materiales y artículos de papelería y escritorio, en establecimientos especializados
+203-40;4762;comercial;7.7;Comercio al por menor de artículos deportivos, en establecimientos especializados
+203-41;4769;comercial;7.7;Comercio al por menor de otros artículos culturales y de entretenimiento ncp en establecimientos especializados
+203-42;4771;comercial;7.7;Comercio al por menor de prendas de vestir y sus accesorios (incluye artículos de piel) en establecimientos especializados
+203-43;4772;comercial;7.7;Comercio al por menor de todo tipo de calzado y artículos de cuero y sucedáneos del cuero en establecimientos especializados
+203-44;47732;comercial;7.7;Comercio al por menor de productos cosméticos y artículos de tocador en establecimientos especializados
+203-45;4774;comercial;7.7;Comercio al por menor de otros productos nuevos en establecimientos especializados
+203-46;4775;comercial;7.7;Comercio al por menor de artículos de segunda mano
+203-47;4782;comercial;7.7;Comercio al por menor de productos texti4es, prendas de vestir y calzado, en puestos de venta móviles
+203-48;4789;comercial;7.7;Comercio al por menor de otros productos en puestos de venta móviles
+203-49;4791;comercial;7.7;Comercio al por menor realizado a través de internet
+203-50;4792;comercial;7.7;Comercio al por menor realizado a través de casas de venta o por correo
+203-51;4799;comercial;7.7;Otros tipos de comercio al por menor no realizado en establecimientos, puestos de venta o mercados
+203-52;47991;comercial;7.7;Otros tipos de comercio NCP no realizados en establecimientos (dividendos, rendimientos financieros)
+301-01;4111;servicios;3.3;Construcción de edificios residenciales
+301-02;4112;servicios;3.3;Construcción de edificios no residenciales
+301-03;4210;servicios;3.3;Construcción de carreteras y vías de ferrocarril
+301-04;4220;servicios;3.3;Construcción de proyectos de servicio público
+301-05;4290;servicios;3.3;Construcción de otras obras de ingeniería civil
+301-06;4311;servicios;3.3;Demolición
+301-07;4312;servicios;3.3;Preparación del terreno
+302-01;5511;servicios;8.8;Alojamiento en hoteles
+302-02;5512;servicios;8.8;Alojamiento en apartahoteles
+302-03;5513;servicios;8.8;Alojamiento en centros vacacionales
+302-04;5514;servicios;8.8;Alojamiento rural
+302-05;5519;servicios;8.8;Otros tipos de alojamientos para visitantes
+302-06;5520;servicios;8.8;Actividades de zonas de camping y parques para vehículos recreacionales
+302-07;5530;servicios;8.8;Servicio de estancia por horas.
+302-08;5590;servicios;8.8;Otros tipos de alojamiento ncp
+302-09;5611;servicios;8.8;Expendio a la mesa de comidas preparadas
+302-10;5612;servicios;8.8;Expendio por autoservicio de comidas preparadas
+302-11;5613;servicios;8.8;Expendio de comidas preparadas en cafeterías
+302-12;5619;servicios;8.8;Otros tipos de expendio de comidas preparadas ncp
+302-13;5621;servicios;8.8;Catering para eventos
+302-14;5629;servicios;8.8;Actividades de otros servicios de comidas
+302-15;8720;servicios;8.8;Actividades de atención residenciatt para el cuidado de pacientes con retardo mental, enfermedad mental y consumo de sustancias psicoactivas
+302-16;8730;servicios;8.8;Actividades de atención en instituciones para el cuidado de personas mayores y/o discapacitadas
+302-17;8790;servicios;8.8;Otras actividades de atención en instituciones con alojamiento
+302-18;8810;servicios;8.8;Actividades de asistencia social sin alojamiento para personas mayores y discapacitadas
+302-21;8891;servicios;8.8;Actividades de guarderías para niños y niñas
+302-23;8899;servicios;8.8;Otras actividades de asistencia social n.c.p-
+303-00;5630;servicios;10;Expendio de bebidas alcohólicas para el consumo dentro del establecimiento
+304-00;64991;servicios;10;Servicios de las casas de empeño
+305-01;6201;servicios;6.6;Actividades de desarrollo de sistemas informáticos (planificación, análisis, diseño, programación, pruebas)
+305-02;6202;servicios;6.6;Actividades de consultoría informática y actividades de administración de instalaciones informáticas
+305-03;6910;servicios;6.6;Actividades jurídicas
+305-04;69101;servicios;9;Curadurías Urbanas
+305-05;69102;servicios;6.6;Notarías
+305-06;6920;servicios;6.6;Actividades de contabilidad, teneduría de libros, auditoría financiera y asesoría tributaria
+305-07;7010;servicios;10;Actividades de administración empresarial
+305-08;7020;servicios;6.6;Actividades de consultoría de gestión
+305-10;7120;servicios;6.6;Ensayos y análisis técnicos
+305-11;7320;servicios;6.6;Estudios de mercado y realización de encuestas de opinión pública
+305-12;7500;servicios;6.6;Actividades veterinarias
+305-13;8610;servicios;6.6;Actividades de hospitales y clínicas, con internación
+305-14;8621;servicios;6.6;Actividades de la práctica médica, sin internación
+305-16;8691;servicios;6.6;Actividades de apoyo diagnóstico
+305-17;8692;servicios;6.6;Actividades de apoyo terapéutico
+305-18;8699;servicios;6.6;Otras actividades de atención de la salud humana
+305-19;8710;servicios;6.6;Actividades de atención residencial medicalizada de tipo general
+305-20;2401;servicios;6.6;Servicios de apoyo a la silvicultura, excepto el alquiler de maquinaria o equipo silvícola
+305-21;7490;servicios;6.6;Otras actividades profesionales, científicas y técnicas ncp
+305-22;7210;servicios;6.6;Investigaciones y desarrollo experimental en el campo de las ciencias naturales y la ingeniería
+305-23;7220;servicios;6.6;Investigaciones y desarrollo experimental en el campo de las ciencias sociales y las humanidades
+305-24;7111;servicios;6.6;Actividades de arquitectura
+305-26;7112;servicios;6.6;Actividades de ingeniería y otras actividades conexas de consultoría
+306-01;4911;servicios;3.3;Transporte férreo de pasajeros
+306-02;4912;servicios;3.3;Transporte férreo de carga
+306-03;4921;servicios;3.3;Transporte de pasajeros
+306-04;4922;servicios;3.3;Transporte mixto
+306-05;4923;servicios;3.3;Transporte de carga por carretera
+306-06;4930;servicios;3.3;Transporte por tuberías
+306-07;5021;servicios;3.3;Transporte fluvial de pasajeros
+306-08;5022;servicios;3.3;Transporte fluvial de carga
+306-09;5111;servicios;3.3;Transporte aéreo nacionai de pasajeros
+306-10;5112;servicios;3.3;Transporte aéreo internacional de pasajeros
+306-11;5121;servicios;3.3;Transporte aéreo nacional de carga
+306-12;5122;servicios;3.3;Transporte aéreo internacional de carga
+307-01;2402;servicios;10;Alquiler de maquinaria o equipo silvícofa
+307-02;1820;servicios;10;Producción de copias a partir de grabaciones originales
+307-03;2592;servicios;10;Tratamiento y revestimiento de metales, mecanizado
+307-04;3311;servicios;10;Mantenimiento y reparación especializado de productos elaborados en metal
+307-05;3312;servicios;10;Mantenimiento y reparación especializado de maquinaria y equipo
+307-06;3313;servicios;10;Mantenimiento y reparación especializado de equipo electrónico y óptico
+307-07;3314;servicios;10;Mantenimiento y reparación especializado de equipo eléctrico
+307-08;3315;servicios;10;Mantenimiento y reparación especializado de equipo de transporte, excepto los vehículos automotores, motocicletas y bicicletas
+307-09;3319;servicios;10;Mantenimiento y reparación de otros tipos de equipos y sus componentes ncp
+307-10;3320;servicios;10;Enstalación especializada de maquinaria y equipo industrial
+307-11;3512;servicios;10;Transmisión de energía eléctrica
+307-12;3513;servicios;10;Distribución de energía eléctrica
+307-13;35202;servicios;10;distribución de combustibles gaseosos por tuberías
+307-14;3530;servicios;10;Suministro de vapor y aire acondicionado
+307-15;3700;servicios;10;Evacuación y tratamiento de aguas residuales
+307-16;3811;servicios;10;Recolección de desechos no peligrosos
+307-17;3812;servicios;10;Recolección de desechos peligrosos
+307-18;3821;servicios;10;Tratamiento y disposición de desechos no peligrosos
+307-19;3822;servicios;10;Tratamiento y disposición de desechos peligrosos
+307-20;4321;servicios;10;Instalaciones eléctricas
+307-21;4322;servicios;10;Instalaciones de fontanería, calefacción y aire acondicionado
+307-22;4329;servicios;10;Otras instalaciones especializadas
+307-23;4330;servicios;10;Terminación y acabado de edificios y obras de ingenieria civil
+307-24;4390;servicios;10;Otras actividades especializadas para Ea construcción de edificios y obras de ingeniería civil
+307-25;4520;servicios;10;Mantenimiento y reparación de vehículos automotores
+307-26;4542;servicios;10;Mantenimiento y reparación de motocicletas y de sus partes y piezas
+307-27;49231;servicios;10;Alquiler de vehícuios de carga (camiones) con conductor.
+307-28;5221;servicios;10;Actividades de estaciones, vías y servicios complementarios para el transporte terrestre
+307-29;5222;servicios;10;Actividades de puertos y servicios complementarios para el transporte acuático
+307-30;52211;servicios;10;Servicios de parqueadero en bienes de uso común o áreas comunes de propiedades horizontales
+307-31;5310;servicios;8.8;Actividades postales nacionales
+307-32;53101;servicios;8.8;Operador de servicios postales de pago
+307-33;5320;servicios;8.8;Actividades de mensajería
+307-34;5229;servicios;10;Otras actividades complementarias transporte
+307-35;5224;servicios;10;Manipulación de carga
+307-36;5820;servicios;10;Edición de programas de informática (software)
+307-37;5911;servicios;10;Actividades de producción de películas cinematográficas, videos, programas, anuncios y comerciales de televisión
+307-38;5912;servicios;10;Actividades de posproducción de películas cinematográficas, videos, programas, anuncios y comerciales de televisión
+307-39;5913;servicios;10;Actividades de distribución de películas cinematográficas, videos, programas, anuncios y comerciales de televisión
+307-40;5914;servicios;10;Actividades de exhibición de películas cinematográficas y videos
+307-41;6010;servicios;10;Actividades de programación y transmisión en e) servicio de radiodifusión sonora
+307-42;6020;servicios;10;Actividades de programación y transmisión de televisión
+307-43;6110;servicios;11;Actividades de telecomunicaciones alámbricas
+307-44;6120;servicios;11;Actividades de telecomunicaciones inalámbricas
+307-45;6130;servicios;10;Actividades de telecomunicación satelital
+307-46;6190;servicios;10;Otras actividades de telecomunicaciones
+307-47;6209;servicios;10;Otras actividades de tecnologías de información y actividades de servicios informáticos
+307-48;6311;servicios;10;Procesamiento de datos, alojamiento (hosting) y actividades relacionadas
+307-49;6312;servicios;10;Portales web
+307-50;6391;servicios;10;Actividades de agencias de noticias
+307-51;66111;servicios;10;Actividades de las bolsas de valores
+307-52;6612;servicios;10;Corretaje de valores y de contratos de productos básicos
+307-53;6613;servicios;10;Otras actividades relacionadas con el mercado de valores
+307-54;6615;servicios;10;Actividades de los profesionales de compra y venta de divisas
+307-55;6619;servicios;10;Otras actividades auxiliares de las actividades de servicios financieros ncp
+307-56;6621;servicios;10;Actividades de agentes y corredores de seguros
+307-57;6629;servicios;10;Evaluación de riesgos y daños, y otras actividades de servicios auxiliares
+307-58;70201;servicios;3.3;Actividades de servicios de atención al cliente en puntos de venta
+307-59;70202;servicios;3.3;Sistemas y tecnologías de información
+307-60;6820;servicios;10;Actividades inmobiliarias realizadas a cambio de una retribución o por contrata
+307-61;6810;servicios;10;Actividades inmobiliarias realizadas con bienes propios o arrendados
+307-62;7310;servicios;10;Publicidad
+307-63;7420;servicios;10;Actividades de fotografía
+307-64;7710;servicios;10;Aquiler y arrendamiento de vehículos automotores
+307-65;7730;servicios;10;Alquiler y arrendamiento de otros tipos de maquinariat equipo y bienes tangibles ncp
+307-66;8010;servicios;6.6;Actividades de seguridad privada
+307-67;8020;servicios;6.6;Actividades de servicios de sistemas de seguridad
+307-68;8030;servicios;6.6;Actividades de detectives e investigadores privados
+307-69;8110;servicios;10;Actividades combinadas de apoyo a instalaciones
+307-70;8129;servicios;10;Otras actividades de Eimpieza de edificios e instalaciones industriales
+307-71;8121;servicios;10;Limpieza general interior de edificios
+307-72;7810;servicios;10;Actividades de agencias de gestión y colocación empleo.
+307-73;7820;servicios;10;Actividades de empresas de servicios temporales.
+307-74;7830;servicios;10;Otras actividades de provisión de talento humano.
+307-75;8292;servicios;10;Actividades de envase y empaque
+307-76;8299;servicios;10;Otras actividades de servicio de apoyo a las empresas ncp
+307-77;8430;servicios;10;Actividades de planes de seguridad social de afiliación obligatoria
+307-78;8512;servicios;2.2;Educación preescolar
+307-79;8513;servicios;2.2;Educación básica primaria
+307-80;8521;servicios;2.2;Educación básica secundaria
+307-81;8522;servicios;2.2;Educación media académica
+307-82;8523;servicios;2.2;Educación media técnica.
+307-83;8530;servicios;2.2;Establecimientos que combinan diferentes niveles de educación
+307-84;8220;servicios;10;Actividades de centros de llamadas (Call center)
+307-85;8541;servicios;2.2;Educación técnica profesional
+307-86;8542;servicios;2.2;Educación tecnológica
+307-87;8543;servicios;2.2;Educación de instituciones universitarias o de escuelas tecnológicas
+307-88;8544;servicios;2.2;Educación de universidades
+307-89;8551;servicios;2.2;Formación para el trabajo
+307-90;8552;servicios;2.2;Enseñanza deportiva y recreativa
+307-91;8553;servicios;2.2;Enseñanza cultural
+307-92;8559;servicios;2.2;Otros tipos de educación ncp
+307-93;9311;servicios;10;Gestión de instalaciones deportivas
+307-94;9312;servicios;10;Actividades de clubes deportivos
+307-95;9319;servicios;10;Otras actividades deportivas
+307-96;9329;servicios;10;Otras actividades recreativas y de esparcimiento ncp
+307-97;9511;servicios;10;Mantenimiento y reparación de computadores y de equipo periférico
+307-98;9512;servicios;10;Mantenimiento y reparación de equipos de comunicación
+307-99;9521;servicios;10;Mantenimiento y reparación de aparatos electrónicos de consumo
+307-100;9522;servicios;10;Mantenimiento y reparación de aparatos y equipos domésticos y de jardinería
+307-101;9523;servicios;10;Reparación de calzado y artículos de cuero
+307-102;9524;servicios;10;Reparación de muebles y accesorios para ej hogar
+307-103;9529;servicios;10;Mantenimiento y reparación de otros efectos personales y enseres domésticos
+307-104;9601;servicios;10;Lavado y limpieza, incluso la limpieza en seco, de productos textiles y de piel
+307-105;9602;servicios;10;Peluquería y otros tratamientos de belleza
+307-106;9603;servicios;10;Pompas fúnebres y actividades relacionadas
+307-107;3900;servicios;10;Actividades de saneamiento ambiental y otros servicios de gestión de desechos
+307-108;6399;servicios;10;Otras actividades de servicio de información ncp
+307-109;7410;servicios;10;Actividades especializadas de diseño
+307-110;7721;servicios;10;Alquiler y arrendamiento de equipo recreativo y deportivo
+307-111;7722;servicios;10;Alquiler de videos y discos
+307-112;7729;servicios;10;Alquiler y arrendamiento de otros efectos personales y enseres domésticos ncp
+307-113;7740;servicios;10;Arrendamiento de propiedad intelectual y productos similares, excepto obras protegidas por derecho de autor
+307-114;8130;servicios;10;Actividades de paisajismo y servicios de mantenimiento conexos
+307-115;8211;servicios;10;Actividades combinadas de servicios administrativos de oficina
+307-116;8219;servicios;10;Fotocopiado, preparación de documentos y otras actividades especializadas de apoyo a oficina
+307-117;8230;servicios;10;Organización de convenciones y eventos comerciales
+307-118;8291;servicios;10;Actividades de agencias de cobranzas y oficinas de calificación crediticia
+307-119;8511;servicios;2.2;Educación de la primera infancia
+307-120;8560;servicios;2.2;Actividades de apoyo a la educación
+307-121;9321;servicios;10;Actividades de parques temáticos
+307-122;9609;servicios;10;Otras actividades de servicios personales ncp
+308-01;5210;financiera;23;Almacenamiento y depósito
+308-02;6411;financiera;25;Banco Central
+308-03;6412;financiera;25;Bancos comerciales
+308-04;6421;financiera;23;Actividades de las corporaciones financieras
+308-05;6422;financiera;23;Actividades de las compañías de financiamiento
+308-06;6423;financiera;25;Banca de segundo piso
+308-07;6424;financiera;8;Actividades de las cooperativas financieras
+308-08;6431;financiera;23;Fideicomisos, fondos y entidades financieras similares
+308-09;6432;financiera;23;Fondos de cesantías
+308-10;6491;financiera;25;Leasing financiero (arrendamiento financiero)
+308-11;6492;financiera;8;Actividades financieras de fondos de empleados y otras formas asociativas del sector solidario
+308-12;6493;financiera;25;Actividades de compra de cartera o factoring
+308-13;6494;financiera;23;Otras actividades de distribución de fondos
+308-14;6495;financiera;23;Instituciones especiales oficiales
+308-15;6499;financiera;23;Otras actividades de servicio financiero, excepto fas de seguros y pensiones ncp
+308-16;6511;financiera;23;Seguros generales
+308-17;6512;financiera;23;Seguros de vida
+308-18;6513;financiera;23;Reaseguros
+308-20;6521;financiera;23;Servicios de seguros sociales de salud
+308-21;6522;financiera;23;Servicios de seguros sociales de riesgos laborales
+308-22;6531;financiera;23;Régimen de prima media con prestación definida (RPM)
+308-23;6532;financiera;23;Régimen de ahorro con solidaridad (RAS).
+308-24;6611;financiera;23;Administración de mercados financieros
+308-25;6614;financiera;23;Actividades de las sociedades de intermediación cambiaria y de servicios financieros especiales.
+308-26;6515;financiera;23;Seguros de Salud
+308-27;6523;financiera;23;Servicios de Seguros Sociales en riesgos de familia
+308-28;6496;financiera;23;Capitalización
+308-31;6630;financiera;23;Actividades de administración de fondos

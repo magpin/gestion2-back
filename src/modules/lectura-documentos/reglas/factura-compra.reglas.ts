@@ -50,11 +50,32 @@ export interface TotalesImpresos {
   total: number;
 }
 
+/** La condición tributaria que la factura imprime del proveedor. */
+export interface CondicionTributariaLeida {
+  /** «Régimen simple de tributación». */
+  regimenSimple: boolean | null;
+  /** «Responsable de IVA» (true) o «No responsable de IVA» (false). */
+  responsableIva: boolean | null;
+  /** «Somos grandes contribuyentes», con su resolución. */
+  granContribuyente: boolean | null;
+  /** «Autorretenedores de renta», con su resolución. */
+  autorretenedorRenta: boolean | null;
+  /** La actividad económica (CIIU), cuatro dígitos. */
+  ciiu: string | null;
+}
+
 export interface FacturaCompraLeida {
   proveedor: {
     nombre: string;
     /** Sin dígito de verificación ni puntos. Nulo si el documento no lo trae. */
     nit: string | null;
+    /**
+     * Lo que la factura dice de la condición tributaria del proveedor (plan
+     * motor de retenciones, Fase 8, §8.8). Cada campo es nulo si no lo dice:
+     * no se deduce nada. Solo propone cambios al perfil; nunca los aplica.
+     * Ausente en las lecturas guardadas antes de que existiera.
+     */
+    tributario?: CondicionTributariaLeida;
   };
   /**
    * El número que le puso **el proveedor**, no un consecutivo nuestro. Nulo
@@ -86,13 +107,53 @@ export const ESQUEMA_FACTURA = {
     proveedor: {
       type: 'object',
       additionalProperties: false,
-      required: ['nombre', 'nit'],
+      required: ['nombre', 'nit', 'tributario'],
       properties: {
         nombre: { type: 'string' },
         nit: {
           type: ['string', 'null'],
           description:
             'Solo los dígitos, sin dígito de verificación ni puntos. null si no aparece.',
+        },
+        tributario: {
+          type: 'object',
+          additionalProperties: false,
+          description:
+            'Lo que la factura dice, textualmente, de la condición tributaria del EMISOR (normalmente en el encabezado o el pie). Cada campo es null si la factura no lo dice: no lo deduzcas.',
+          required: [
+            'regimenSimple',
+            'responsableIva',
+            'granContribuyente',
+            'autorretenedorRenta',
+            'ciiu',
+          ],
+          properties: {
+            regimenSimple: {
+              type: ['boolean', 'null'],
+              description:
+                'true si dice «Régimen simple de tributación» o «RST»; null si no lo dice.',
+            },
+            responsableIva: {
+              type: ['boolean', 'null'],
+              description:
+                'true si dice «Responsable de IVA» o «Régimen común»; false si dice «No responsable de IVA»; null si no dice nada.',
+            },
+            granContribuyente: {
+              type: ['boolean', 'null'],
+              description:
+                'true si dice «Gran contribuyente» (con o sin resolución); null si no lo dice.',
+            },
+            autorretenedorRenta: {
+              type: ['boolean', 'null'],
+              description:
+                'true si dice «Autorretenedor» de renta o de la fuente; null si no lo dice. No cuenta «autorretenedor de ICA».',
+            },
+            ciiu: {
+              type: ['string', 'null'],
+              description:
+                'El código de actividad económica (CIIU), cuatro dígitos, si lo imprime; null si no.',
+            },
+          },
         },
       },
     },

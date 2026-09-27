@@ -5,6 +5,14 @@ import type { Tx, TxService } from '../../../common/db/tx.service';
 import type { CobrarDto } from '../dto/venta.dto';
 import { VentaDocumentoService } from './venta-documento.service';
 
+/** RetencionesApi: la autorretención de la venta, que acá no hay. */
+function retencionesVentaFalsas() {
+  return {
+    anularAutorretencion: jest.fn(() => Promise.resolve()),
+    reversarAutorretencionPorNota: jest.fn(() => Promise.resolve([])),
+  } as never;
+}
+
 const ctx: CtxEmpresa = {
   tenantId: 't-1',
   usuarioId: 'u-1',
@@ -268,7 +276,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso(),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
-      {} as never, // TesoreriaApi: no la usan estos métodos.
+      {} as never, // TesoreriaApi: no la usan estos métodos.,
+      retencionesVentaFalsas(),
     );
 
     const documento = await servicio.crearCotizacion(ctx, {
@@ -293,7 +302,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso({ responsableIva: false }),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
-      {} as never, // TesoreriaApi: no la usan estos métodos.
+      {} as never, // TesoreriaApi: no la usan estos métodos.,
+      retencionesVentaFalsas(),
     );
 
     const documento = await servicio.crearCotizacion(ctx, {
@@ -313,7 +323,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso({ tercero: null }),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
-      {} as never, // TesoreriaApi: no la usan estos métodos.
+      {} as never, // TesoreriaApi: no la usan estos métodos.,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -334,7 +345,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       }),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
-      {} as never, // TesoreriaApi: no la usan estos métodos.
+      {} as never, // TesoreriaApi: no la usan estos métodos.,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -353,7 +365,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso(),
       inventarioFalso({ producto: null }),
       {} as never,
-      {} as never, // TesoreriaApi: no la usa este método.
+      {} as never, // TesoreriaApi: no la usa este método.,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -372,7 +385,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso(),
       inventarioFalso({ precio: null }),
       {} as never,
-      {} as never, // TesoreriaApi: no la usa este método.
+      {} as never, // TesoreriaApi: no la usa este método.,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -391,7 +405,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso(),
       inventarioFalso({ precio: null }),
       {} as never,
-      {} as never, // TesoreriaApi: no la usa este método.
+      {} as never, // TesoreriaApi: no la usa este método.,
+      retencionesVentaFalsas(),
     );
 
     const documento = await servicio.crearCotizacion(ctx, {
@@ -412,7 +427,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso(),
       inventarioFalso(),
       {} as never,
-      {} as never, // TesoreriaApi: no la usa este método.
+      {} as never, // TesoreriaApi: no la usa este método.,
+      retencionesVentaFalsas(),
     );
 
     const documento = await servicio.crearCotizacion(ctx, {
@@ -433,7 +449,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       // si la cotización consultara el saldo o el kardex, reventaría acá.
       inventarioFalso(),
       {} as never,
-      {} as never, // TesoreriaApi: no la usa este método.
+      {} as never, // TesoreriaApi: no la usa este método.,
+      retencionesVentaFalsas(),
     );
 
     const documento = await servicio.crearCotizacion(ctx, {
@@ -455,6 +472,7 @@ describe('VentaDocumentoService.editarCotizacion', () => {
       inventarioFalso(),
       {} as never,
       {} as never,
+      retencionesVentaFalsas(),
     );
   }
 
@@ -533,6 +551,7 @@ describe('VentaDocumentoService.descartarCotizacion', () => {
       inventarioFalso(),
       {} as never,
       {} as never,
+      retencionesVentaFalsas(),
     );
 
     await servicio.descartarCotizacion(ctx, 'cot-1', 'El cliente no la tomó');
@@ -555,6 +574,7 @@ describe('VentaDocumentoService.descartarCotizacion', () => {
       inventarioFalso(),
       {} as never,
       {} as never,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -609,7 +629,8 @@ describe('VentaDocumentoService.porId', () => {
       nucleoFalso(),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
-      {} as never, // TesoreriaApi: no la usan estos métodos.
+      {} as never, // TesoreriaApi: no la usan estos métodos.,
+      retencionesVentaFalsas(),
     );
 
     const detalle = await servicio.porId(ctx, 'COTIZACION', 'doc-1');
@@ -660,6 +681,7 @@ describe('VentaDocumentoService.porId', () => {
         inventarioFalso(),
         {} as never,
         {} as never,
+        retencionesVentaFalsas(),
       );
 
     const nota = await servicioCon('NOTA_CREDITO').porId(
@@ -683,7 +705,8 @@ describe('VentaDocumentoService.porId', () => {
       nucleoFalso(),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
-      {} as never, // TesoreriaApi: no la usan estos métodos.
+      {} as never, // TesoreriaApi: no la usan estos métodos.,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -737,7 +760,8 @@ describe('VentaDocumentoService.anular', () => {
         revertirPorAnulacion: revertir,
       } as unknown as ConstructorParameters<typeof VentaDocumentoService>[2],
       contabilidad,
-      {} as never, // TesoreriaApi: no la usa anular.
+      {} as never, // TesoreriaApi: no la usa anular.,
+      retencionesVentaFalsas(),
     );
 
     await servicio.anular(ctx, 'fv-1', 'Error de digitación');
@@ -771,7 +795,8 @@ describe('VentaDocumentoService.anular', () => {
       nucleoFalso(),
       inventarioFalso(),
       contabilidadFalso().fake,
-      {} as never, // TesoreriaApi: no la usa anular.
+      {} as never, // TesoreriaApi: no la usa anular.,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.anular(ctx, 'cot-1', 'motivo')).rejects.toThrow(
@@ -790,7 +815,8 @@ describe('VentaDocumentoService.anular', () => {
       nucleoFalso(),
       inventarioFalso(),
       contabilidadFalso().fake,
-      {} as never, // TesoreriaApi: no la usa anular.
+      {} as never, // TesoreriaApi: no la usa anular.,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.anular(ctx, 'fv-1', 'motivo')).rejects.toThrow(
@@ -805,7 +831,8 @@ describe('VentaDocumentoService.anular', () => {
       nucleoFalso(),
       inventarioFalso(),
       contabilidadFalso().fake,
-      {} as never, // TesoreriaApi: no la usa anular.
+      {} as never, // TesoreriaApi: no la usa anular.,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.anular(ctx, 'inexistente', 'motivo')).rejects.toThrow(
@@ -847,6 +874,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     const actualizado = await servicio.cobrar(ctx, 'fv-1', DTO);
@@ -878,6 +906,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     await servicio.cobrar(ctx, 'fv-1', {
@@ -910,6 +939,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreriaFalso().fake,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.cobrar(ctx, 'cot-1', DTO)).rejects.toThrow(
@@ -925,6 +955,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreriaFalso().fake,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.cobrar(ctx, 'fv-1', DTO)).rejects.toThrow(
@@ -944,6 +975,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.cobrar(ctx, 'fv-1', porValor(30000))).rejects.toThrow(
@@ -966,6 +998,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -985,6 +1018,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria2,
+      retencionesVentaFalsas(),
     );
     await servicio2.cobrar(ctx, 'fv-1', porValor(100000));
     expect(registrar2).toHaveBeenCalledTimes(1);
@@ -999,6 +1033,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     const actualizado = await servicio.cobrar(ctx, 'fv-1', {
@@ -1049,6 +1084,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     // 70.000 + 70.000 sobre una factura de 119.000: por separado cada uno
@@ -1075,6 +1111,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.cobrar(ctx, 'fv-1', DTO)).rejects.toThrow(
@@ -1091,6 +1128,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreriaFalso().fake,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.cobrar(ctx, 'inexistente', DTO)).rejects.toThrow(
@@ -1120,6 +1158,7 @@ describe('VentaDocumentoService.devolverCobro', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     const actualizado = await servicio.devolverCobro(ctx, 'fv-1', {
@@ -1155,6 +1194,7 @@ describe('VentaDocumentoService.devolverCobro', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -1176,6 +1216,7 @@ describe('VentaDocumentoService.devolverCobro', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     const actualizado = await servicio.devolverCobro(ctx, 'fv-1', {

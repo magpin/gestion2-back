@@ -71,7 +71,9 @@ function preparar() {
         grupo: 'DUPLICADO' as const,
         titulo: '«X» está cargado dos veces',
         detalle: 'Es el mismo documento.',
-        referencias: [{ tipo: 'TERCERO' as const, id: 't-secreto', etiqueta: 'CC 1' }],
+        referencias: [
+          { tipo: 'TERCERO' as const, id: 't-secreto', etiqueta: 'CC 1' },
+        ],
       },
     ]),
   );
@@ -100,6 +102,7 @@ function preparar() {
     { existencias } as unknown as InventarioApi,
     { preparar } as unknown as PropuestasService,
     { revisar } as unknown as RevisionApi,
+    { retencionesParaAsistente: jest.fn(() => Promise.resolve([])) } as never,
   );
   return { servicio, correr, valores, saldos, existencias, preparar, revisar };
 }
@@ -223,15 +226,22 @@ describe('ConsultasService — la revisión de los libros', () => {
     expect(revisar).toHaveBeenCalledWith(quien);
     expect(texto).toContain('está cargado dos veces');
     expect(texto).not.toContain('t-secreto');
-    expect(hechas[0]).toMatchObject({ herramienta: 'revisar_errores', filas: 1 });
+    expect(hechas[0]).toMatchObject({
+      herramienta: 'revisar_errores',
+      filas: 1,
+    });
   });
 
   it('quien no ve los asientos no la tiene', async () => {
     const { servicio, revisar } = preparar();
     const { herramientas } = servicio.paraTurno(ctx(['VENTAS']));
 
-    expect(herramientas.definiciones.map((d) => d.name)).not.toContain('revisar_errores');
-    expect(await herramientas.ejecutar('revisar_errores', {})).toMatch(/^No se pudo/);
+    expect(herramientas.definiciones.map((d) => d.name)).not.toContain(
+      'revisar_errores',
+    );
+    expect(await herramientas.ejecutar('revisar_errores', {})).toMatch(
+      /^No se pudo/,
+    );
     expect(revisar).not.toHaveBeenCalled();
   });
 });

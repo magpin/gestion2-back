@@ -12,6 +12,7 @@ import { TxService, type Tx } from '../../../common/db/tx.service';
 import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import { InventarioApi } from '../../inventario/inventario.api';
 import { NucleoApi } from '../../nucleo/nucleo.api';
+import { RetencionesApi } from '../../retenciones/retenciones.api';
 import { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import type { CrearCotizacionDto } from '../dto/cotizacion.dto';
 import type {
@@ -94,6 +95,11 @@ export interface VentaDocumentoResumen {
    * y se cobra, pero no se le hacen notas.
    */
   historica: boolean;
+  /**
+   * Lo que el motor de retenciones encontró al facturar: el cliente retuvo
+   * distinto de la norma, la autorretención que se practicó, falta una tarifa.
+   */
+  retencion_aviso?: string | null;
 }
 
 export interface VentaDocumentoLineaResumen {
@@ -192,7 +198,7 @@ const IDENTIFICACION_TERCERO = `(SELECT concat_ws(' ', x.tipo_documento,
 // donde agregarle una columna.
 export const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, estado, prefijo, consecutivo,
                            resolucion_id, documento_origen_id, subtotal, total_iva, total,
-                           monto_pagado, asiento_id, historica,
+                           monto_pagado, asiento_id, historica, retencion_aviso,
                            (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
                               FROM tercero x WHERE x.id = tercero_id) AS tercero_nombre,
                            ${IDENTIFICACION_TERCERO} AS tercero_identificacion,
@@ -232,6 +238,7 @@ export class VentaDocumentoService {
     private readonly inventario: InventarioApi,
     private readonly contabilidad: ContabilidadApi,
     private readonly tesoreria: TesoreriaApi,
+    private readonly retenciones: RetencionesApi,
   ) {}
 
   /**
@@ -725,6 +732,15 @@ export class VentaDocumentoService {
         documento.asiento_id as string,
         hoyEnColombia(),
         `Anulación de ${documento.tipo === 'FACTURA' ? 'la factura' : 'el documento'} ${documento.numero}: ${motivo}`,
+        t,
+      );
+
+      // La autorretención también se anula —la de la factura, o la que una nota
+      // había devuelto—: el asiento ya la reversó, pero el 350 la lee de
+      // `retencion_calculada`.
+      await this.retenciones.anularAutorretencion(
+        ctx,
+        { documentoId: id, fecha: hoyEnColombia(), motivo },
         t,
       );
 

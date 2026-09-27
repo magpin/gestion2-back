@@ -161,3 +161,54 @@ describe('pasosDelAsiento', () => {
     });
   });
 });
+
+describe('pasosDelAsiento — la retención de la compra', () => {
+  const registro = {
+    tipo: 'COMPRA' as const,
+    nombre: 'la compra FC-0231',
+    creadoEn: '2026-09-25T15:00:00.000Z',
+    creadoPor: { nombre: 'Ana Ruiz' },
+  };
+
+  it('dice qué calculó, con la norma, y si el concepto era recordado', () => {
+    const pasos = pasosDelAsiento({
+      asiento,
+      registro,
+      retencion: {
+        decision: 'CALCULADA',
+        motivo: null,
+        proveedor: 'Papelería Central',
+        calculadas: [
+          {
+            texto:
+              'Retención en la fuente · Compras generales 2,5 % sobre $2.000.000 = $50.000.',
+            norma: 'Decreto 572/2025',
+            origen: 'CONFIRMADO',
+          },
+        ],
+      },
+    });
+    const paso = pasos.find((p) => p.clave === 'RETENCION');
+    expect(paso?.detalle).toBe(
+      'Compras generales 2,5 % sobre $2.000.000 = $50.000 — Decreto 572/2025; concepto recordado para Papelería Central.',
+    );
+  });
+
+  it('«sin retención» por decisión de una persona se marca, con su motivo', () => {
+    const paso = pasosDelAsiento({
+      asiento,
+      registro,
+      retencion: {
+        decision: 'DECIDIDO_SIN',
+        motivo: 'Mostró su resolución.',
+        proveedor: 'X',
+        calculadas: [],
+      },
+    }).find((p) => p.clave === 'RETENCION');
+    expect(paso).toMatchObject({
+      titulo: 'Sin retención en la fuente',
+      detalle: 'Mostró su resolución.',
+      aviso: true,
+    });
+  });
+});

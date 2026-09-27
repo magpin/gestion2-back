@@ -28,7 +28,7 @@ describe('sugerirPlan · nada se propone sin el hecho que lo justifica', () => {
 
     const falta = s.faltantes.find((f) => f.hecho === 'REGIMEN_TRIBUTARIO');
     expect(falta).toBeDefined();
-    expect(falta!.paso).toBe('SITUACION_LEGAL');
+    expect(falta!.paso).toBe('IMPUESTOS');
   });
 
   it('sin actividad no propone ingresos ni costo, y lo dice', () => {
@@ -99,7 +99,7 @@ describe('sugerirPlan · impuestos derivados del regimen', () => {
     expect(c).toContain('236705');
   });
 
-  it('agente de retencion de renta recibe los seis conceptos de retefuente', () => {
+  it('agente de retencion de renta recibe las subcuentas de todos los conceptos de retefuente', () => {
     const c = codigos(con({ regimenesVigentes: ['AGENTE_RETENEDOR_RENTA'] }));
     expect(c).toEqual(
       expect.arrayContaining([
@@ -107,7 +107,9 @@ describe('sugerirPlan · impuestos derivados del regimen', () => {
         '236520',
         '236525',
         '236530',
+        '236535',
         '236540',
+        '236545',
         '236570',
       ]),
     );
@@ -117,8 +119,12 @@ describe('sugerirPlan · impuestos derivados del regimen', () => {
     expect(
       codigos(con({ regimenesVigentes: ['AUTORRETENEDOR_RENTA'] })),
     ).toContain('236575');
+    // El agente también: le puede tocar autorretenerse al venderle al SIMPLE.
     expect(
       codigos(con({ regimenesVigentes: ['AGENTE_RETENEDOR_RENTA'] })),
+    ).toContain('236575');
+    expect(
+      codigos(con({ regimenesVigentes: ['RESPONSABLE_IVA'] })),
     ).not.toContain('236575');
   });
 
@@ -198,7 +204,7 @@ describe('sugerirPlan · condiciones que se contradicen', () => {
       (f) => f.hecho === 'CONDICION_CONTRADICTORIA',
     );
     expect(falta).toBeDefined();
-    expect(falta!.paso).toBe('SITUACION_LEGAL');
+    expect(falta!.paso).toBe('IMPUESTOS');
   });
 
   it('el regimen simple y el ordinario tampoco pueden coexistir', () => {

@@ -5,6 +5,7 @@ import { filas } from '../../../common/db/filas';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import {
   comprasParecidas,
+  comprasRetencionDistinta,
   comprasSinRetencion,
   gastosAInventario,
   gastosEnCuentaDistinta,
@@ -13,6 +14,7 @@ import {
   productosSinDatosDeVenta,
   tercerosSinMarcar,
   type FilaCompraSinRetencion,
+  type FilaRetencionDistinta,
   type FilaGasto,
   type FilaLectura,
   type FilaPeriodoAbierto,
@@ -97,6 +99,7 @@ export class RevisionService {
         ...ivaAntesDelRegimen(await this.ivaAntesDelRegimen(t)),
         // ── Fase 9: piden criterio ──
         ...comprasSinRetencion(retencion.sinConceptos, retencion.sobreLaBase),
+        ...comprasRetencionDistinta(await this.retencionDistinta(t)),
         ...periodosSinCerrar(await this.periodosAbiertos(t)),
         ...lecturasSinRegistrar(await this.lecturas(t)),
         ...productosSinDatosDeVenta(await this.productosIncompletos(t)),
@@ -506,6 +509,27 @@ export class RevisionService {
    * renta configurados —no pudieron llevar retención— y las que superan la
    * base mínima más baja de los conceptos que sí hay.
    */
+  /** Las compras con retención impresa por el proveedor, y lo registrado (§8.6). */
+  private async retencionDistinta(t: Tx): Promise<FilaRetencionDistinta[]> {
+    return filas<Record<string, unknown>>(
+      await t.query(`
+        SELECT c.id, c.numero_factura_proveedor AS numero, ${NOMBRE_TERCERO} AS proveedor,
+               c.fecha::text AS fecha, c.retencion_impresa, c.total_retenciones
+          FROM compra_documento c
+          JOIN tercero t ON t.id = c.tercero_id
+         WHERE c.tipo = 'FACTURA' AND c.estado = 'EMITIDA'
+           AND c.retencion_impresa IS NOT NULL
+         ORDER BY c.fecha`),
+    ).map((r) => ({
+      compraId: r.id as string,
+      numero: r.numero as string,
+      proveedor: r.proveedor as string,
+      fecha: r.fecha as string,
+      impresa: Number(r.retencion_impresa),
+      registrada: Number(r.total_retenciones),
+    }));
+  }
+
   private async comprasSinRetencion(t: Tx): Promise<{
     sinConceptos: {
       anio: number;
@@ -519,14 +543,7 @@ export class RevisionService {
         WITH retenedor AS (
           SELECT fecha_inicio, fecha_fin
             FROM empresa_regimen_tributario
-           WHERE tipo_regimen = 'AGENTE_RETENEDOR_RENTA'
-        ),
-        base AS (
-          SELECT k.anio, min(k.base_minima_uvt * u.valor) AS minima, count(*) AS conceptos
-            FROM retencion_concepto k
-            LEFT JOIN uvt u ON u.anio = k.anio
-           WHERE k.tipo = 'RENTA' AND k.activo
-           GROUP BY k.anio
+           WHERE tipo_regimen IN ('AGENTE_RETENEDOR_RENTA', 'GRAN_CONTRIBUYENTE', 'AUTORRETENEDOR_RENTA')
         )
         SELECT c.id, c.numero_factura_proveedor AS numero, ${NOMBRE_TERCERO} AS proveedor,
                c.fecha::text AS fecha, c.subtotal,
@@ -534,11 +551,27 @@ export class RevisionService {
                (SELECT min(r.fecha_inicio) FROM retenedor r
                  WHERE r.fecha_inicio <= c.fecha
                    AND (r.fecha_fin IS NULL OR r.fecha_fin >= c.fecha))::text AS desde,
-               b.conceptos, b.minima
+               -- La base mínima más baja de compras y servicios generales en la
+               -- ley vigente a la fecha de la compra (motor de retenciones).
+               (SELECT count(*) FROM retencion_tarifa x
+                  JOIN retencion_concepto_nacional n ON n.id = x.concepto_id
+                 WHERE n.codigo IN ('COMPRAS_GENERALES', 'SERVICIOS_GENERALES')
+                   AND x.vigencia_desde <= c.fecha
+                   AND (x.vigencia_hasta IS NULL OR x.vigencia_hasta >= c.fecha))
+                 AS conceptos,
+               (SELECT min(x.base_uvt) * u.valor FROM retencion_tarifa x
+                  JOIN retencion_concepto_nacional n ON n.id = x.concepto_id
+                 WHERE n.codigo IN ('COMPRAS_GENERALES', 'SERVICIOS_GENERALES')
+                   AND x.vigencia_desde <= c.fecha
+                   AND (x.vigencia_hasta IS NULL OR x.vigencia_hasta >= c.fecha))
+                 AS minima
           FROM compra_documento c
           JOIN tercero t ON t.id = c.tercero_id
-          LEFT JOIN base b ON b.anio = extract(year FROM c.fecha)::int
+          LEFT JOIN uvt u ON u.anio = extract(year FROM c.fecha)::int
          WHERE c.tipo = 'FACTURA' AND c.estado = 'EMITIDA'
+           -- Las que pasaron por el motor tienen su decisión escrita —no
+           -- sujeto, bajo la base, o «sin retención» con motivo— y se respetan.
+           AND (c.retencion_decision IS NULL OR c.retencion_decision = 'MANUAL')
            AND NOT EXISTS (SELECT 1 FROM compra_retencion x WHERE x.compra_documento_id = c.id)
            AND EXISTS (SELECT 1 FROM retenedor r
                         WHERE r.fecha_inicio <= c.fecha
@@ -560,7 +593,7 @@ export class RevisionService {
         subtotal: n(f.subtotal),
       };
       const anio = n(f.anio);
-      if (f.conceptos === null) {
+      if (f.conceptos === null || n(f.conceptos) === 0) {
         const g = sinConceptos.get(anio) ?? {
           anio,
           desde: (f.desde as string).slice(0, 10),

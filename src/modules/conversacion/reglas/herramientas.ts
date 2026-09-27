@@ -76,7 +76,19 @@ export const ROLES_REVISION: readonly RolCodigo[] = [
   'CONSULTA',
 ];
 
+/**
+ * Los de `GET /compras`: quien ve las compras ve lo que se les retuvo, y por
+ * qué (plan motor de retenciones, Fase 1).
+ */
+export const ROLES_RETENCIONES: readonly RolCodigo[] = [
+  'DIRECTOR',
+  'CONTADOR',
+  'COMPRAS',
+  'CONSULTA',
+];
+
 export const SALDOS = 'consultar_saldos';
+export const RETENCIONES = 'consultar_retenciones';
 export const REVISAR = 'revisar_errores';
 export const EXISTENCIAS = 'consultar_existencias';
 export const BUSCAR = 'buscar_valores';
@@ -156,6 +168,30 @@ export function herramientasPara(roles: readonly RolCodigo[]): Herramienta[] {
                 },
               },
               required: ['busqueda'],
+            },
+          },
+        ]
+      : []),
+    ...(puede(roles, ROLES_RETENCIONES)
+      ? [
+          {
+            name: RETENCIONES,
+            description:
+              'Las retenciones que el sistema calculó en las compras —en la fuente (renta) y de IVA (ReteIVA)—, con su explicación completa: concepto y de dónde salió (confirmado por una persona, producto, CIIU o palabras), base, cuantía mínima en UVT, tarifa, norma que la sostiene, y por qué el proveedor es sujeto (guardas). Sirve para «¿por qué le retuviste esto a X?» y para «¿cuánto retuve este mes?» (sumá los valores por concepto). Una fila en negativo es la reversa de una nota crédito. Devuelve hasta 30, las más recientes.',
+            input_schema: {
+              type: 'object',
+              properties: {
+                proveedor: {
+                  type: 'string',
+                  description: 'Parte del nombre del proveedor.',
+                },
+                numero: {
+                  type: 'string',
+                  description: 'Parte del número de la factura del proveedor.',
+                },
+                desde: { type: 'string', description: 'AAAA-MM-DD.' },
+                hasta: { type: 'string', description: 'AAAA-MM-DD.' },
+              },
             },
           },
         ]
@@ -254,11 +290,50 @@ export function etiquetaDeConsulta(nombre: string): string {
   if (nombre === SALDOS) return 'Saldos de caja y bancos';
   if (nombre === EXISTENCIAS) return 'Existencias';
   if (nombre === REVISAR) return 'Revisión de los libros';
+  if (nombre === RETENCIONES) return 'Retenciones';
   if (nombre === BUSCAR) return 'Búsqueda';
   // Las de proponer (paso 7) no son consultas: la burbuja dice que verifica.
   if (nombre === 'proponer_cobro') return 'Verificando el cobro';
   if (nombre === 'proponer_pago') return 'Verificando el pago';
   return 'Consulta';
+}
+
+/**
+ * Las retenciones como las lee el modelo: la frase de la explicación, la
+ * norma, las guardas y la base contra el mínimo. Lo necesario para contestar
+ * como la especificación §12.2, sin ids.
+ */
+export function retencionesParaModelo(
+  filas: readonly Record<string, unknown>[],
+): string {
+  if (filas.length === 0) {
+    return JSON.stringify({
+      aviso:
+        'No hay retenciones calculadas con esos filtros. Las compras anteriores al motor de retenciones no tienen explicación guardada.',
+    });
+  }
+  return JSON.stringify(
+    filas.map((f) => {
+      const e = (f.explicacion ?? {}) as Record<string, unknown>;
+      return {
+        fecha: f.fecha,
+        documento: f.documento,
+        tipoDocumento: f.documento_tipo,
+        proveedor: f.proveedor,
+        concepto: f.concepto,
+        base: Number(f.base),
+        tarifa: `${(Number(f.tarifa_efectiva) * 100).toLocaleString('es-CO', { maximumFractionDigits: 3 })} %`,
+        valor: Number(f.valor),
+        norma: f.norma_aplicada,
+        deDondeSalioElConcepto: f.origen_clasificacion,
+        explicacion: e.texto ?? null,
+        guardas: e.guardas ?? null,
+        cuantiaMinima: e.cuantia_minima ?? null,
+        acumuladoHonorarios: e.acumulado ?? null,
+        zomac: e.zomac ?? null,
+      };
+    }),
+  );
 }
 
 /** Los saldos, como los lee el modelo. */

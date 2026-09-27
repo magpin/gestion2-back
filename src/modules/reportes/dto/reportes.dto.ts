@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsIn, IsOptional } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsUUID } from 'class-validator';
 
 import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
 import {
@@ -92,4 +92,14 @@ export class CorteReporteDto {
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   previa?: boolean;
+}
+
+/**
+ * Certificados de retención: el rango y, si se pide, un solo tercero —el
+ * proveedor que lo pidió— (plan motor de retenciones, Fase 8, §8.5).
+ */
+export class CertificadosReporteDto extends RangoReporteDto {
+  @IsOptional()
+  @IsUUID()
+  terceroId?: string;
 }

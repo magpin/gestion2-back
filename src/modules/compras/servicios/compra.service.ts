@@ -23,7 +23,6 @@ import type {
   DevolverPagoDto,
   ListarComprasDto,
   PagarDto,
-  RetencionCompraDto,
 } from '../dto/compra.dto';
 import {
   calcularDevolucionPago,
@@ -105,6 +104,16 @@ export interface CompraRetencionResumen {
   cuenta_id: string;
   base: string;
   valor: string;
+  /** Desde 0079. Las anteriores quedan con lo que se pudo deducir. */
+  tipo?: 'RENTA' | 'IVA' | 'ICA' | null;
+  concepto_nacional_id?: string | null;
+  tarifa?: string | null;
+  /** La retención calculada por el motor, con su explicación. */
+  retencion_calculada_id?: string | null;
+  /** IVA que asume la empresa (servicios del exterior): no bajó el neto. */
+  asumida?: boolean;
+  /** Solo en ReteICA: dónde se causó. */
+  municipio_codigo?: string | null;
 }
 
 export interface CompraDocumentoDetalle extends CompraDocumentoResumen {
@@ -114,6 +123,19 @@ export interface CompraDocumentoDetalle extends CompraDocumentoResumen {
   notas?: CompraDocumentoResumen[];
   lineas: CompraDocumentoLineaResumen[];
   retenciones: CompraRetencionResumen[];
+  /** Los ajustes de retención por cambio de norma que se anulan con ella. */
+  ajustes_retencion?: Array<{ asiento: string; diferencia: number }>;
+}
+
+/** El AIU que la persona escribió, en su renglón (Fase 8, §8.13). */
+function conAiu<R extends { orden: number }>(
+  renglones: R[],
+  aiu: Array<{ orden: number; aiu: number }> | undefined,
+): Array<R & { aiu?: number }> {
+  return renglones.map((r) => ({
+    ...r,
+    aiu: aiu?.find((a) => a.orden === r.orden)?.aiu,
+  }));
 }
 
 /** Lo que las notas del proveedor le movieron. Ver `AJUSTE_NOTAS` en ventas. */
@@ -138,7 +160,7 @@ const IDENTIFICACION_TERCERO = `(SELECT concat_ws(' ', x.tipo_documento,
 export const CAMPOS_DOCUMENTO = `id, tipo, documento_origen_id,
                            tercero_id, fecha, numero_factura_proveedor, estado,
                            subtotal, total_iva, total, total_retenciones, neto_a_pagar,
-                           monto_pagado, asiento_id,
+                           monto_pagado, asiento_id, retencion_decision, retencion_motivo,
                            (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
                               FROM tercero x WHERE x.id = tercero_id) AS tercero_nombre,
                            ${IDENTIFICACION_TERCERO} AS tercero_identificacion,
@@ -154,7 +176,8 @@ const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cuenta_id, de
                        (SELECT x.codigo FROM empresa_cuenta x WHERE x.id = cuenta_id) AS cuenta_codigo,
                        (SELECT x.nombre FROM empresa_cuenta x WHERE x.id = cuenta_id) AS cuenta_nombre`;
 
-const CAMPOS_RETENCION = `id, compra_documento_id, concepto, cuenta_id, base, valor`;
+const CAMPOS_RETENCION = `id, compra_documento_id, concepto, cuenta_id, base, valor,
+  tipo, concepto_nacional_id, tarifa, retencion_calculada_id, asumida, municipio_codigo`;
 
 /** [BASE], suscrito a rango libre: `libre('2205','05', ...)` en `plan-cuentas.reglas.ts`. */
 const CODIGO_CUENTA_PROVEEDORES = '220505';
@@ -179,16 +202,6 @@ const CODIGO_COMPROBANTE_COMPRA = 'CE';
  * una compra no se debita nunca.
  */
 const CUENTAS_DE_COMPRA = ['5', '6', '7', '14', '15', '16', '17'];
-
-/** El sufijo de `2365{sufijo}` para cada concepto — mismos seis que siembra `plan-cuentas.reglas.ts`. */
-const SUFIJO_CONCEPTO_RETENCION: Record<string, string> = {
-  HONORARIOS: '15',
-  COMISIONES: '20',
-  SERVICIOS: '25',
-  ARRENDAMIENTOS: '30',
-  COMPRAS: '40',
-  OTROS: '70',
-};
 
 /**
  * Registra la factura de compra: el único servicio de `compras` que
@@ -217,6 +230,11 @@ const SUFIJO_CONCEPTO_RETENCION: Record<string, string> = {
  */
 export interface OrigenDeLaCompra {
   documentoLeidoId: string;
+  /**
+   * La retención que el papel trae impresa, cuando María la leyó. Se registra
+   * la calculada; si difiere, la diferencia queda escrita en el motivo.
+   */
+  retencionImpresa?: number | null;
 }
 
 @Injectable()
@@ -266,328 +284,539 @@ export class CompraService {
       );
     }
 
-    const retenciones = dto.retenciones ?? [];
-    const conceptos = retenciones.map((r) => r.concepto);
-    if (new Set(conceptos).size !== conceptos.length) {
-      throw new BadRequestException(
-        'No repitas el mismo concepto de retención dos veces en la misma compra.',
-      );
+    // El camino de antes del motor (retenciones digitadas) ya no existe.
+    if ((dto.retenciones ?? []).length > 0) {
+      throw new BadRequestException(RENTA_NO_SE_MANDA);
     }
 
-    return this.tx.enContexto(ctx, async (t) => {
-      const periodoAbierto = await this.contabilidad.periodoAbiertoEn(
-        ctx,
-        new Date(dto.fecha),
-        t,
-      );
-      if (!periodoAbierto) {
-        throw new BadRequestException(
-          'El período de esta fecha está cerrado. No se puede registrar la compra.',
-        );
-      }
-
-      const proveedor = await this.nucleo.buscarTercero(ctx, dto.terceroId, t);
-      if (proveedor === null || !proveedor.activo) {
-        throw new NotFoundException('Tercero no encontrado o inactivo.');
-      }
-      if (!proveedor.esProveedor) {
-        throw new BadRequestException(
-          'Este tercero no está marcado como proveedor.',
-        );
-      }
-
-      // Dos preguntas distintas (decisión 4 del plan): ¿hay IVA en la
-      // línea? lo decide el PROVEEDOR. ¿ese IVA es descontable? lo decide
-      // nuestra propia condición.
-      const responsableIva = await this.regimenIncluye(ctx, dto.fecha, t, [
-        'RESPONSABLE_IVA',
-      ]);
-
-      const entradas: LineaCompraEntrada[] = [];
-      /** Contra qué cuenta se debita cada línea: la del producto o la del gasto. */
-      const cuentaDebitoDe: string[] = [];
-
-      for (const l of dto.lineas) {
-        // Una línea es un producto o un gasto. Lo único que cambia entre las
-        // dos es de dónde salen la cuenta y la tarifa; el cálculo del valor,
-        // el IVA y el asiento son idénticos.
-        const producto =
-          l.productoId === undefined
-            ? null
-            : await this.productoDeLinea(ctx, l.productoId, t);
-
-        cuentaDebitoDe.push(
-          producto === null
-            ? await this.cuentaDeGasto(ctx, l.cuentaId ?? '', t)
-            : producto.cuenta_inventario_id,
-        );
-
-        entradas.push({
-          cantidad: l.cantidad,
-          costoUnitario: l.costoUnitario,
-          // Tres condiciones y no dos: el proveedor, lo que se compró, y lo
-          // que la factura efectivamente dice. `sinIva` solo baja a cero
-          // —poner IVA donde el proveedor no lo cobró sería inventar un
-          // descontable que nadie pagó—.
-          ivaTarifa:
-            proveedor.responsableIva && l.sinIva !== true
-              ? (producto === null
-                  ? (l.ivaTarifa ?? 0)
-                  : Number(producto.iva_tarifa))
-              : 0,
-          ivaDescontable: responsableIva,
-        });
-      }
-
-      const { lineas, totales } = calcularLineasCompra(entradas);
-
-      const cuentaProveedores = await this.nucleo.cuenta(
-        ctx,
-        CODIGO_CUENTA_PROVEEDORES,
-        t,
-      );
-      if (cuentaProveedores === null) {
-        throw new BadRequestException(
-          `No existe o está inactiva la cuenta de proveedores (${CODIGO_CUENTA_PROVEEDORES}). Actívala en el plan de cuentas.`,
-        );
-      }
-
-      let cuentaIvaId: string | null = null;
-      const totalIvaDescontable = lineas
-        .filter((l) => l.ivaDescontable)
-        .reduce((t2, l) => t2 + l.ivaValor, 0);
-      if (totalIvaDescontable > 0) {
-        const cuentaIva = await this.nucleo.cuenta(
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const periodoAbierto = await this.contabilidad.periodoAbiertoEn(
           ctx,
-          CODIGO_CUENTA_IVA_DESCONTABLE,
+          new Date(dto.fecha),
           t,
         );
-        if (cuentaIva === null) {
+        if (!periodoAbierto) {
           throw new BadRequestException(
-            `No existe o está inactiva la cuenta de IVA descontable (${CODIGO_CUENTA_IVA_DESCONTABLE}). Actívala en el plan de cuentas.`,
+            'El período de esta fecha está cerrado. No se puede registrar la compra.',
           );
         }
-        cuentaIvaId = cuentaIva.id;
-      }
 
-      const retencionesResueltas = await this.resolverRetenciones(
-        ctx,
-        retenciones,
-        totales.total,
-        dto.fecha,
-        proveedor.declaranteRenta,
-        t,
-      );
-      // Sobre lo resuelto y no sobre lo que llegó: con el catálogo, el valor
-      // recién se conoce después de calcularlo.
-      const retenido = totalRetenciones(retencionesResueltas);
-      const neto = netoAPagar(totales.total, retenido);
-
-      // Con el neto ya conocido y antes de asentar: de contado se paga lo que
-      // efectivamente sale, que es el total menos lo que retenemos.
-      const formaPago = validarFormaPago(
-        dto.formaPago,
-        dto.pagos?.map((p) => p.valor),
-        neto,
-      );
-      if (!formaPago.ok) {
-        throw new BadRequestException(formaPago.motivo);
-      }
-      const pagos = (dto.pagos ?? []).map((p, i) => ({
-        ...p,
-        valor: formaPago.valores[i],
-      }));
-
-      const comprobante = await this.contabilidad.tipoComprobantePorCodigo(
-        ctx,
-        CODIGO_COMPROBANTE_COMPRA,
-        t,
-      );
-      if (comprobante === null) {
-        throw new BadRequestException(
-          'La empresa no tiene el comprobante de egreso sembrado.',
+        const proveedor = await this.nucleo.buscarTercero(
+          ctx,
+          dto.terceroId,
+          t,
         );
-      }
+        if (proveedor === null || !proveedor.activo) {
+          throw new NotFoundException('Tercero no encontrado o inactivo.');
+        }
+        if (!proveedor.esProveedor) {
+          throw new BadRequestException(
+            'Este tercero no está marcado como proveedor.',
+          );
+        }
 
-      // El asiento: débito inventario por línea (con el IVA no descontable
-      // ya prorrateado adentro si corresponde), débito IVA descontable si
-      // aplica, crédito retención por concepto si hay, crédito proveedores
-      // por el neto — ver decisión 6 del plan.
-      const lineasAsiento: LineaAsientoDto[] = [];
-      lineas.forEach((l, i) => {
-        lineasAsiento.push({
-          cuentaId: cuentaDebitoDe[i],
-          debito: l.valorKardex,
-          credito: 0,
+        const { lineas, totales, cuentaDebitoDe, renglonesRenta } =
+          await this.prepararLineas(ctx, dto.lineas, proveedor, dto.fecha, t);
+        // El id antes que todo: el motor guarda cada retención contra la compra.
+        const documentoId = randomUUID();
+
+        const cuentaProveedores = await this.nucleo.cuenta(
+          ctx,
+          CODIGO_CUENTA_PROVEEDORES,
+          t,
+        );
+        if (cuentaProveedores === null) {
+          throw new BadRequestException(
+            `No existe o está inactiva la cuenta de proveedores (${CODIGO_CUENTA_PROVEEDORES}). Actívala en el plan de cuentas.`,
+          );
+        }
+
+        let cuentaIvaId: string | null = null;
+        const totalIvaDescontable = lineas
+          .filter((l) => l.ivaDescontable)
+          .reduce((t2, l) => t2 + l.ivaValor, 0);
+        if (totalIvaDescontable > 0) {
+          const cuentaIva = await this.nucleo.cuenta(
+            ctx,
+            CODIGO_CUENTA_IVA_DESCONTABLE,
+            t,
+          );
+          if (cuentaIva === null) {
+            throw new BadRequestException(
+              `No existe o está inactiva la cuenta de IVA descontable (${CODIGO_CUENTA_IVA_DESCONTABLE}). Actívala en el plan de cuentas.`,
+            );
+          }
+          cuentaIvaId = cuentaIva.id;
+        }
+
+        // Renta: la calcula el motor con la ley a la fecha de la compra (plan
+        // motor de retenciones, Fase 1). Lo deducido tiene que venir aceptado; si
+        // no, el motor rechaza. «Sin retención» se acepta solo con motivo.
+        const renta =
+          dto.sinRetencionMotivo !== undefined
+            ? null
+            : await this.retenciones.confirmarRenta(
+                ctx,
+                {
+                  terceroId: dto.terceroId,
+                  fecha: dto.fecha,
+                  zomacEnFactura: dto.zomacEnFactura,
+                  pagadaConTarjeta: dto.pagadaConTarjeta,
+                  municipioCompra: dto.municipioCodigo ?? null,
+                  aportesSeguridadSocial: dto.aportesSeguridadSocial,
+                  renglones: conAiu(renglonesRenta, dto.aiuRenglones),
+                },
+                {
+                  conceptos: dto.conceptosRenta,
+                  convenios: dto.conveniosRenta,
+                },
+                { tipo: 'COMPRA', id: documentoId },
+                t,
+              );
+        const retencionDecision =
+          renta === null ? 'DECIDIDO_SIN' : renta.decision;
+        const rentaCalculada = (renta?.retenciones ?? [])
+          .filter((r) => !r.asumida)
+          .reduce((s, r) => s + r.valor, 0);
+        const impresa = origen?.retencionImpresa ?? null;
+        const retencionMotivo = [
+          renta === null ? dto.sinRetencionMotivo!.trim() : renta.motivo,
+          impresa !== null && Math.abs(impresa - rentaCalculada) >= 1
+            ? `El papel decía ${pesos(impresa)} de retención; por norma corresponden ${pesos(rentaCalculada)} y registré eso.`
+            : null,
+        ]
+          .filter((x) => x !== null)
+          .join(' ');
+
+        const retencionesResueltas: RetencionResuelta[] = [
+          ...(renta?.retenciones ?? []).map((r) => ({
+            tipo: r.impuesto,
+            asumida: r.asumida,
+            renglones: r.renglones,
+            municipio: r.municipio,
+            concepto: r.conceptoCodigo,
+            conceptoNacionalId: r.conceptoNacionalId,
+            cuentaId: r.cuentaId,
+            base: r.base,
+            valor: r.valor,
+            tarifa: r.tarifa / 100,
+            retencionCalculadaId: r.retencionCalculadaId,
+          })),
+        ];
+        // El IVA asumido (servicios del exterior) no se le descuenta al
+        // proveedor: la empresa lo declara y lo descuenta ella.
+        const descontadas = retencionesResueltas.filter((r) => !r.asumida);
+        if (totalRetenciones(descontadas) > totales.total) {
+          throw new BadRequestException(
+            'Lo retenido no puede superar el total de la factura.',
+          );
+        }
+        // Sobre lo resuelto y no sobre lo que llegó: con el catálogo, el valor
+        // recién se conoce después de calcularlo.
+        const retenido = totalRetenciones(descontadas);
+        const neto = netoAPagar(totales.total, retenido);
+
+        // Con el neto ya conocido y antes de asentar: de contado se paga lo que
+        // efectivamente sale, que es el total menos lo que retenemos.
+        const formaPago = validarFormaPago(
+          dto.formaPago,
+          dto.pagos?.map((p) => p.valor),
+          neto,
+        );
+        if (!formaPago.ok) {
+          throw new BadRequestException(formaPago.motivo);
+        }
+        const pagos = (dto.pagos ?? []).map((p, i) => ({
+          ...p,
+          valor: formaPago.valores[i],
+        }));
+
+        const comprobante = await this.contabilidad.tipoComprobantePorCodigo(
+          ctx,
+          CODIGO_COMPROBANTE_COMPRA,
+          t,
+        );
+        if (comprobante === null) {
+          throw new BadRequestException(
+            'La empresa no tiene el comprobante de egreso sembrado.',
+          );
+        }
+
+        // El asiento: débito inventario por línea (con el IVA no descontable
+        // ya prorrateado adentro si corresponde), débito IVA descontable si
+        // aplica, crédito retención por concepto si hay, crédito proveedores
+        // por el neto — ver decisión 6 del plan.
+        const lineasAsiento: LineaAsientoDto[] = [];
+        lineas.forEach((l, i) => {
+          lineasAsiento.push({
+            cuentaId: cuentaDebitoDe[i],
+            debito: l.valorKardex,
+            credito: 0,
+          });
         });
-      });
-      if (cuentaIvaId !== null) {
+        if (cuentaIvaId !== null) {
+          lineasAsiento.push({
+            cuentaId: cuentaIvaId,
+            baseGravable: totales.subtotal,
+            debito: totalIvaDescontable,
+            credito: 0,
+          });
+        }
+        for (const r of retencionesResueltas) {
+          lineasAsiento.push({
+            cuentaId: r.cuentaId,
+            terceroId: dto.terceroId,
+            baseGravable: r.base,
+            debito: 0,
+            credito: r.valor,
+          });
+          // El IVA que asume la empresa: descontable si es responsable de IVA;
+          // si no, es mayor valor de lo que compró.
+          if (r.asumida) {
+            const descontable = await this.regimenIncluye(ctx, dto.fecha, t, [
+              'RESPONSABLE_IVA',
+            ]);
+            const cuenta = descontable
+              ? (cuentaIvaId ??
+                (
+                  await this.nucleo.cuenta(
+                    ctx,
+                    CODIGO_CUENTA_IVA_DESCONTABLE,
+                    t,
+                  )
+                )?.id)
+              : cuentaDebitoDe[(r.renglones?.[0] ?? 1) - 1];
+            if (cuenta === undefined) {
+              throw new BadRequestException(
+                `No existe o está inactiva la cuenta de IVA descontable (${CODIGO_CUENTA_IVA_DESCONTABLE}). Actívala en el plan de cuentas.`,
+              );
+            }
+            lineasAsiento.push({
+              cuentaId: cuenta,
+              ...(descontable ? { baseGravable: r.base } : {}),
+              debito: r.valor,
+              credito: 0,
+            });
+          }
+        }
         lineasAsiento.push({
-          cuentaId: cuentaIvaId,
-          baseGravable: totales.subtotal,
-          debito: totalIvaDescontable,
-          credito: 0,
-        });
-      }
-      for (const r of retencionesResueltas) {
-        lineasAsiento.push({
-          cuentaId: r.cuentaId,
+          cuentaId: cuentaProveedores.id,
           terceroId: dto.terceroId,
-          baseGravable: r.base,
           debito: 0,
-          credito: r.valor,
+          credito: neto,
         });
-      }
-      lineasAsiento.push({
-        cuentaId: cuentaProveedores.id,
-        terceroId: dto.terceroId,
-        debito: 0,
-        credito: neto,
-      });
 
-      const documentoId = randomUUID();
+        const asiento = await this.contabilidad.asentar(
+          ctx,
+          {
+            comprobanteTipoId: comprobante.id,
+            fecha: dto.fecha,
+            glosa: `Factura de compra ${dto.numeroFacturaProveedor}`,
+            lineas: lineasAsiento,
+          },
+          { origenTipo: 'COMPRA', origenId: documentoId },
+          t,
+        );
 
-      const asiento = await this.contabilidad.asentar(
-        ctx,
-        {
-          comprobanteTipoId: comprobante.id,
-          fecha: dto.fecha,
-          glosa: `Factura de compra ${dto.numeroFacturaProveedor}`,
-          lineas: lineasAsiento,
-        },
-        { origenTipo: 'COMPRA', origenId: documentoId },
-        t,
-      );
-
-      const documento = fila<CompraDocumentoResumen>(
-        await t.query(
-          `INSERT INTO compra_documento
+        const documento = fila<CompraDocumentoResumen>(
+          await t.query(
+            `INSERT INTO compra_documento
              (id, empresa_id, tercero_id, fecha, numero_factura_proveedor,
               subtotal, total_iva, total, total_retenciones, neto_a_pagar,
-              asiento_id, creado_por, documento_leido_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+              asiento_id, creado_por, documento_leido_id,
+              retencion_decision, retencion_motivo, retencion_impresa)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
            RETURNING ${CAMPOS_DOCUMENTO}`,
-          [
-            documentoId,
-            ctx.empresaId,
-            dto.terceroId,
-            dto.fecha,
-            dto.numeroFacturaProveedor,
-            totales.subtotal,
-            totales.totalIva,
-            totales.total,
-            retenido,
-            neto,
-            asiento.id,
-            ctx.usuarioId,
-            origen?.documentoLeidoId ?? null,
-          ],
-        ),
-      );
-      if (documento === undefined) {
-        throw new BadRequestException('No se pudo registrar la compra.');
-      }
+            [
+              documentoId,
+              ctx.empresaId,
+              dto.terceroId,
+              dto.fecha,
+              dto.numeroFacturaProveedor,
+              totales.subtotal,
+              totales.totalIva,
+              totales.total,
+              retenido,
+              neto,
+              asiento.id,
+              ctx.usuarioId,
+              origen?.documentoLeidoId ?? null,
+              retencionDecision,
+              retencionMotivo,
+              impresa,
+            ],
+          ),
+        );
+        if (documento === undefined) {
+          throw new BadRequestException('No se pudo registrar la compra.');
+        }
 
-      const lineasInsertadas: CompraDocumentoLineaResumen[] = [];
-      for (let i = 0; i < lineas.length; i++) {
-        const l = lineas[i];
-        const insertada = fila<CompraDocumentoLineaResumen>(
-          await t.query(
-            `INSERT INTO compra_documento_linea
+        const lineasInsertadas: CompraDocumentoLineaResumen[] = [];
+        for (let i = 0; i < lineas.length; i++) {
+          const l = lineas[i];
+          const insertada = fila<CompraDocumentoLineaResumen>(
+            await t.query(
+              `INSERT INTO compra_documento_linea
                (empresa_id, compra_documento_id, orden, producto_id, cuenta_id, detalle,
                 cantidad, costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
              RETURNING ${CAMPOS_LINEA}`,
-            [
-              ctx.empresaId,
-              documento.id,
-              i + 1,
-              dto.lineas[i].productoId ?? null,
-              // La cuenta contra la que se debitó, sea de producto o de gasto:
-              // es la misma que acaba de ir al asiento.
-              cuentaDebitoDe[i],
-              dto.lineas[i].detalle ?? null,
-              l.cantidad,
-              l.costoUnitario,
-              l.ivaTarifa,
-              l.subtotal,
-              l.ivaValor,
-              l.total,
-              l.ivaDescontable,
-            ],
-          ),
-        );
-        if (insertada === undefined) {
-          throw new BadRequestException(
-            'No se pudo registrar una línea de la compra.',
+              [
+                ctx.empresaId,
+                documento.id,
+                i + 1,
+                dto.lineas[i].productoId ?? null,
+                // La cuenta contra la que se debitó, sea de producto o de gasto:
+                // es la misma que acaba de ir al asiento.
+                cuentaDebitoDe[i],
+                dto.lineas[i].detalle ?? null,
+                l.cantidad,
+                l.costoUnitario,
+                l.ivaTarifa,
+                l.subtotal,
+                l.ivaValor,
+                l.total,
+                l.ivaDescontable,
+              ],
+            ),
           );
+          if (insertada === undefined) {
+            throw new BadRequestException(
+              'No se pudo registrar una línea de la compra.',
+            );
+          }
+          lineasInsertadas.push(insertada);
         }
-        lineasInsertadas.push(insertada);
-      }
 
-      const retencionesInsertadas: CompraRetencionResumen[] = [];
-      for (const r of retencionesResueltas) {
-        const insertada = fila<CompraRetencionResumen>(
-          await t.query(
-            `INSERT INTO compra_retencion
-               (empresa_id, compra_documento_id, concepto, cuenta_id, base, valor)
-             VALUES ($1,$2,$3,$4,$5,$6)
+        const retencionesInsertadas: CompraRetencionResumen[] = [];
+        for (const r of retencionesResueltas) {
+          const insertada = fila<CompraRetencionResumen>(
+            await t.query(
+              `INSERT INTO compra_retencion
+               (empresa_id, compra_documento_id, concepto, cuenta_id, base, valor,
+                tipo, concepto_nacional_id, tarifa, retencion_calculada_id, asumida,
+                municipio_codigo)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
              RETURNING ${CAMPOS_RETENCION}`,
-            [
-              ctx.empresaId,
-              documento.id,
-              r.concepto,
-              r.cuentaId,
-              r.base,
-              r.valor,
-            ],
-          ),
-        );
-        if (insertada === undefined) {
-          throw new BadRequestException(
-            'No se pudo registrar una retención de la compra.',
+              [
+                ctx.empresaId,
+                documento.id,
+                r.concepto,
+                r.cuentaId,
+                r.base,
+                r.valor,
+                r.tipo,
+                r.conceptoNacionalId,
+                r.tarifa,
+                r.retencionCalculadaId,
+                r.asumida === true,
+                r.municipio ?? null,
+              ],
+            ),
+          );
+          if (insertada === undefined) {
+            throw new BadRequestException(
+              'No se pudo registrar una retención de la compra.',
+            );
+          }
+          retencionesInsertadas.push(insertada);
+        }
+
+        // Recién ahora se escribe el kardex — el asiento y la compra ya
+        // existen, así que `incrementarPorCompra` los enlaza, no los adivina.
+        for (let i = 0; i < lineas.length; i++) {
+          // Un gasto no entra a la bodega.
+          const productoId = dto.lineas[i].productoId;
+          if (productoId === undefined) continue;
+          await this.inventario.incrementarPorCompra(
+            ctx,
+            productoId,
+            lineas[i].cantidad,
+            lineas[i].costoUnitarioKardex,
+            dto.fecha,
+            `Factura de compra ${dto.numeroFacturaProveedor}`,
+            asiento.id,
+            t,
           );
         }
-        retencionesInsertadas.push(insertada);
-      }
 
-      // Recién ahora se escribe el kardex — el asiento y la compra ya
-      // existen, así que `incrementarPorCompra` los enlaza, no los adivina.
-      for (let i = 0; i < lineas.length; i++) {
-        // Un gasto no entra a la bodega.
-        const productoId = dto.lineas[i].productoId;
-        if (productoId === undefined) continue;
-        await this.inventario.incrementarPorCompra(
-          ctx,
-          productoId,
-          lineas[i].cantidad,
-          lineas[i].costoUnitarioKardex,
-          dto.fecha,
-          `Factura de compra ${dto.numeroFacturaProveedor}`,
-          asiento.id,
-          t,
-        );
-      }
+        // De contado, el pago entra en esta misma transacción y por el mismo
+        // camino que un pago posterior: si la caja no alcanza o está cerrada, la
+        // compra no queda registrada a medias.
+        const resumen =
+          dto.formaPago === 'CONTADO'
+            ? await this.pagarEnTx(
+                ctx,
+                documento.id,
+                { fecha: dto.fecha, pagos },
+                t,
+              )
+            : documento;
 
-      // De contado, el pago entra en esta misma transacción y por el mismo
-      // camino que un pago posterior: si la caja no alcanza o está cerrada, la
-      // compra no queda registrada a medias.
-      const resumen =
-        dto.formaPago === 'CONTADO'
-          ? await this.pagarEnTx(
-              ctx,
-              documento.id,
-              { fecha: dto.fecha, pagos },
-              t,
-            )
-          : documento;
+        return {
+          ...resumen,
+          lineas: lineasInsertadas,
+          retenciones: retencionesInsertadas,
+        };
+      },
+      tx,
+    );
+  }
 
-      return {
-        ...resumen,
-        lineas: lineasInsertadas,
-        retenciones: retencionesInsertadas,
-      };
-    }, tx);
+  /**
+   * La retención de renta que llevaría esta compra, **sin registrar nada**: el
+   * concepto de cada renglón con su certeza, lo que se retiene y por qué, y lo
+   * que falta contestar. Es el mismo cálculo que corre al registrar —la misma
+   * preparación de líneas y el mismo motor—, así que lo que muestra la
+   * pantalla es lo que queda.
+   *
+   * Si ninguna fuente resolvió algún renglón, se le pregunta a la IA (fuente
+   * 5) **fuera de la transacción**, y se vuelve a proponer con lo que dijo.
+   * Solo aquí: al registrar se lee lo que ya quedó guardado.
+   */
+  async simularRenta(
+    ctx: CtxEmpresa,
+    dto: Pick<
+      CrearCompraDto,
+      | 'terceroId'
+      | 'fecha'
+      | 'lineas'
+      | 'conceptosRenta'
+      | 'zomacEnFactura'
+      | 'pagadaConTarjeta'
+      | 'municipioCodigo'
+      | 'aportesSeguridadSocial'
+      | 'aiuRenglones'
+      | 'conveniosRenta'
+    >,
+    tx?: Tx,
+  ) {
+    const calcular = () =>
+      this.tx.enContexto(
+        ctx,
+        async (t) => {
+          const proveedor = await this.nucleo.buscarTercero(
+            ctx,
+            dto.terceroId,
+            t,
+          );
+          if (proveedor === null || !proveedor.activo) {
+            throw new NotFoundException('Tercero no encontrado o inactivo.');
+          }
+          const { renglonesRenta } = await this.prepararLineas(
+            ctx,
+            dto.lineas,
+            proveedor,
+            dto.fecha,
+            t,
+          );
+          const doc = {
+            terceroId: dto.terceroId,
+            fecha: dto.fecha,
+            zomacEnFactura: dto.zomacEnFactura,
+            pagadaConTarjeta: dto.pagadaConTarjeta,
+            municipioCompra: dto.municipioCodigo ?? null,
+            aportesSeguridadSocial: dto.aportesSeguridadSocial,
+            renglones: conAiu(renglonesRenta, dto.aiuRenglones),
+          };
+          const propuesta = await this.retenciones.proponerRenta(
+            ctx,
+            doc,
+            { conceptos: dto.conceptosRenta, convenios: dto.conveniosRenta },
+            t,
+          );
+          return { doc, propuesta };
+        },
+        tx,
+      );
+
+    const primera = await calcular();
+    if (
+      tx !== undefined ||
+      !primera.propuesta.renglones.some((r) => r.pideIa)
+    ) {
+      return primera.propuesta;
+    }
+    const nuevas = await this.retenciones.completarConIa(ctx, primera.doc);
+    return nuevas === 0 ? primera.propuesta : (await calcular()).propuesta;
+  }
+
+  /**
+   * Las líneas calculadas, la cuenta que debita cada una y lo que el motor de
+   * renta necesita para clasificarlas. Una sola vez, para registrar y para
+   * simular: si fueran dos, la pantalla podría mostrar una retención y
+   * registrarse otra.
+   */
+  private async prepararLineas(
+    ctx: CtxEmpresa,
+    lineasDto: CrearCompraDto['lineas'],
+    proveedor: { responsableIva: boolean },
+    fecha: string,
+    t: Tx,
+  ) {
+    // Dos preguntas distintas (decisión 4 del plan): ¿hay IVA en la
+    // línea? lo decide el PROVEEDOR. ¿ese IVA es descontable? lo decide
+    // nuestra propia condición.
+    const responsableIva = await this.regimenIncluye(ctx, fecha, t, [
+      'RESPONSABLE_IVA',
+    ]);
+
+    const entradas: LineaCompraEntrada[] = [];
+    /** Contra qué cuenta se debita cada línea: la del producto o la del gasto. */
+    const cuentaDebitoDe: string[] = [];
+    /** Lo que el motor de renta necesita de cada renglón para clasificarlo. */
+    const pistas: Array<{ texto: string | null; cuentaCodigo: string | null }> =
+      [];
+
+    for (const l of lineasDto) {
+      // Una línea es un producto o un gasto. Lo único que cambia entre las
+      // dos es de dónde salen la cuenta y la tarifa; el cálculo del valor,
+      // el IVA y el asiento son idénticos.
+      const producto =
+        l.productoId === undefined
+          ? null
+          : await this.productoDeLinea(ctx, l.productoId, t);
+
+      const gasto =
+        producto === null
+          ? await this.cuentaDeGastoConCodigo(ctx, l.cuentaId ?? '', t)
+          : null;
+      cuentaDebitoDe.push(gasto?.id ?? producto!.cuenta_inventario_id);
+      pistas.push({
+        texto: producto?.nombre ?? l.detalle ?? null,
+        cuentaCodigo: gasto?.codigo ?? null,
+      });
+
+      entradas.push({
+        cantidad: l.cantidad,
+        costoUnitario: l.costoUnitario,
+        // Tres condiciones y no dos: el proveedor, lo que se compró, y lo
+        // que la factura efectivamente dice. `sinIva` solo baja a cero
+        // —poner IVA donde el proveedor no lo cobró sería inventar un
+        // descontable que nadie pagó—.
+        ivaTarifa:
+          proveedor.responsableIva && l.sinIva !== true
+            ? producto === null
+              ? (l.ivaTarifa ?? 0)
+              : Number(producto.iva_tarifa)
+            : 0,
+        ivaDescontable: responsableIva,
+      });
+    }
+
+    const { lineas, totales } = calcularLineasCompra(entradas);
+    const renglonesRenta = lineas.map((l, i) => ({
+      orden: i + 1,
+      subtotal: l.subtotal,
+      iva: l.ivaValor,
+      municipio: lineasDto[i].municipioCodigo ?? null,
+      productoId: lineasDto[i].productoId ?? null,
+      texto: pistas[i].texto,
+      cuentaCodigo: pistas[i].cuentaCodigo,
+    }));
+    return { lineas, totales, cuentaDebitoDe, renglonesRenta };
   }
 
   /** Las compras, sin sus líneas ni retenciones — para el listado. */
@@ -695,12 +924,18 @@ export class CompraService {
           ),
         );
 
+        // Lo que se anula con ella si se anula (Fase 8, §8.3).
+        const ajustesRetencion = (
+          await this.retenciones.ajustesDeCompra(ctx, id, t)
+        ).map((a) => ({ asiento: a.asiento, diferencia: a.diferencia }));
+
         return {
           ...documento,
           lineas,
           retenciones,
           documento_origen: documentoOrigen,
           notas,
+          ajustes_retencion: ajustesRetencion,
         };
       },
       tx,
@@ -762,7 +997,11 @@ export class CompraService {
             ORDER BY orden`,
           [id],
         ),
-      ) as Array<{ producto_id: string; producto_codigo: string; cantidad: string }>;
+      ) as Array<{
+        producto_id: string;
+        producto_codigo: string;
+        cantidad: string;
+      }>;
       for (const l of lineas) {
         const saldo = await this.inventario.saldoActual(ctx, l.producto_id, t);
         const disponible = Number(saldo?.cantidad ?? 0);
@@ -785,6 +1024,27 @@ export class CompraService {
         `Anulación de la compra ${documento.numero_factura_proveedor}: ${motivo}`,
         t,
       );
+
+      // La retención de la compra también se anula: si no, seguía sumando en
+      // el 350 y en el acumulado de honorarios del proveedor.
+      await this.retenciones.anularRetencionesCompra(
+        ctx,
+        { compraId: id, fecha: hoyEnColombia(), motivo },
+        t,
+      );
+
+      // Un ajuste por cambio de norma asentado sobre esta compra se anula con
+      // ella: su retención ya se reversó arriba, y un asiento suelto dejaría
+      // el 350 descuadrado (Fase 8, §8.3). Si su período está cerrado, la
+      // anulación entera se rechaza con el porqué.
+      for (const a of await this.retenciones.ajustesDeCompra(ctx, id, t)) {
+        await this.contabilidad.anular(
+          ctx,
+          a.asientoId,
+          `Anulación de la compra ${documento.numero_factura_proveedor}: ${motivo}`,
+          t,
+        );
+      }
 
       await t.query(
         `UPDATE compra_documento
@@ -1009,105 +1269,6 @@ export class CompraService {
     });
   }
 
-  /**
-   * Resuelve la cuenta `2365{sufijo}` de cada concepto retenido. Rechaza si
-   * la empresa no es agente de retención de renta, si la cuenta del
-   * concepto no existe, o si lo retenido supera el total de la factura —
-   * un dato roto, no un caso a resolver.
-   */
-  private async resolverRetenciones(
-    ctx: CtxEmpresa,
-    retenciones: RetencionCompraDto[],
-    total: number,
-    fecha: string,
-    /** Del proveedor: decide la tarifa en los conceptos que tienen dos. */
-    proveedorDeclarante: boolean,
-    t: Tx,
-  ): Promise<
-    Array<{ concepto: string; cuentaId: string; base: number; valor: number }>
-  > {
-    if (retenciones.length === 0) return [];
-
-    const esAgenteRetenedor = await this.regimenIncluye(ctx, fecha, t, [
-      'AGENTE_RETENEDOR_RENTA',
-      'AUTORRETENEDOR_RENTA',
-      'GRAN_CONTRIBUYENTE',
-    ]);
-    if (!esAgenteRetenedor) {
-      throw new BadRequestException(
-        'La empresa no es agente de retención en la fuente: no se puede practicar ninguna retención.',
-      );
-    }
-
-    const resueltas: Array<{
-      concepto: string;
-      cuentaId: string;
-      base: number;
-      valor: number;
-    }> = [];
-
-    for (const r of retenciones) {
-      // Con `conceptoId` manda el catálogo: el valor lo calcula el sistema con
-      // la tarifa y la base mínima del año del documento, y lo que el cliente
-      // haya mandado se ignora. El agente retenedor responde ante la DIAN por
-      // lo que DEBIÓ retener, no por lo que alguien escribió.
-      if (r.conceptoId !== undefined) {
-        const calculada = await this.retenciones.calcular(
-          ctx,
-          {
-            conceptoId: r.conceptoId,
-            base: r.base,
-            fecha,
-            declaranteRenta: proveedorDeclarante,
-          },
-          t,
-        );
-        // `null` no es un error: la base no llegó al mínimo en UVT y por eso
-        // no corresponde retener. Se omite y la compra sigue.
-        if (calculada === null) continue;
-        resueltas.push({
-          concepto: calculada.concepto,
-          cuentaId: calculada.cuentaId,
-          base: calculada.base,
-          valor: calculada.valor,
-        });
-        continue;
-      }
-
-      // El camino viejo: concepto de las seis constantes y valor digitado.
-      if (r.concepto === undefined || r.valor === undefined) {
-        throw new BadRequestException(
-          'Una retención necesita el concepto del catálogo, o el concepto viejo con su valor.',
-        );
-      }
-      const sufijo = SUFIJO_CONCEPTO_RETENCION[r.concepto];
-      const codigo = `2365${sufijo}`;
-      const cuenta = await this.nucleo.cuenta(ctx, codigo, t);
-      if (cuenta === null) {
-        throw new BadRequestException(
-          `No existe o está inactiva la cuenta de retención por ${r.concepto.toLowerCase()} (${codigo}). Actívala en el plan de cuentas.`,
-        );
-      }
-      resueltas.push({
-        concepto: r.concepto,
-        cuentaId: cuenta.id,
-        base: r.base,
-        valor: r.valor,
-      });
-    }
-
-    // Se verifica al final y sobre lo resuelto, no sobre lo que llegó: con el
-    // catálogo, el valor recién se conoce acá.
-    const sumaRetenida = totalRetenciones(resueltas);
-    if (sumaRetenida > total) {
-      throw new BadRequestException(
-        'Lo retenido no puede superar el total de la factura.',
-      );
-    }
-
-    return resueltas;
-  }
-
   /** El producto de una línea, activo. Lo reusan las notas. */
   async productoDeLinea(ctx: CtxEmpresa, id: string, t: Tx) {
     const producto = await this.inventario.producto(ctx, id, t);
@@ -1132,11 +1293,16 @@ export class CompraService {
    *   arriendo a la cuenta de un banco o a la de un cliente no es un error de
    *   tipeo: es un asiento que cuadra y miente.
    */
-  async cuentaDeGasto(
+  async cuentaDeGasto(ctx: CtxEmpresa, id: string, t: Tx): Promise<string> {
+    return (await this.cuentaDeGastoConCodigo(ctx, id, t)).id;
+  }
+
+  /** Igual que `cuentaDeGasto`, con el código: le dice al motor qué se compró. */
+  async cuentaDeGastoConCodigo(
     ctx: CtxEmpresa,
     id: string,
     t: Tx,
-  ): Promise<string> {
+  ): Promise<{ id: string; codigo: string }> {
     const cuenta = await this.nucleo.cuentaPorId(ctx, id, t);
     if (cuenta === null || !cuenta.activa) {
       throw new BadRequestException(
@@ -1154,7 +1320,7 @@ export class CompraService {
           'Una línea de compra se debita contra una de esas.',
       );
     }
-    return cuenta.id;
+    return { id: cuenta.id, codigo: cuenta.codigo };
   }
 
   /** Si alguna de las condiciones vigentes a la fecha está en la lista dada. */
@@ -1168,3 +1334,29 @@ export class CompraService {
     return vigentes.some((v) => condiciones.includes(v));
   }
 }
+
+type TipoRetencion = 'RENTA' | 'IVA' | 'ICA';
+
+const pesos = (n: number) => `${Math.round(n).toLocaleString('es-CO')}`;
+
+/** Una retención lista para el asiento y para `compra_retencion`. */
+interface RetencionResuelta {
+  tipo: TipoRetencion;
+  /** IVA que asume la empresa (servicios del exterior): no baja el neto. */
+  asumida?: boolean;
+  /** Los renglones de la compra que forman la base. */
+  renglones?: number[];
+  /** Solo en ReteICA: dónde se causó. */
+  municipio?: string | null;
+  concepto: string;
+  conceptoNacionalId: string | null;
+  cuentaId: string;
+  base: number;
+  valor: number;
+  /** Fracción: 0.025. */
+  tarifa: number;
+  retencionCalculadaId: string | null;
+}
+
+const RENTA_NO_SE_MANDA =
+  'Las retenciones —en la fuente, de IVA y de ICA— las calcula el sistema con la ley a la fecha de la compra: no se mandan. Contestá el concepto de cada renglón, o registrala sin retención con el motivo.';

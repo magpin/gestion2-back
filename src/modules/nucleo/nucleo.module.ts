@@ -4,6 +4,7 @@ import { ContabilidadModule } from '../contabilidad/contabilidad.module';
 import { AuthController } from './controladores/auth.controller';
 import { CatalogosController } from './controladores/catalogos.controller';
 import { EmpresaLegalController } from './controladores/empresa-legal.controller';
+import { ImpuestosController } from './controladores/impuestos.controller';
 import { EmpresasController } from './controladores/empresas.controller';
 import { GeografiaController } from './controladores/geografia.controller';
 import { PlanCuentasController } from './controladores/plan-cuentas.controller';
@@ -16,6 +17,7 @@ import { NucleoApi } from './nucleo.api';
 import { AutenticacionService } from './servicios/autenticacion.service';
 import { CatalogoService } from './servicios/catalogo.service';
 import { EmpresaLegalService } from './servicios/empresa-legal.service';
+import { ImpuestosEmpresaService } from './servicios/impuestos-empresa.service';
 import { EmpresaService } from './servicios/empresa.service';
 import { EstadoConfiguracionService } from './servicios/estado-configuracion.service';
 import { GeografiaService } from './servicios/geografia.service';
@@ -43,6 +45,7 @@ import { UsuarioService } from './servicios/usuario.service';
     TenantsController,
     EmpresasController,
     EmpresaLegalController,
+    ImpuestosController,
     ResolucionesController,
     UsuariosController,
     TercerosController,
@@ -54,6 +57,7 @@ import { UsuarioService } from './servicios/usuario.service';
     AutenticacionService,
     EmpresaService,
     EmpresaLegalService,
+    ImpuestosEmpresaService,
     EstadoConfiguracionService,
     ResolucionService,
     UsuarioService,

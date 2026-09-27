@@ -108,6 +108,23 @@ export class ComprasApi {
    * escriba junto con la compra —lo que María aprendió de la factura— entra o
    * no entra con ella.
    */
+  /** La retención de renta que llevaría una compra, sin registrarla. */
+  simularRenta(
+    ctx: CtxEmpresa,
+    dto: Pick<
+      CrearCompraDto,
+      | 'terceroId'
+      | 'fecha'
+      | 'lineas'
+      | 'conceptosRenta'
+      | 'zomacEnFactura'
+      | 'pagadaConTarjeta'
+      | 'municipioCodigo'
+    >,
+  ) {
+    return this.compras.simularRenta(ctx, dto);
+  }
+
   async registrar(
     ctx: CtxEmpresa,
     dto: CrearCompraDto,

@@ -11,9 +11,7 @@ import { leerSql } from '../leer-sql';
  *
  * El DDL vive en `db/migrations/0032_tesoreria_prerrequisitos.sql`.
  */
-export class TesoreriaPrerrequisitos1787000032000
-  implements MigrationInterface
-{
+export class TesoreriaPrerrequisitos1787000032000 implements MigrationInterface {
   name = 'TesoreriaPrerrequisitos1787000032000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

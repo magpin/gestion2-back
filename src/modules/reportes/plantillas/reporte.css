@@ -598,3 +598,56 @@ body {
 .barras--cartera .monto {
   font-weight: 600;
 }
+
+/* ── Retenciones: 350, ReteICA y certificados ────────────────────────────── */
+
+/* El 350: renglón, casillas y las cuatro cifras de jurídicas y naturales. Los
+   renglones que no distinguen persona usan solo las dos últimas columnas. */
+.detalle--350 .fila {
+  grid-template-columns: 1fr 70px 104px 96px 104px 96px;
+}
+
+.detalle--350 .vacio {
+  color: var(--texto-apagado);
+}
+
+/* ReteICA: tercero, documento, base, tarifas y retenido. */
+.detalle--ica .fila {
+  grid-template-columns: 1fr 110px 110px 90px 100px;
+}
+
+/* El cuadre con el libro: documento, motor, libro, diferencia y la razón. */
+.detalle--cuadre .fila {
+  grid-template-columns: 110px 96px 96px 96px 1fr;
+}
+
+.detalle--certificado .fila {
+  grid-template-columns: 1fr 90px 120px 110px;
+}
+
+.aviso-hoja {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--aviso);
+  background: var(--n-50);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+.certificado .partes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 12px 0 16px;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.certificado .partes .rotulo {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--texto-apagado);
+}

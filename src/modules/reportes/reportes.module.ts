@@ -4,6 +4,7 @@ import { ContabilidadModule } from '../contabilidad/contabilidad.module';
 import { ArmadorController } from './controladores/armador.controller';
 import { ReportesController } from './controladores/reportes.controller';
 import { CarteraReporteService } from './servicios/cartera-reporte.service';
+import { RetencionesReporteService } from './servicios/retenciones-reporte.service';
 import { CorridaService } from './servicios/corrida.service';
 import { ExcelService } from './servicios/excel.service';
 import { FechasReporteService } from './servicios/fechas.service';
@@ -43,6 +44,7 @@ import { VentasReporteService } from './servicios/ventas-reporte.service';
     PlantillaService,
     VentasReporteService,
     CarteraReporteService,
+    RetencionesReporteService,
     CorridaService,
     ExcelService,
     FechasReporteService,

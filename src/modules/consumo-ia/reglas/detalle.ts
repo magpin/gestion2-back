@@ -48,6 +48,7 @@ const TIPO_DOCUMENTO: Record<string, string> = {
   RUT: 'RUT',
   CAMARA_COMERCIO: 'Cámara de Comercio',
   RESOLUCION_DIAN: 'Resolución DIAN',
+  CONCEPTO_RETENCION: 'Concepto de retención',
 };
 
 /** Una respuesta del chat con lo que usó: los nombres de las herramientas, en orden. */

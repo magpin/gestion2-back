@@ -133,12 +133,14 @@ export function aceptaRazonamiento(modelo: string): boolean {
 export const MODELO_POR_DEFECTO: ModeloPermitido = 'claude-opus-5';
 
 /** Para qué se usa el modelo. Cada uso se elige por separado en el entorno. */
-export type UsoDelModelo = 'CONVERSACION' | 'LECTURA' | 'FACTURAS';
+export type UsoDelModelo =
+  'CONVERSACION' | 'LECTURA' | 'FACTURAS' | 'RETENCIONES';
 
 const VARIABLE: Record<UsoDelModelo, string> = {
   CONVERSACION: 'MODELO_CONVERSACION',
   LECTURA: 'MODELO_LECTURA',
   FACTURAS: 'MODELO_FACTURAS',
+  RETENCIONES: 'MODELO_RETENCIONES',
 };
 
 /**

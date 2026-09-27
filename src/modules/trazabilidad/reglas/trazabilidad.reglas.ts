@@ -55,6 +55,17 @@ export interface FuentesDelAsiento {
     creadoEn: string;
     creadoPor: Persona;
   };
+  /**
+   * La retención en la fuente que el motor decidió al registrar la compra
+   * (plan motor de retenciones, Fase 1): qué calculó, con qué norma, y si el
+   * concepto ya estaba recordado para el proveedor.
+   */
+  retencion?: {
+    decision: string;
+    motivo: string | null;
+    proveedor: string;
+    calculadas: Array<{ texto: string; norma: string; origen: string }>;
+  };
 }
 
 export type ClavePaso =
@@ -64,6 +75,7 @@ export type ClavePaso =
   | 'PROPUESTO'
   | 'APROBADO'
   | 'REGISTRADO'
+  | 'RETENCION'
   | 'CONTABILIZADO'
   | 'ANULADO';
 
@@ -159,7 +171,7 @@ const NOMBRE_DOCUMENTO: Record<string, string> = {
  */
 export function pasosDelAsiento(f: FuentesDelAsiento): Paso[] {
   const pasos: Paso[] = [];
-  const { asiento, documento, propuesta, registro } = f;
+  const { asiento, documento, propuesta, registro, retencion } = f;
 
   if (documento !== undefined) {
     // La extensión la puso el servidor al firmar la subida, según el tipo que
@@ -285,6 +297,43 @@ export function pasosDelAsiento(f: FuentesDelAsiento): Paso[] {
           ? `Registró ${registro.nombre}.`
           : `Emitió ${registro.nombre}.`,
   });
+
+  if (retencion !== undefined && registro !== undefined) {
+    const recordado = retencion.calculadas.some(
+      (c) => c.origen === 'CONFIRMADO',
+    );
+    pasos.push({
+      clave: 'RETENCION',
+      cuando: registro.creadoEn,
+      deMaria: true,
+      persona: null,
+      titulo:
+        retencion.calculadas.length > 0
+          ? 'Retención calculada'
+          : 'Sin retención en la fuente',
+      detalle:
+        retencion.calculadas.length > 0
+          ? [
+              retencion.calculadas
+                .map(
+                  (c) =>
+                    `${c.texto.replace(/^Retención en la fuente · /, '').replace(/\.$/, '')} — ${c.norma}`,
+                )
+                .join('; '),
+              recordado
+                ? `concepto recordado para ${retencion.proveedor}`
+                : null,
+            ]
+              .filter((x) => x !== null)
+              .join('; ') + '.'
+          : (retencion.motivo ?? 'No correspondía retener.'),
+      // «Sin retención» por decisión de una persona: lo que un auditor
+      // querría ver, aunque no sea un error.
+      ...(retencion.decision === 'DECIDIDO_SIN'
+        ? { aviso: true as const }
+        : {}),
+    });
+  }
 
   pasos.push({
     clave: 'CONTABILIZADO',

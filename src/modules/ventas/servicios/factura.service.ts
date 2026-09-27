@@ -370,9 +370,38 @@ export class FacturaService {
       dto.retenciones ?? [],
       dto.fecha,
       totales.total,
+      totales.totalIva,
       t,
     );
     const totalRetenido = retenciones.reduce((acc, r) => acc + r.valor, 0);
+
+    // Se genera el id ANTES de asentar: el asiento necesita `origenId`
+    // apuntando a esta factura, y la factura todavía no existe como fila
+    // — mismo patrón que `KardexService.asentarAjuste` con su movimiento.
+    const documentoId = randomUUID();
+
+    // Las autorretenciones (especial y venta al SIMPLE) y el aviso si lo que
+    // el cliente dice que retuvo no cuadra con la norma (motor, Fase 4). No
+    // tocan lo que se cobra: la autorretención la paga la empresa.
+    const motor = await this.retenciones.confirmarVenta(
+      ctx,
+      {
+        documentoId,
+        terceroId: dto.terceroId,
+        fecha: dto.fecha,
+        subtotal: totales.subtotal,
+        iva: totales.totalIva,
+        registradas: {
+          renta: retenciones
+            .filter((r) => r.tipo === 'RENTA')
+            .reduce((s, r) => s + r.valor, 0),
+          iva: retenciones
+            .filter((r) => r.tipo === 'IVA')
+            .reduce((s, r) => s + r.valor, 0),
+        },
+      },
+      t,
+    );
 
     // La forma de pago se valida acá, con lo retenido ya calculado y antes de
     // asentar: de contado se cobra lo que el cliente efectivamente paga, que
@@ -431,6 +460,7 @@ export class FacturaService {
         credito: totales.totalIva,
       });
     }
+    lineasAsiento.push(...motor.lineasAsiento);
     lineas.forEach((_l, i) => {
       lineasAsiento.push({
         cuentaId: cuentaCostoDe[i],
@@ -443,11 +473,6 @@ export class FacturaService {
         credito: costeos[i].valorTotal,
       });
     });
-
-    // Se genera el id ANTES de asentar: el asiento necesita `origenId`
-    // apuntando a esta factura, y la factura todavía no existe como fila
-    // — mismo patrón que `KardexService.asentarAjuste` con su movimiento.
-    const documentoId = randomUUID();
 
     const asiento = await this.contabilidad.asentar(
       ctx,
@@ -466,8 +491,8 @@ export class FacturaService {
         `INSERT INTO venta_documento
              (id, empresa_id, tipo, tercero_id, fecha, prefijo, consecutivo,
               resolucion_id, documento_origen_id, subtotal, total_iva, total,
-              asiento_id, creado_por, documento_leido_id)
-           VALUES ($1, $2, 'FACTURA', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+              asiento_id, creado_por, documento_leido_id, retencion_aviso)
+           VALUES ($1, $2, 'FACTURA', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
            RETURNING ${CAMPOS_DOCUMENTO}`,
         [
           documentoId,
@@ -484,6 +509,7 @@ export class FacturaService {
           asiento.id,
           ctx.usuarioId,
           origen?.documentoLeidoId ?? null,
+          motor.aviso,
         ],
       ),
     );
@@ -617,6 +643,8 @@ export class FacturaService {
     retenciones: RetencionVentaDto[],
     fecha: string,
     total: number,
+    /** El IVA de la factura: la base del ReteIVA que nos practican. */
+    ivaFactura: number,
     t: Tx,
   ): Promise<
     Array<{
@@ -642,6 +670,8 @@ export class FacturaService {
           // declaramos renta, no de él. Una empresa que factura declara: si
           // algún día hace falta el caso contrario, sale de la configuración.
           declaranteRenta: true,
+          ivaDocumento: ivaFactura,
+          lado: 'NOS_RETIENEN',
         },
         t,
       );

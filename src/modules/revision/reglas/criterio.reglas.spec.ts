@@ -1,5 +1,6 @@
 import {
   comprasParecidas,
+  comprasRetencionDistinta,
   comprasSinRetencion,
   gastosAInventario,
   gastosEnCuentaDistinta,
@@ -278,5 +279,31 @@ describe('comprasParecidas', () => {
         [],
       ),
     ).toEqual([]);
+  });
+});
+
+describe('comprasRetencionDistinta (Fase 8, §8.6)', () => {
+  const fila = (impresa: number, registrada: number) => ({
+    compraId: 'c-1',
+    numero: 'FV-9',
+    proveedor: 'Aseo Total SAS',
+    fecha: '2026-09-10',
+    impresa,
+    registrada,
+  });
+
+  it('avisa cuando el proveedor calculó distinto de la norma', () => {
+    const [h] = comprasRetencionDistinta([fila(40_000, 24_000)]);
+    esCriterio(h);
+    expect(h.tipo).toBe('COMPRA_RETENCION_DISTINTA');
+    expect(h.detalle).toContain('$ 40.000');
+    expect(h.detalle).toContain('$ 24.000');
+    expect(h.detalle).toContain('menos plata');
+  });
+
+  it('no cuenta el redondeo: menos de $1.000 o del 1 %', () => {
+    expect(comprasRetencionDistinta([fila(25_000, 24_500)])).toEqual([]);
+    expect(comprasRetencionDistinta([fila(2_000_000, 1_990_000)])).toEqual([]);
+    expect(comprasRetencionDistinta([fila(24_000, 24_000)])).toEqual([]);
   });
 });

@@ -11,6 +11,7 @@ import type { DataSource } from 'typeorm';
 
 import { PasswordService } from '../../../common/cripto/password.service';
 import { DATA_SOURCE_PROVISION } from '../../../common/db/db.module';
+import { fila } from '../../../common/db/filas';
 import { TxService } from '../../../common/db/tx.service';
 import type { CtxPlataforma } from '../../../common/ctx';
 import type { AnuncioDto, PausarIaDto } from '../dto/cobros.dto';
@@ -257,10 +258,12 @@ export class SistemaService {
 
   async retirar(admin: CtxPlataforma, id: string) {
     return this.conexion().transaction(async (t) => {
-      const [n] = await t.query<Array<{ titulo: string }>>(
-        `UPDATE anuncio SET retirado_en = now() WHERE id = $1 AND retirado_en IS NULL
-         RETURNING titulo`,
-        [id],
+      const n = fila<{ titulo: string }>(
+        await t.query(
+          `UPDATE anuncio SET retirado_en = now() WHERE id = $1 AND retirado_en IS NULL
+           RETURNING titulo`,
+          [id],
+        ),
       );
       if (n === undefined)
         throw new NotFoundException('Ese anuncio ya no está publicado.');

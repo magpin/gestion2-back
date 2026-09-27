@@ -8,6 +8,7 @@ import { TxService, type Tx } from '../../../common/db/tx.service';
 import type { LineaAsientoDto } from '../../contabilidad/dto/asiento.dto';
 import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import { NucleoApi } from '../../nucleo/nucleo.api';
+import { RetencionesApi } from '../../retenciones/retenciones.api';
 import type { CrearNotaCreditoDto } from '../dto/nota-credito.dto';
 import { calcularDevolucionPorLinea, calcularLinea } from './venta.reglas';
 import {
@@ -55,6 +56,7 @@ export class NotaCreditoService {
     private readonly nucleo: NucleoApi,
     private readonly contabilidad: ContabilidadApi,
     private readonly ventas: VentaDocumentoService,
+    private readonly retenciones: RetencionesApi,
   ) {}
 
   async crear(
@@ -182,7 +184,24 @@ export class NotaCreditoService {
         credito: total,
       });
 
+      // Lo que la nota devuelve de la venta baja también su autorretención,
+      // en la misma proporción: si no, la 236575 y el 350 seguían con ella.
       const documentoId = randomUUID();
+      const subtotalFactura = Number(factura.subtotal);
+      if (subtotalFactura > 0) {
+        lineasAsiento.push(
+          ...(await this.retenciones.reversarAutorretencionPorNota(
+            ctx,
+            {
+              ventaId: factura.id,
+              notaId: documentoId,
+              proporcion: Math.min(subtotal / subtotalFactura, 1),
+              fecha: dto.fecha,
+            },
+            t,
+          )),
+        );
+      }
       const numeroFactura = `${factura.prefijo ?? ''}${factura.consecutivo}`;
       const asiento = await this.contabilidad.asentar(
         ctx,

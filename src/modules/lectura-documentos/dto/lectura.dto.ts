@@ -143,6 +143,34 @@ export class RegistrarCompraLeidaDto {
   @IsOptional()
   @IsIn(['CREDITO', 'CONTADO'])
   formaPago?: 'CREDITO' | 'CONTADO';
+
+  /** El concepto de renta de los renglones que lo necesitaban, por su orden. */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ConceptoRentaLeidoDto)
+  conceptosRenta?: ConceptoRentaLeidoDto[];
+
+  /** «Sin retención», con el porqué. */
+  @IsOptional()
+  @IsString()
+  @Length(5, 300)
+  sinRetencionMotivo?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  zomacEnFactura?: boolean;
+}
+
+/** El concepto de retención de renta de un renglón del papel. */
+export class ConceptoRentaLeidoDto {
+  @IsInt()
+  @Min(1)
+  orden!: number;
+
+  @IsString()
+  @Length(2, 40)
+  conceptoCodigo!: string;
 }
 
 /** Un archivo del lote: dónde quedó en el bucket y cómo se llamaba. */

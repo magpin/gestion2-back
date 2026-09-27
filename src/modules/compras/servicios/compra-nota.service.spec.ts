@@ -138,7 +138,9 @@ function comprasFalso(compra: CompraDocumentoDetalle = compraVigente) {
     // ayudantes que la compra: una sola regla para los dos caminos.
     productoDeLinea: jest.fn((_ctx: unknown, id: string) =>
       Promise.resolve(
-        id === 'p-1' ? { ...productoFlete, id: 'p-1', codigo: 'P-1' } : productoFlete,
+        id === 'p-1'
+          ? { ...productoFlete, id: 'p-1', codigo: 'P-1' }
+          : productoFlete,
       ),
     ),
     cuentaDeGasto: jest.fn((_ctx: unknown, id: string) => Promise.resolve(id)),
@@ -180,6 +182,7 @@ describe('CompraNotaService.crearNotaCredito', () => {
       inventarioFalso(),
       contabilidad,
       comprasFalso(),
+      { reversarRenta: jest.fn(() => Promise.resolve(new Map())) } as never,
     );
 
     // Se devuelven 2 de las 10: subtotal 200.000, IVA 38.000, total 238.000.
@@ -232,6 +235,7 @@ describe('CompraNotaService.crearNotaCredito', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       comprasFalso(),
+      { reversarRenta: jest.fn(() => Promise.resolve(new Map())) } as never,
     );
 
     await servicio.crearNotaCredito(ctx, {
@@ -259,6 +263,7 @@ describe('CompraNotaService.crearNotaCredito', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       comprasFalso(),
+      { reversarRenta: jest.fn(() => Promise.resolve(new Map())) } as never,
     );
 
     await expect(
@@ -280,6 +285,7 @@ describe('CompraNotaService.crearNotaCredito', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       comprasFalso({ ...compraVigente, tipo: 'NOTA_CREDITO' }),
+      { reversarRenta: jest.fn(() => Promise.resolve(new Map())) } as never,
     );
 
     await expect(
@@ -300,6 +306,7 @@ describe('CompraNotaService.crearNotaCredito', () => {
       inventarioFalso(),
       contabilidadFalso(false).fake,
       comprasFalso(),
+      { reversarRenta: jest.fn(() => Promise.resolve(new Map())) } as never,
     );
 
     await expect(
@@ -314,6 +321,41 @@ describe('CompraNotaService.crearNotaCredito', () => {
 });
 
 describe('CompraNotaService.crearNotaDebito', () => {
+  /** El motor de renta: lo que retenga (Fase 8, §8.7). */
+  const motorRenta = (
+    retenciones: Array<{ valor: number; base: number; cuentaId: string }> = [],
+  ) => {
+    const confirmarRenta = jest.fn(() =>
+      Promise.resolve({
+        decision: retenciones.length > 0 ? 'CALCULADA' : 'NO_SUJETO',
+        motivo: '',
+        retenciones: retenciones.map((r, i) => ({
+          impuesto: 'RENTA',
+          municipio: null,
+          asumida: false,
+          conceptoCodigo: 'SERVICIOS_GENERALES',
+          conceptoNacionalId: 'n-servicios',
+          nombre: 'Servicios generales',
+          renglones: [1],
+          base: r.base,
+          tarifa: 4,
+          valor: r.valor,
+          cuentaId: r.cuentaId,
+          texto: '',
+          explicacion: {},
+          retencionCalculadaId: `rc-${i}`,
+        })),
+      }),
+    );
+    return {
+      fake: {
+        confirmarRenta,
+        reversarRenta: jest.fn(() => Promise.resolve(new Map())),
+      } as never,
+      confirmarRenta,
+    };
+  };
+
   it('va en el mismo sentido que la compra: débito lo que entra, crédito lo que se debe', async () => {
     const { tx } = txFalso();
     const { fake: contabilidad, asentar } = contabilidadFalso();
@@ -323,6 +365,7 @@ describe('CompraNotaService.crearNotaDebito', () => {
       inventarioFalso(productoFlete),
       contabilidad,
       comprasFalso(),
+      motorRenta().fake,
     );
 
     await servicio.crearNotaDebito(ctx, {
@@ -357,6 +400,80 @@ describe('CompraNotaService.crearNotaDebito', () => {
     expect(totalDebito).toBe(totalCredito);
   });
 
+  it('lo que cobra de más lleva retención, como la compra', async () => {
+    const { tx } = txFalso();
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+    const motor = motorRenta([
+      { base: 80000, valor: 3200, cuentaId: 'cta-rete-servicios' },
+    ]);
+    const servicio = new CompraNotaService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      inventarioFalso(productoFlete),
+      contabilidad,
+      comprasFalso(),
+      motor.fake,
+    );
+
+    await servicio.crearNotaDebito(ctx, {
+      documentoOrigenId: 'c-1',
+      fecha: '2026-09-12',
+      numeroNotaProveedor: 'NDP-4',
+      motivo: 'Flete que el proveedor cobró aparte',
+      lineas: [{ productoId: 'p-flete', cantidad: 1, costoUnitario: 80000 }],
+    });
+
+    expect(motor.confirmarRenta).toHaveBeenCalledWith(
+      ctx,
+      expect.objectContaining({ terceroId: 'prov-1', fecha: '2026-09-12' }),
+      { conceptos: undefined },
+      { tipo: 'NOTA_DEBITO_COMPRA', id: expect.any(String) as unknown },
+      tx,
+    );
+    const [, dtoAsiento] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      { lineas: Array<{ cuentaId: string; debito: number; credito: number }> },
+    ];
+    expect(dtoAsiento.lineas).toContainEqual({
+      cuentaId: 'cta-rete-servicios',
+      terceroId: 'prov-1',
+      baseGravable: 80000,
+      debito: 0,
+      credito: 3200,
+    });
+    // Al proveedor se le debe el total menos lo retenido.
+    expect(dtoAsiento.lineas).toContainEqual({
+      cuentaId: 'cta-proveedores',
+      terceroId: 'prov-1',
+      debito: 0,
+      credito: 92000,
+    });
+  });
+
+  it('«sin retención» con motivo no pasa por el motor', async () => {
+    const { tx } = txFalso();
+    const motor = motorRenta();
+    const servicio = new CompraNotaService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      inventarioFalso(productoFlete),
+      contabilidadFalso().fake,
+      comprasFalso(),
+      motor.fake,
+    );
+
+    await servicio.crearNotaDebito(ctx, {
+      documentoOrigenId: 'c-1',
+      fecha: '2026-09-12',
+      numeroNotaProveedor: 'NDP-5',
+      motivo: 'Flete que el proveedor cobró aparte',
+      lineas: [{ productoId: 'p-flete', cantidad: 1, costoUnitario: 80000 }],
+      sinRetencionMotivo: 'El proveedor es autorretenedor',
+    });
+
+    expect(motor.confirmarRenta).not.toHaveBeenCalled();
+  });
+
   it('rechaza el mismo producto en dos líneas', async () => {
     const { tx } = txFalso();
     const servicio = new CompraNotaService(
@@ -365,6 +482,7 @@ describe('CompraNotaService.crearNotaDebito', () => {
       inventarioFalso(productoFlete),
       contabilidadFalso().fake,
       comprasFalso(),
+      motorRenta().fake,
     );
 
     await expect(

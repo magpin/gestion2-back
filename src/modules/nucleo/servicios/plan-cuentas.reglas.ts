@@ -519,8 +519,8 @@ function bloqueImpuestos(
       hecho: 'REGIMEN_TRIBUTARIO',
       etiqueta: 'Condición tributaria',
       impide:
-        'No se puede proponer ninguna cuenta de impuestos: IVA, retención en la fuente, reteIVA ni ICA. Cargá la casilla 53 del RUT o la condición tributaria.',
-      paso: 'SITUACION_LEGAL',
+        'No se puede proponer ninguna cuenta de impuestos: IVA, retención en la fuente, reteIVA ni ICA. Contestá el paso Impuestos.',
+      paso: 'IMPUESTOS',
     });
     return { cuentas, faltantes };
   }
@@ -545,7 +545,7 @@ function bloqueImpuestos(
       hecho: 'CONDICION_CONTRADICTORIA',
       etiqueta: 'Condiciones tributarias que se contradicen',
       impide: `La empresa figura a la vez como ${legible(contradice)} y como ${legible(opuestaDe(contradice)!)}. Mientras no se cierre una de las dos, no se propone ninguna cuenta de impuestos.`,
-      paso: 'SITUACION_LEGAL',
+      paso: 'IMPUESTOS',
     });
     return { cuentas, faltantes };
   }
@@ -565,6 +565,31 @@ function bloqueImpuestos(
         bloque: 'IMPUESTOS',
         porque: 'Sos responsable de IVA: el IVA de las compras se descuenta.',
       }),
+      // R-D12: lo que un cliente agente de IVA te retiene es un anticipo tuyo
+      // (Decreto 2116 de 1996).
+      cuenta({
+        codigo: '135517',
+        nombre: 'IVA que nos retienen',
+        codigoPuc: '135517',
+        bloque: 'IMPUESTOS',
+        porque:
+          'Sos responsable de IVA: los clientes agentes de retención te retienen parte del IVA que facturás.',
+      }),
+    );
+  }
+
+  // R-D12: el ICA que te retienen los clientes agentes, salvo en el SIMPLE, que
+  // lo paga en su propia declaración.
+  if (!tiene('REGIMEN_SIMPLE')) {
+    cuentas.push(
+      cuenta({
+        codigo: '135518',
+        nombre: 'ICA que nos retienen',
+        codigoPuc: '135518',
+        bloque: 'IMPUESTOS',
+        porque:
+          'Los clientes agentes de retención de ICA te retienen parte del impuesto de industria y comercio.',
+      }),
     );
   }
 
@@ -583,9 +608,10 @@ function bloqueImpuestos(
     );
   }
 
-  // Las seis subcuentas de retefuente son los conceptos que practica cualquier
-  // agente retenedor. Se proponen juntas porque retener por compras y no por
-  // servicios no es una decisión: es olvidarse de una.
+  // Las subcuentas de retefuente son las de los conceptos del catálogo de la ley
+  // (`retencion_concepto_nacional.subcuenta_pasivo`). Se proponen juntas porque
+  // retener por compras y no por servicios no es una decisión: es olvidarse de
+  // una. Rendimientos y loterías se suman en el motor de retenciones (Fase 0).
   if (
     tiene('AGENTE_RETENEDOR_RENTA') ||
     tiene('AUTORRETENEDOR_RENTA') ||
@@ -600,7 +626,9 @@ function bloqueImpuestos(
       ['20', 'Retención en la fuente - comisiones'],
       ['25', 'Retención en la fuente - servicios'],
       ['30', 'Retención en la fuente - arrendamientos'],
+      ['35', 'Retención en la fuente - rendimientos financieros'],
       ['40', 'Retención en la fuente - compras'],
+      ['45', 'Retención en la fuente - loterías, rifas y apuestas'],
       ['70', 'Retención en la fuente - otros conceptos'],
     ];
 
@@ -619,7 +647,14 @@ function bloqueImpuestos(
     }
   }
 
-  if (tiene('AUTORRETENEDOR_RENTA')) {
+  // Autorretenciones: la del autorretenedor, la especial (responsabilidad 59,
+  // que también deriva en AUTORRETENEDOR_RENTA) y la del agente que le vende a
+  // un cliente del SIMPLE, que no retiene (motor de retenciones, Fase 4).
+  if (
+    tiene('AUTORRETENEDOR_RENTA') ||
+    tiene('AGENTE_RETENEDOR_RENTA') ||
+    tiene('GRAN_CONTRIBUYENTE')
+  ) {
     cuentas.push(
       cuenta({
         codigo: '236575',
@@ -627,20 +662,25 @@ function bloqueImpuestos(
         codigoPuc: '236575',
         exigeBaseGravable: true,
         bloque: 'IMPUESTOS',
-        porque:
-          'Sos autorretenedor: te retenés a vos mismo sobre tus propios ingresos.',
+        porque: tiene('AUTORRETENEDOR_RENTA')
+          ? 'Sos autorretenedor: te retenés a vos mismo sobre tus propios ingresos.'
+          : 'Si le vendés a un cliente del SIMPLE, él no te retiene y te autorretenés vos.',
       }),
     );
   }
 
-  if (tiene('AGENTE_RETENEDOR_IVA')) {
+  // El gran contribuyente es agente de IVA por ley (art. 437-2, numeral 1),
+  // aunque el RUT no traiga el 09 ni el 23.
+  if (tiene('AGENTE_RETENEDOR_IVA') || tiene('GRAN_CONTRIBUYENTE')) {
     cuentas.push(
       libre('2367', '05', {
         nombre: 'IVA retenido',
         exigeTercero: true,
         exigeBaseGravable: true,
         bloque: 'IMPUESTOS',
-        porque: 'Sos agente de retención de IVA.',
+        porque: tiene('AGENTE_RETENEDOR_IVA')
+          ? 'Sos agente de retención de IVA.'
+          : 'Sos gran contribuyente: por ley retenés IVA.',
       }),
     );
   }
@@ -1080,7 +1120,7 @@ function bloqueIngresos(h: HechosPlan): {
       etiqueta: 'Tarifa de ICA',
       impide:
         'No se propone el gasto de industria y comercio ni su cuenta por pagar: no hay tarifa con qué liquidarlos.',
-      paso: 'SITUACION_LEGAL',
+      paso: 'IMPUESTOS',
     });
   }
 

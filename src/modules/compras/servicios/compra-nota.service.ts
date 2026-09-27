@@ -10,6 +10,7 @@ import type { LineaAsientoDto } from '../../contabilidad/dto/asiento.dto';
 import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import { InventarioApi } from '../../inventario/inventario.api';
 import { NucleoApi } from '../../nucleo/nucleo.api';
+import { RetencionesApi } from '../../retenciones/retenciones.api';
 import type {
   CrearNotaCreditoCompraDto,
   CrearNotaDebitoCompraDto,
@@ -62,6 +63,7 @@ export class CompraNotaService {
     private readonly inventario: InventarioApi,
     private readonly contabilidad: ContabilidadApi,
     private readonly compras: CompraService,
+    private readonly retenciones: RetencionesApi,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -128,10 +130,20 @@ export class CompraNotaService {
       const retenciones = compra.retenciones.map((r) => ({
         concepto: r.concepto,
         cuentaId: r.cuenta_id,
+        tipo: r.tipo ?? null,
+        conceptoNacionalId: r.concepto_nacional_id ?? null,
+        tarifa:
+          r.tarifa === null || r.tarifa === undefined ? null : Number(r.tarifa),
+        asumida: r.asumida === true,
+        municipio: r.municipio_codigo ?? null,
         base: redondear2(Number(r.base) * proporcion),
         valor: redondear2(Number(r.valor) * proporcion),
       }));
-      const retenido = redondear2(retenciones.reduce((s, r) => s + r.valor, 0));
+      // El IVA asumido no bajó lo que se le debía al proveedor: su reversa
+      // tampoco lo toca.
+      const retenido = redondear2(
+        retenciones.filter((r) => !r.asumida).reduce((s, r) => s + r.valor, 0),
+      );
       const neto = netoAPagar(totales.total, retenido);
 
       const { cuentaProveedores, cuentaIvaId, totalIvaDescontable } =
@@ -160,6 +172,18 @@ export class CompraNotaService {
           debito: r.valor,
           credito: 0,
         });
+        // La contrapartida del IVA asumido, al revés que en la compra.
+        if (r.asumida) {
+          const vigentes = await this.nucleo.regimenVigente(ctx, dto.fecha, t);
+          const descontable = vigentes.includes('RESPONSABLE_IVA')
+            ? await this.nucleo.cuenta(ctx, '240810', t)
+            : null;
+          lineasAsiento.push({
+            cuentaId: descontable?.id ?? cuentaDebitoDe[0],
+            debito: 0,
+            credito: r.valor,
+          });
+        }
       }
       lineas.forEach((l, i) => {
         lineasAsiento.push({
@@ -182,7 +206,7 @@ export class CompraNotaService {
         'NOTA_CREDITO',
         dto,
         compra,
-        { lineas, totales, retenido, neto, retenciones },
+        { lineas, totales, retenido, neto, retenciones, proporcion },
         origenes.map((l) => ({
           productoId: l.producto_id,
           cuentaId: l.cuenta_id,
@@ -223,36 +247,97 @@ export class CompraNotaService {
       const entradas = [];
       /** Contra qué cuenta va cada línea: la del producto o la del gasto. */
       const cuentaDebitoDe: string[] = [];
+      /** Lo que el motor de renta necesita para clasificar cada renglón. */
+      const pistas: Array<{
+        texto: string | null;
+        cuentaCodigo: string | null;
+      }> = [];
       for (const l of dto.lineas) {
         const producto =
           l.productoId === undefined
             ? null
             : await this.compras.productoDeLinea(ctx, l.productoId, t);
-
-        cuentaDebitoDe.push(
+        const gasto =
           producto === null
-            ? await this.compras.cuentaDeGasto(ctx, l.cuentaId ?? '', t)
-            : producto.cuenta_inventario_id,
-        );
+            ? await this.compras.cuentaDeGastoConCodigo(
+                ctx,
+                l.cuentaId ?? '',
+                t,
+              )
+            : null;
+
+        cuentaDebitoDe.push(gasto?.id ?? producto!.cuenta_inventario_id);
+        pistas.push({
+          texto: producto?.nombre ?? l.detalle ?? null,
+          cuentaCodigo: gasto?.codigo ?? null,
+        });
 
         entradas.push({
           cantidad: l.cantidad,
           costoUnitario: l.costoUnitario,
           ivaTarifa:
-            producto === null ? (l.ivaTarifa ?? 0) : Number(producto.iva_tarifa),
+            producto === null
+              ? (l.ivaTarifa ?? 0)
+              : Number(producto.iva_tarifa),
           ivaDescontable,
         });
       }
 
       const { lineas, totales } = calcularLineasCompra(entradas);
-      // Sin retenciones: lo que el proveedor cobra después se retiene, si
-      // hace falta, en el documento que corresponda — no acá. Queda anotado
-      // en el plan como lo que no entra de este corte.
-      const neto = netoAPagar(totales.total, 0);
+
+      // Lo que el proveedor cobra de más también lleva retención: el mismo
+      // motor que la compra, con la ley a la fecha de la nota (Fase 8, §8.7).
+      // «Sin retención» se acepta solo con el porqué.
+      const documentoId = randomUUID();
+      const renta =
+        dto.sinRetencionMotivo !== undefined
+          ? null
+          : await this.retenciones.confirmarRenta(
+              ctx,
+              {
+                terceroId: compra.tercero_id,
+                fecha: dto.fecha,
+                aportesSeguridadSocial: dto.aportesSeguridadSocial,
+                renglones: lineas.map((l, i) => ({
+                  orden: i + 1,
+                  subtotal: l.subtotal,
+                  iva: l.ivaValor,
+                  productoId: dto.lineas[i].productoId ?? null,
+                  texto: pistas[i].texto,
+                  cuentaCodigo: pistas[i].cuentaCodigo,
+                  aiu: dto.aiuRenglones?.find((x) => x.orden === i + 1)?.aiu,
+                })),
+              },
+              { conceptos: dto.conceptosRenta, convenios: dto.conveniosRenta },
+              { tipo: 'NOTA_DEBITO_COMPRA', id: documentoId },
+              t,
+            );
+      const retenciones = (renta?.retenciones ?? []).map((r) => ({
+        concepto: r.conceptoCodigo,
+        cuentaId: r.cuentaId,
+        tipo: r.impuesto,
+        conceptoNacionalId: r.conceptoNacionalId,
+        tarifa: r.tarifa / 100,
+        asumida: r.asumida,
+        municipio: r.municipio,
+        base: r.base,
+        valor: r.valor,
+        renglones: r.renglones,
+        retencionCalculadaId: r.retencionCalculadaId,
+      }));
+      // El IVA asumido (servicios del exterior) no se le descuenta al proveedor.
+      const retenido = redondear2(
+        retenciones.filter((r) => !r.asumida).reduce((s, r) => s + r.valor, 0),
+      );
+      if (retenido > totales.total) {
+        throw new BadRequestException(
+          'Lo retenido no puede superar el total de la nota.',
+        );
+      }
+      const neto = netoAPagar(totales.total, retenido);
 
       const { cuentaProveedores, cuentaIvaId, totalIvaDescontable } =
         await this.cuentas(ctx, lineas, totales.subtotal, t);
-
 
       // Mismo sentido que la compra: débito lo que entra, crédito lo que se
       // debe.
@@ -272,6 +357,35 @@ export class CompraNotaService {
           credito: 0,
         });
       }
+      // Cada retención al pasivo; el IVA asumido, como en la compra: descontable
+      // si la empresa descuenta IVA, si no, mayor valor de lo que se cobró.
+      for (const r of retenciones) {
+        lineasAsiento.push({
+          cuentaId: r.cuentaId,
+          terceroId: compra.tercero_id,
+          baseGravable: r.base,
+          debito: 0,
+          credito: r.valor,
+        });
+        if (r.asumida) {
+          const cuenta = ivaDescontable
+            ? (cuentaIvaId ??
+              (await this.nucleo.cuenta(ctx, CODIGO_CUENTA_IVA_DESCONTABLE, t))
+                ?.id)
+            : cuentaDebitoDe[(r.renglones?.[0] ?? 1) - 1];
+          if (cuenta === undefined) {
+            throw new BadRequestException(
+              `No existe o está inactiva la cuenta de IVA descontable (${CODIGO_CUENTA_IVA_DESCONTABLE}). Actívala en el plan de cuentas.`,
+            );
+          }
+          lineasAsiento.push({
+            cuentaId: cuenta,
+            ...(ivaDescontable ? { baseGravable: r.base } : {}),
+            debito: r.valor,
+            credito: 0,
+          });
+        }
+      }
       lineasAsiento.push({
         cuentaId: cuentaProveedores.id,
         terceroId: compra.tercero_id,
@@ -284,7 +398,7 @@ export class CompraNotaService {
         'NOTA_DEBITO',
         dto,
         compra,
-        { lineas, totales, retenido: 0, neto, retenciones: [] },
+        { lineas, totales, retenido, neto, retenciones, documentoId },
         dto.lineas.map((l, i) => ({
           productoId: l.productoId ?? null,
           cuentaId: cuentaDebitoDe[i],
@@ -431,9 +545,20 @@ export class CompraNotaService {
       retenciones: Array<{
         concepto: string;
         cuentaId: string;
+        tipo?: string | null;
+        conceptoNacionalId?: string | null;
+        tarifa?: number | null;
+        asumida?: boolean;
+        municipio?: string | null;
         base: number;
         valor: number;
+        /** La fila del motor, cuando la retención la calculó él (nota débito). */
+        retencionCalculadaId?: string | null;
       }>;
+      /** En la nota crédito: qué parte de la compra se devuelve. */
+      proporcion?: number;
+      /** El id, cuando el motor ya guardó retenciones contra él (nota débito). */
+      documentoId?: string;
     },
     renglones: Array<{
       productoId: string | null;
@@ -455,7 +580,7 @@ export class CompraNotaService {
       );
     }
 
-    const documentoId = randomUUID();
+    const documentoId = calculo.documentoId ?? randomUUID();
     const etiqueta = tipo === 'NOTA_CREDITO' ? 'Nota crédito' : 'Nota débito';
     const asiento = await this.contabilidad.asentar(
       ctx,
@@ -536,13 +661,46 @@ export class CompraNotaService {
       lineasInsertadas.push(insertada);
     }
 
+    // La renta que calculó el motor se reversa también en su registro:
+    // una fila nueva por concepto, ligada a la original (caso borde 4).
+    const reversadas =
+      calculo.proporcion === undefined
+        ? new Map<string, string>()
+        : await this.retenciones.reversarRenta(
+            ctx,
+            {
+              compraId: compra.id,
+              notaId: documento.id,
+              proporcion: calculo.proporcion,
+              fecha: dto.fecha,
+            },
+            t,
+          );
+
     for (const r of calculo.retenciones) {
       if (r.valor <= 0) continue;
       await t.query(
         `INSERT INTO compra_retencion
-           (empresa_id, compra_documento_id, concepto, cuenta_id, base, valor)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
-        [ctx.empresaId, documento.id, r.concepto, r.cuentaId, r.base, r.valor],
+           (empresa_id, compra_documento_id, concepto, cuenta_id, base, valor,
+            tipo, concepto_nacional_id, tarifa, retencion_calculada_id, asumida,
+            municipio_codigo)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [
+          ctx.empresaId,
+          documento.id,
+          r.concepto,
+          r.cuentaId,
+          r.base,
+          r.valor,
+          r.tipo ?? null,
+          r.conceptoNacionalId ?? null,
+          r.tarifa ?? null,
+          reversadas.get(`${r.concepto}|${r.municipio ?? ''}`) ??
+            r.retencionCalculadaId ??
+            null,
+          r.asumida === true,
+          r.municipio ?? null,
+        ],
       );
     }
 

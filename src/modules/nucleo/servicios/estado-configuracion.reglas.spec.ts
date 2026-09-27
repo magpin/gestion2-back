@@ -19,6 +19,7 @@ const completa: HechosConfiguracion = {
   representanteVigente: 'Luisa Peña',
   actividadPrincipal: { codigoCiiu: '4530', tarifaIcaPorMil: 4.14 },
   matriculaVigente: true,
+  impuestos: { confirmado: true, municipiosSinIca: [] },
   resolucionFacturaVenta: {
     numeroResolucion: '18764000001234',
     vigente: true,
@@ -44,11 +45,12 @@ describe('calcularEstado · panorama', () => {
     expect(e.siguiente).toBeNull();
   });
 
-  it('devuelve los cinco pasos en orden', () => {
+  it('devuelve los seis pasos en orden', () => {
     expect(calcularEstado(completa).pasos.map((p) => p.clave)).toEqual([
       'EMPRESA',
       'SEDES',
       'SITUACION_LEGAL',
+      'IMPUESTOS',
       'PLAN_CUENTAS',
       'RESOLUCIONES',
     ]);
@@ -59,14 +61,14 @@ describe('calcularEstado · panorama', () => {
     // propia pantalla. Un asistente que los lista deja pendientes que nunca se
     // cierran y hacen ver incompleta a una empresa que ya puede facturar.
     const e = calcularEstado(completa);
-    expect(e.totalObligatorios).toBe(5);
+    expect(e.totalObligatorios).toBe(6);
     expect(e.pasos.every((p) => p.obligatorio)).toBe(true);
   });
 
   it('el porcentaje cuenta los pasos completados', () => {
     const e = calcularEstado(con({ resolucionFacturaVenta: null }));
-    expect(e.completados).toBe(4);
-    expect(e.porcentaje).toBe(80);
+    expect(e.completados).toBe(5);
+    expect(e.porcentaje).toBe(83);
     expect(e.completa).toBe(false);
   });
 });
@@ -112,6 +114,7 @@ describe('calcularEstado · siguiente paso', () => {
       regimenesVigentes: [],
       representanteVigente: null,
       actividadPrincipal: null,
+      impuestos: { confirmado: false, municipiosSinIca: [] },
       plan: { cuentasActivas: 0, auxiliares: 0 },
     });
     expect(paso(hechos, 'PLAN_CUENTAS').estado).toBe('BLOQUEADO');
@@ -164,9 +167,9 @@ describe('paso · Sedes', () => {
 });
 
 describe('paso · Situacion legal', () => {
-  it('sin condicion tributaria vigente no esta listo', () => {
+  it('lo tributario ya no es de este paso', () => {
     const p = paso(con({ regimenesVigentes: [] }), 'SITUACION_LEGAL');
-    expect(p.faltantes.map((x) => x.campo)).toContain('tipoRegimen');
+    expect(p.estado).toBe('LISTO');
   });
 
   it('a persona juridica le exige representante legal', () => {
@@ -186,20 +189,11 @@ describe('paso · Situacion legal', () => {
     expect(p.estado).toBe('LISTO');
   });
 
-  it('con actividad pero sin tarifa de ICA falta la tarifa', () => {
+  it('la tarifa de ICA ya no se pide acá (sale del municipio, paso Impuestos)', () => {
     const p = paso(
       con({
         actividadPrincipal: { codigoCiiu: '4530', tarifaIcaPorMil: null },
       }),
-      'SITUACION_LEGAL',
-    );
-    expect(p.faltantes.map((x) => x.campo)).toEqual(['tarifaIcaPorMil']);
-  });
-
-  it('una tarifa de cero es una tarifa, no un dato faltante', () => {
-    // Hay actividades exentas de ICA. Cero es una respuesta.
-    const p = paso(
-      con({ actividadPrincipal: { codigoCiiu: '4530', tarifaIcaPorMil: 0 } }),
       'SITUACION_LEGAL',
     );
     expect(p.estado).toBe('LISTO');
@@ -221,7 +215,47 @@ describe('paso · Situacion legal', () => {
       'SITUACION_LEGAL',
     );
     expect(p.estado).toBe('PENDIENTE');
-    expect(p.faltantes).toHaveLength(3);
+    expect(p.faltantes).toHaveLength(2);
+  });
+});
+
+describe('paso · Impuestos', () => {
+  it('sin saber si cobra IVA no esta listo, y nadie lo empezo', () => {
+    const p = paso(
+      con({
+        regimenesVigentes: [],
+        impuestos: { confirmado: false, municipiosSinIca: [] },
+      }),
+      'IMPUESTOS',
+    );
+    expect(p.estado).toBe('PENDIENTE');
+    expect(p.faltantes.map((x) => x.campo)).toEqual(['iva']);
+  });
+
+  it('cada municipio con sede necesita su respuesta de ICA', () => {
+    const p = paso(
+      con({ impuestos: { confirmado: true, municipiosSinIca: ['Pereira'] } }),
+      'IMPUESTOS',
+    );
+    expect(p.estado).toBe('FALTA');
+    expect(p.faltantes[0].etiqueta).toBe('Te falta contarme el ICA de Pereira');
+  });
+
+  it('contestado pero sin confirmar el resumen, falta confirmarlo', () => {
+    const p = paso(
+      con({ impuestos: { confirmado: false, municipiosSinIca: [] } }),
+      'IMPUESTOS',
+    );
+    expect(p.faltantes.map((x) => x.campo)).toEqual(['confirmar']);
+  });
+
+  it('el plan de cuentas espera a los impuestos', () => {
+    const p = paso(
+      con({ impuestos: { confirmado: false, municipiosSinIca: [] } }),
+      'PLAN_CUENTAS',
+    );
+    expect(p.estado).toBe('BLOQUEADO');
+    expect(p.bloqueadoPor).toBe('IMPUESTOS');
   });
 });
 
@@ -292,7 +326,7 @@ describe('calcularEstado · plan de cuentas', () => {
     // El plan se deriva del regimen y de la actividad: armarlo antes obliga a rehacerlo.
     const p = paso(
       con({
-        regimenesVigentes: [],
+        actividadPrincipal: null,
         plan: { cuentasActivas: 0, auxiliares: 0 },
       }),
       'PLAN_CUENTAS',

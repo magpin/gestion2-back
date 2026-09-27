@@ -1,0 +1,58 @@
+{{!--
+  «ReteICA por municipio», el cuerpo.
+
+  Un bloque por municipio, con lo retenido a cada tercero. Cada municipio
+  declara en su propia periodicidad: si el rango elegido no es uno de sus
+  períodos, el bloque lo dice. Plan motor de retenciones, Fase 6, §6.2.
+--}}
+
+<section class="cifras">
+  <div class="tarjeta tarjeta--principal">
+    <span class="rotulo">ReteICA del rango</span>
+    <span class="valor">{{total}}</span>
+    <span class="nota">{{detalle}}</span>
+  </div>
+</section>
+
+{{#each municipios}}
+  <section class="bloque">
+    <div class="encabezado">
+      <h2>{{nombre}}</h2>
+      <span class="apunte">{{#if periodicidad}}declara {{periodicidad}}{{/if}} · código {{codigo}}</span>
+    </div>
+    {{#if aviso}}<p class="aviso-hoja">{{aviso}}</p>{{/if}}
+    <div class="detalle detalle--ica">
+      <div class="fila cabecera">
+        <span>Tercero</span>
+        <span>NIT / documento</span>
+        <span class="derecha">Base</span>
+        <span>Tarifa</span>
+        <span class="derecha">Retenido</span>
+      </div>
+      {{#each terceros}}
+        <div class="fila renglon">
+          <span>{{tercero}}</span>
+          <span class="mono">{{terceroDocumento}}</span>
+          <span class="derecha cifra">{{base}}</span>
+          <span class="mono">{{tarifas}}</span>
+          <span class="derecha cifra">{{retenido}}</span>
+        </div>
+      {{/each}}
+      <div class="fila total">
+        <span>Total {{nombre}}</span>
+        <span></span>
+        <span class="derecha cifra">{{base}}</span>
+        <span></span>
+        <span class="derecha cifra">{{retenido}}</span>
+      </div>
+    </div>
+  </section>
+{{else}}
+  <p class="notas">No hubo retenciones de ICA en este rango.</p>
+{{/each}}
+
+<p class="notas">
+  Montos en pesos, netos de notas crédito y anulaciones. Las tarifas van por mil. Cada
+  municipio fija cómo se redondea y cuándo se declara: este reporte trae las cifras al
+  peso. {{#if elaboro}}Generado con los permisos de {{elaboro}}{{#if rol}} ({{rol}}){{/if}}.{{/if}}
+</p>

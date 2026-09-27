@@ -1,4 +1,4 @@
-import { calcularRetencion, tarifaAplicable } from './retencion.reglas';
+import { calcularRetencion } from './retencion.reglas';
 
 // La UVT es un dato por año que carga un contador; acá se usa un valor
 // cualquiera para que la aritmética sea verificable.
@@ -49,22 +49,5 @@ describe('calcularRetencion', () => {
       uvt: UVT,
     });
     expect(r).toEqual({ retiene: true, tarifa: 2.5, valor: 833 });
-  });
-});
-
-describe('tarifaAplicable', () => {
-  const servicios = { tarifa: 4, tarifa_no_declarante: 6 };
-
-  it('quien declara paga la tarifa baja', () => {
-    expect(tarifaAplicable(servicios, true)).toBe(4);
-  });
-
-  it('quien no declara, la alta', () => {
-    expect(tarifaAplicable(servicios, false)).toBe(6);
-  });
-
-  it('un concepto sin tarifa alternativa usa la suya, declare o no', () => {
-    const iva = { tarifa: 15, tarifa_no_declarante: null };
-    expect(tarifaAplicable(iva, false)).toBe(15);
   });
 });

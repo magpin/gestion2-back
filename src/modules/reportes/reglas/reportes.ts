@@ -11,13 +11,18 @@ import type { Orientacion } from '../servicios/plantilla.service';
  *
  * No se confunde con el catálogo de `catalogo.ts`. Ese dice **qué se puede
  * reportar** —los seis orígenes y sus columnas— y es la mitad del armador que
- * viene después. Este dice **qué reportes hay hechos**, que hoy son dos.
+ * viene después. Este dice **qué reportes hay hechos**.
  */
 
 /** Qué hay que elegir antes de correrlo. No todos piden lo mismo. */
 export type Parametro = 'RANGO' | 'CORTE';
 
-export type ClaveReporte = 'VENTAS_POR_CLIENTE' | 'ANTIGUEDAD_CARTERA';
+export type ClaveReporte =
+  | 'VENTAS_POR_CLIENTE'
+  | 'ANTIGUEDAD_CARTERA'
+  | 'RETENCIONES_350'
+  | 'RETEICA'
+  | 'CERTIFICADOS_RETENCION';
 
 /**
  * Las áreas, en el orden en que se muestran.
@@ -83,6 +88,42 @@ export const REPORTES: Readonly<Record<ClaveReporte, Reporte>> = {
     parametro: 'CORTE',
     roles: ['DIRECTOR', 'CONTADOR', 'VENTAS', 'CAJA', 'CONSULTA'],
     formato: { orientacion: 'HORIZONTAL', paginas: '1 página', firmas: false },
+  },
+  // Los de retenciones (plan motor de retenciones, Fase 6): solo quien
+  // responde por las declaraciones.
+  RETENCIONES_350: {
+    clave: 'RETENCIONES_350',
+    area: 'CONTABILIDAD',
+    etiqueta: 'Formulario 350 — retenciones del mes',
+    pregunta: 'Cuánto retuve este mes y qué va en cada renglón',
+    trae: 'Los renglones al múltiplo de mil, y el cuadre con el libro',
+    parametro: 'RANGO',
+    roles: ['DIRECTOR', 'CONTADOR'],
+    formato: { orientacion: 'HORIZONTAL', paginas: '2 páginas', firmas: true },
+  },
+  RETEICA: {
+    clave: 'RETEICA',
+    area: 'CONTABILIDAD',
+    etiqueta: 'ReteICA por municipio',
+    pregunta: 'Cuánto retuve de ICA en cada municipio',
+    trae: 'Lo retenido por municipio y tercero, con su periodicidad',
+    parametro: 'RANGO',
+    roles: ['DIRECTOR', 'CONTADOR'],
+    formato: { orientacion: 'VERTICAL', paginas: '1 página', firmas: true },
+  },
+  CERTIFICADOS_RETENCION: {
+    clave: 'CERTIFICADOS_RETENCION',
+    area: 'CONTABILIDAD',
+    etiqueta: 'Certificados de retención',
+    pregunta: 'Qué le retuve a cada proveedor',
+    trae: 'Un certificado por tercero: renta por concepto, IVA e ICA',
+    parametro: 'RANGO',
+    roles: ['DIRECTOR', 'CONTADOR'],
+    formato: {
+      orientacion: 'VERTICAL',
+      paginas: '1 por tercero',
+      firmas: false,
+    },
   },
 };
 

@@ -53,6 +53,11 @@ export const SQL_RESPUESTAS = `
    ORDER BY t.creado_en
    LIMIT ${TOPE_FILAS}`;
 
+/**
+ * Las lecturas y, con ellas, las propuestas del clasificador de retenciones
+ * (fuente 5, `retencion_clasificacion_ia`): también son una llamada al modelo
+ * sobre un documento. Van con el tipo `CONCEPTO_RETENCION`.
+ */
 export const SQL_LECTURAS = `
   SELECT d.empresa_id, e.razon_social AS empresa,
          ${DIA('coalesce(d.leido_en, d.creado_en)')} AS dia,
@@ -63,6 +68,17 @@ export const SQL_LECTURAS = `
      AND (coalesce(d.leido_en, d.creado_en) AT TIME ZONE 'America/Bogota')::date
          BETWEEN $1::date AND $2::date
      AND ($3::uuid IS NULL OR d.empresa_id = $3::uuid)
+     AND ($4::uuid IS NULL OR e.tenant_id = $4::uuid)
+  UNION ALL
+  SELECT c.empresa_id, e.razon_social AS empresa,
+         ${DIA('c.creado_en')} AS dia,
+         'CONCEPTO_RETENCION' AS tipo,
+         CASE WHEN c.estado = 'FALLO' THEN 'FALLO' ELSE 'LEIDO' END AS estado,
+         c.modelo, c.uso, c.duracion_ms
+    FROM retencion_clasificacion_ia c
+    JOIN empresa e ON e.id = c.empresa_id
+   WHERE (c.creado_en AT TIME ZONE 'America/Bogota')::date BETWEEN $1::date AND $2::date
+     AND ($3::uuid IS NULL OR c.empresa_id = $3::uuid)
      AND ($4::uuid IS NULL OR e.tenant_id = $4::uuid)
    LIMIT ${TOPE_FILAS}`;
 
@@ -101,6 +117,18 @@ export const SQL_DETALLE_LECTURAS = `
          BETWEEN $1::date AND $2::date
      AND ($3::uuid IS NULL OR d.empresa_id = $3::uuid)
      AND ($4::uuid IS NULL OR e.tenant_id = $4::uuid)
+  UNION ALL
+  SELECT c.id, c.empresa_id, e.razon_social AS empresa,
+         ${DIA('c.creado_en')} AS dia,
+         c.creado_en AS fecha,
+         'CONCEPTO_RETENCION' AS tipo,
+         CASE WHEN c.estado = 'FALLO' THEN 'FALLO' ELSE 'LEIDO' END AS estado,
+         c.modelo, c.uso, c.duracion_ms
+    FROM retencion_clasificacion_ia c
+    JOIN empresa e ON e.id = c.empresa_id
+   WHERE (c.creado_en AT TIME ZONE 'America/Bogota')::date BETWEEN $1::date AND $2::date
+     AND ($3::uuid IS NULL OR c.empresa_id = $3::uuid)
+     AND ($4::uuid IS NULL OR e.tenant_id = $4::uuid)
    LIMIT ${TOPE_FILAS}`;
 
 /**
@@ -113,6 +141,7 @@ export const SQL_EMPRESAS = `
     JOIN tenant c ON c.id = e.tenant_id
    WHERE EXISTS (SELECT 1 FROM conversacion_turno t WHERE t.empresa_id = e.id AND t.uso IS NOT NULL)
       OR EXISTS (SELECT 1 FROM documento_leido d WHERE d.empresa_id = e.id)
+      OR EXISTS (SELECT 1 FROM retencion_clasificacion_ia c WHERE c.empresa_id = e.id)
    ORDER BY e.razon_social`;
 
 export interface EmpresaConConsumo {

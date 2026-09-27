@@ -303,8 +303,13 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidad,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     const factura = await servicio.crear(ctx, {
@@ -358,8 +363,13 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     const factura = await servicio.crear(ctx, {
@@ -384,8 +394,13 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidadFalso({ periodoAbierto: false }).fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -413,8 +428,13 @@ describe('FacturaService.crear', () => {
         inventarioFalso(),
         contabilidadFalso().fake,
         {} as never,
-        // RetencionesApi: ninguno de estos casos trae retenciones.
-        {} as never,
+        // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+        // autorretiene nada ni avisa.
+        {
+          confirmarVenta: jest.fn(() =>
+            Promise.resolve({ lineasAsiento: [], aviso: null }),
+          ),
+        } as never,
       );
 
       await expect(
@@ -440,8 +460,13 @@ describe('FacturaService.crear', () => {
       }),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await servicio.crear(ctx, {
@@ -472,8 +497,13 @@ describe('FacturaService.crear', () => {
       }),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -497,8 +527,13 @@ describe('FacturaService.crear', () => {
       }),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -523,8 +558,13 @@ describe('FacturaService.crear', () => {
       }),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await servicio.crear(
@@ -551,8 +591,13 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await servicio.crear(ctx, {
@@ -574,8 +619,13 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -599,8 +649,13 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -623,8 +678,13 @@ describe('FacturaService.crear', () => {
       }),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -647,8 +707,13 @@ describe('FacturaService.crear', () => {
       }),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -669,8 +734,13 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -693,8 +763,13 @@ describe('FacturaService.convertirCotizacion', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       ventasFalso(),
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     const factura = await servicio.convertirCotizacion(ctx, 'cot-1', {
@@ -719,8 +794,13 @@ describe('FacturaService.convertirCotizacion', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       ventasFalso(),
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -739,8 +819,13 @@ describe('FacturaService.convertirCotizacion', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       ventasFalso(),
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -759,8 +844,13 @@ describe('FacturaService.convertirCotizacion', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       ventasFalso(),
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -784,7 +874,11 @@ describe('FacturaService.crear — forma de pago', () => {
       inventarioFalso(),
       contabilidad,
       ventas,
-      {} as never,
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
     return { servicio, asentar };
   }
@@ -932,7 +1026,11 @@ describe('FacturaService.crear — forma de pago', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       fake,
-      {} as never,
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     const factura = await servicio.convertirCotizacion(ctx, 'cot-1', {

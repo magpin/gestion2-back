@@ -95,6 +95,47 @@ export function comprasSinRetencion(
   return [...porFaltaDeConceptos, ...porCompra];
 }
 
+// ── 1b. El proveedor retuvo distinto ─────────────────────────────────────────
+
+export interface FilaRetencionDistinta {
+  compraId: string;
+  numero: string;
+  proveedor: string;
+  fecha: string;
+  /** Lo que la factura traía impreso. */
+  impresa: number;
+  /** Lo que registró el motor, con la norma. */
+  registrada: number;
+}
+
+/**
+ * Compras leídas por María donde la retención que imprimió el proveedor no es
+ * la que da la norma (plan motor de retenciones, Fase 8, §8.6).
+ *
+ * Se registró la del motor —esa es la que responde ante la DIAN—; el hallazgo
+ * está para que alguien le avise al proveedor, que va a esperar que le paguen
+ * con su cuenta. No cuenta una diferencia de menos de $1.000 o del 1 %: es
+ * redondeo.
+ */
+export function comprasRetencionDistinta(
+  filasCompra: FilaRetencionDistinta[],
+): Hallazgo[] {
+  return filasCompra
+    .filter((c) => {
+      const diferencia = Math.abs(c.impresa - c.registrada);
+      return diferencia >= Math.max(1000, c.impresa * 0.01);
+    })
+    .map((c) =>
+      hallazgo({
+        tipo: 'COMPRA_RETENCION_DISTINTA',
+        certeza: 'VISTA',
+        titulo: `${c.proveedor} retuvo distinto en la compra ${c.numero}`,
+        detalle: `La factura del ${fecha(c.fecha)} dice ${pesos(c.impresa)} de retención; por norma corresponden ${pesos(c.registrada)} y registré eso. Me parece que conviene avisarle al proveedor: va a esperar ${c.impresa > c.registrada ? 'menos' : 'más'} plata de la que le vas a pagar. El porqué está en «¿Por qué?» de la compra.`,
+        referencias: [{ tipo: 'COMPRA', id: c.compraId, etiqueta: c.numero }],
+      }),
+    );
+}
+
 // ── 2. Períodos sin cerrar ───────────────────────────────────────────────────
 
 export interface FilaPeriodoAbierto {

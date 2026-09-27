@@ -60,31 +60,31 @@ function nucleoFalso(
   );
   // Las cuentas que una línea de gasto puede elegir, por id.
   const porId: Record<string, Record<string, unknown>> = {
-    "cta-arriendo": {
-      id: "cta-arriendo",
-      codigo: "512010",
-      nombre: "Arrendamientos",
+    'cta-arriendo': {
+      id: 'cta-arriendo',
+      codigo: '512010',
+      nombre: 'Arrendamientos',
       activa: true,
       es_auxiliar: true,
     },
-    "cta-agrupa": {
-      id: "cta-agrupa",
-      codigo: "5120",
-      nombre: "Arrendamientos (grupo)",
+    'cta-agrupa': {
+      id: 'cta-agrupa',
+      codigo: '5120',
+      nombre: 'Arrendamientos (grupo)',
       activa: true,
       es_auxiliar: false,
     },
-    "cta-banco": {
-      id: "cta-banco",
-      codigo: "111005",
-      nombre: "Banco",
+    'cta-banco': {
+      id: 'cta-banco',
+      codigo: '111005',
+      nombre: 'Banco',
       activa: true,
       es_auxiliar: true,
     },
-    "cta-inactiva": {
-      id: "cta-inactiva",
-      codigo: "512015",
-      nombre: "Vieja",
+    'cta-inactiva': {
+      id: 'cta-inactiva',
+      codigo: '512015',
+      nombre: 'Vieja',
       activa: false,
       es_auxiliar: true,
     },
@@ -135,6 +135,53 @@ function contabilidadFalso(
     asentar,
   } as unknown as ConstructorParameters<typeof CompraService>[3];
   return { fake, asentar };
+}
+
+/**
+ * El motor de renta falso. Por defecto no retiene nada (la empresa no es
+ * agente); se le pasan retenciones para los casos que sí.
+ */
+function retencionesFalso(
+  retenciones: Array<{ valor: number; cuentaId?: string; base?: number }> = [],
+) {
+  const confirmarRenta = jest.fn(() =>
+    Promise.resolve({
+      decision: retenciones.length > 0 ? 'CALCULADA' : 'NO_SUJETO',
+      motivo:
+        retenciones.length > 0
+          ? 'Retención calculada.'
+          : 'No retengo: no es agente.',
+      retenciones: retenciones.map((r, i) => ({
+        conceptoCodigo: 'COMPRAS_GENERALES',
+        conceptoNacionalId: 'n-compras',
+        nombre: 'Compras generales',
+        renglones: [1],
+        base: r.base ?? 100000,
+        tarifa: 2.5,
+        valor: r.valor,
+        cuentaId: r.cuentaId ?? 'cta-rete-compras',
+        texto: '',
+        explicacion: {},
+        retencionCalculadaId: `rc-${i}`,
+      })),
+    }),
+  );
+  const anularRetencionesCompra = jest.fn(() => Promise.resolve());
+  const ajustesDeCompra = jest.fn(() =>
+    Promise.resolve(
+      [] as Array<{ asientoId: string; asiento: string; diferencia: number }>,
+    ),
+  );
+  return {
+    fake: {
+      confirmarRenta,
+      anularRetencionesCompra,
+      ajustesDeCompra,
+    } as unknown as ConstructorParameters<typeof CompraService>[5],
+    confirmarRenta,
+    anularRetencionesCompra,
+    ajustesDeCompra,
+  };
 }
 
 /** Transacción falsa: los tres `INSERT` de compra_documento[_linea|_retencion]. */
@@ -237,8 +284,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidad,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     const compra = await servicio.crear(ctx, {
@@ -300,8 +347,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidad,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     const compra = await servicio.crear(ctx, {
@@ -340,8 +387,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     const compra = await servicio.crear(ctx, {
@@ -370,8 +417,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     const compra = await servicio.crear(ctx, {
@@ -396,8 +443,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidad,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // El motor de renta calcula la retención; la compra solo la asienta.
+      retencionesFalso([{ valor: 2500 }]).fake,
     );
 
     const compra = await servicio.crear(ctx, {
@@ -406,7 +453,6 @@ describe('CompraService.crear', () => {
       numeroFacturaProveedor: 'FP-004',
       formaPago: 'CREDITO',
       lineas: [lineaBase],
-      retenciones: [{ concepto: 'COMPRAS', base: 100000, valor: 2500 }],
     });
 
     expect(compra.total_retenciones).toBe('2500');
@@ -451,7 +497,7 @@ describe('CompraService.crear', () => {
     expect(totalDebito).toBe(totalCredito);
   });
 
-  it('rechaza una retención si la empresa no es agente de retención', async () => {
+  it('rechaza la retención de renta mandada a mano: la calcula el motor', async () => {
     const { tx } = txFalso();
     const servicio = new CompraService(
       txServiceFalso(tx),
@@ -459,8 +505,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(
@@ -472,7 +518,7 @@ describe('CompraService.crear', () => {
         lineas: [lineaBase],
         retenciones: [{ concepto: 'COMPRAS', base: 100000, valor: 2500 }],
       }),
-    ).rejects.toThrow(/no es agente de retención/);
+    ).rejects.toThrow(/las calcula el sistema/);
   });
 
   it('rechaza si lo retenido supera el total de la factura', async () => {
@@ -483,8 +529,7 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      retencionesFalso([{ valor: 200000 }]).fake,
     );
 
     await expect(
@@ -494,42 +539,48 @@ describe('CompraService.crear', () => {
         numeroFacturaProveedor: 'FP-006',
         formaPago: 'CREDITO',
         lineas: [lineaBase],
-        retenciones: [{ concepto: 'COMPRAS', base: 200000, valor: 200000 }],
       }),
     ).rejects.toThrow(/no puede superar el total/);
   });
 
-  it('rechaza si no existe la cuenta del concepto retenido', async () => {
+  it('«sin retención» con motivo no pasa por el motor y queda escrito en la compra', async () => {
     const { tx } = txFalso();
+    const { fake: retenciones, confirmarRenta } = retencionesFalso([
+      { valor: 2500 },
+    ]);
     const servicio = new CompraService(
       txServiceFalso(tx),
-      nucleoFalso({
-        regimen: ['AGENTE_RETENEDOR_RENTA'],
-        cuentas: {
-          '220505': { id: 'cta-proveedores' },
-          '240810': { id: 'cta-iva-descontable' },
-        },
-      }).fake,
+      nucleoFalso({ regimen: ['AGENTE_RETENEDOR_RENTA'] }).fake,
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      retenciones,
     );
 
-    await expect(
-      servicio.crear(ctx, {
-        terceroId: 'ter-1',
-        fecha: '2026-09-08',
-        numeroFacturaProveedor: 'FP-007',
-        formaPago: 'CREDITO',
-        lineas: [lineaBase],
-        retenciones: [{ concepto: 'COMPRAS', base: 100000, valor: 2500 }],
-      }),
-    ).rejects.toThrow(/cuenta de retención por compras/);
+    const compra = await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: '2026-09-08',
+      numeroFacturaProveedor: 'FP-007',
+      formaPago: 'CREDITO',
+      lineas: [lineaBase],
+      sinRetencionMotivo:
+        'El proveedor nos mostró su resolución de autorretenedor.',
+    });
+
+    expect(confirmarRenta).not.toHaveBeenCalled();
+    expect(compra.total_retenciones).toBe('0');
+    const insert = (tx.query as jest.Mock).mock.calls.find(([sql]) =>
+      String(sql).includes('INSERT INTO compra_documento\n'),
+    ) as [string, unknown[]];
+    expect(insert[1].slice(13)).toEqual([
+      'DECIDIDO_SIN',
+      'El proveedor nos mostró su resolución de autorretenedor.',
+      // La retención impresa: no hubo lectura de María (§8.6).
+      null,
+    ]);
   });
 
-  it('rechaza dos retenciones con el mismo concepto', async () => {
+  it('rechaza retenciones digitadas: las calcula el motor (Fase 7)', async () => {
     const { tx } = txFalso();
     const servicio = new CompraService(
       txServiceFalso(tx),
@@ -537,8 +588,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(
@@ -553,7 +604,7 @@ describe('CompraService.crear', () => {
           { concepto: 'COMPRAS', base: 50000, valor: 1000 },
         ],
       }),
-    ).rejects.toThrow(/No repitas el mismo concepto/);
+    ).rejects.toThrow(/las calcula el sistema/);
   });
 
   it('rechaza si el mismo producto aparece en dos líneas', async () => {
@@ -564,8 +615,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(
@@ -587,8 +638,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso({ periodoAbierto: false }).fake,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(
@@ -610,8 +661,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(
@@ -634,8 +685,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(
@@ -657,8 +708,8 @@ describe('CompraService.crear', () => {
       inventarioFalso({ producto: null }).fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(
@@ -680,8 +731,8 @@ describe('CompraService.crear', () => {
       inventarioFalso().fake,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(
@@ -704,8 +755,8 @@ describe('CompraService.crear', () => {
       inventario,
       contabilidadFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await servicio.crear(ctx, {
@@ -739,7 +790,7 @@ describe('CompraService.crear — forma de pago', () => {
       inventarioFalso().fake,
       contabilidad,
       {} as never,
-      {} as never,
+      retencionesFalso().fake,
     );
     // El pago en sí ya lo prueba `CompraService.pagar`: acá importa que se
     // llame, con qué, y dentro de la misma transacción.
@@ -911,8 +962,8 @@ describe('CompraService.listar', () => {
       {} as never,
       {} as never,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     const pagina = await servicio.listar(ctx, {
@@ -983,8 +1034,8 @@ describe('CompraService.porId', () => {
       {} as never,
       {} as never,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     const detalle = await servicio.porId(ctx, 'c-1');
@@ -1025,7 +1076,7 @@ describe('CompraService.porId', () => {
         {} as never,
         {} as never,
         // RetencionesApi: estos casos no calculan ninguna retención.
-        {} as never,
+        retencionesFalso().fake,
       );
 
     const nota = await servicioCon('cn-1').porId(ctx, 'cn-1');
@@ -1046,8 +1097,8 @@ describe('CompraService.porId', () => {
       {} as never,
       {} as never,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(servicio.porId(ctx, 'inexistente')).rejects.toThrow(
@@ -1128,17 +1179,32 @@ describe('CompraService.anular', () => {
     const { fake: contabilidad, anular: anularAsiento } =
       contabilidadAnularFalso();
     const { fake: inventario, revertir } = inventarioAnularFalso(5);
+    const retenciones = retencionesFalso();
     const servicio = new CompraService(
       txServiceFalso(tx),
       {} as never,
       inventario,
       contabilidad,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      retenciones.fake,
     );
 
     await servicio.anular(ctx, 'c-1', 'Factura duplicada por error');
+
+    // Sin ajustes por cambio de norma, no se anula ningún otro asiento.
+    expect(anularAsiento).toHaveBeenCalledTimes(1);
+
+    // La retención de la compra se reversa en la misma transacción: si no,
+    // la compra anulada seguía sumando en el 350.
+    expect(retenciones.anularRetencionesCompra).toHaveBeenCalledWith(
+      ctx,
+      {
+        compraId: 'c-1',
+        fecha: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) as unknown,
+        motivo: 'Factura duplicada por error',
+      },
+      tx,
+    );
 
     expect(anularAsiento).toHaveBeenCalledWith(
       ctx,
@@ -1158,6 +1224,38 @@ describe('CompraService.anular', () => {
     expect(actualizaciones).toHaveLength(1);
   });
 
+  it('anula también el ajuste de retención por cambio de norma (Fase 8, §8.3)', async () => {
+    const { tx } = txAnularFalso({
+      estado: 'EMITIDA',
+      asiento_id: 'asiento-1',
+    });
+    const { fake: contabilidad, anular: anularAsiento } =
+      contabilidadAnularFalso();
+    const { fake: inventario } = inventarioAnularFalso(5);
+    const retenciones = retencionesFalso();
+    retenciones.ajustesDeCompra.mockResolvedValueOnce([
+      { asientoId: 'ajuste-1', asiento: 'CD-000002', diferencia: 40000 },
+    ]);
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      {} as never,
+      inventario,
+      contabilidad,
+      {} as never,
+      retenciones.fake,
+    );
+
+    await servicio.anular(ctx, 'c-1', 'Factura duplicada');
+
+    expect(anularAsiento).toHaveBeenCalledTimes(2);
+    expect(anularAsiento).toHaveBeenLastCalledWith(
+      ctx,
+      'ajuste-1',
+      expect.stringContaining('Factura duplicada'),
+      tx,
+    );
+  });
+
   it('rechaza anular si parte de la mercancía ya salió del kardex', async () => {
     const { tx, actualizaciones } = txAnularFalso({
       estado: 'EMITIDA',
@@ -1172,8 +1270,8 @@ describe('CompraService.anular', () => {
       inventario,
       contabilidad,
       {} as never,
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(servicio.anular(ctx, 'c-1', 'Motivo')).rejects.toThrow(
@@ -1196,8 +1294,8 @@ describe('CompraService.anular', () => {
       inventarioAnularFalso(5).fake,
       contabilidadAnularFalso().fake,
       {} as never,
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(servicio.anular(ctx, 'c-1', 'Motivo')).rejects.toThrow(
@@ -1216,8 +1314,8 @@ describe('CompraService.anular', () => {
       {} as never,
       contabilidadAnularFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(
@@ -1233,8 +1331,8 @@ describe('CompraService.anular', () => {
       {} as never,
       contabilidadAnularFalso().fake,
       {} as never, // TesoreriaApi: no la usa este método.
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(
@@ -1338,8 +1436,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreria,
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     const actualizado = await servicio.pagar(ctx, 'compra-1', DTO);
@@ -1371,8 +1469,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreria,
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await servicio.pagar(ctx, 'compra-1', {
@@ -1405,8 +1503,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreriaFalso().fake,
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(servicio.pagar(ctx, 'compra-1', DTO)).rejects.toThrow(
@@ -1426,8 +1524,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreria,
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(
@@ -1448,8 +1546,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreria,
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(
@@ -1466,8 +1564,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreria2,
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
     await servicio2.pagar(ctx, 'compra-1', porValor(80000));
     expect(registrar2).toHaveBeenCalledTimes(1);
@@ -1482,8 +1580,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreria,
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     const actualizado = await servicio.pagar(ctx, 'compra-1', {
@@ -1528,8 +1626,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreria,
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(servicio.pagar(ctx, 'compra-1', DTO)).rejects.toThrow(
@@ -1546,8 +1644,8 @@ describe('CompraService.pagar', () => {
       inventarioFalso().fake,
       {} as never,
       tesoreriaFalso().fake,
-      // RetencionesApi: estos casos no calculan ninguna retención.
-      {} as never,
+      // RetencionesApi: el motor de renta no retiene nada en estos casos.
+      retencionesFalso().fake,
     );
 
     await expect(servicio.pagar(ctx, 'inexistente', DTO)).rejects.toThrow(
@@ -1576,7 +1674,7 @@ describe('CompraService.crear — líneas de gasto', () => {
       inventario.fake,
       contabilidad,
       {} as never,
-      {} as never,
+      retencionesFalso().fake,
     );
     return { servicio, asentar, inventario, tx };
   }
@@ -1704,7 +1802,7 @@ describe('CompraService.crear — líneas de gasto', () => {
       inventarioFalso().fake,
       contabilidad,
       {} as never,
-      {} as never,
+      retencionesFalso().fake,
     );
 
     const compra = await servicio.crear(ctx, {

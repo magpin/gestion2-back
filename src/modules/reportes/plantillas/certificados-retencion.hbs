@@ -1,0 +1,96 @@
+{{!--
+  «Certificados de retención», el cuerpo: uno por tercero, cada uno en su
+  página (art. 381 ET).
+
+  El rango lo elige quien los saca: el año para renta; el bimestre cuando un
+  proveedor pide el de IVA. Neto de notas crédito y anulaciones. Plan motor de
+  retenciones, Fase 6, §6.2.
+--}}
+
+{{#each certificados}}
+  <section class="certificado{{#unless @last}} salto{{/unless}}">
+    <div class="partes">
+      <div>
+        <span class="rotulo">Retenedor</span>
+        <strong>{{../empresa.razonSocial}}</strong><br>
+        NIT {{../empresa.nit}}{{#if ../empresa.dv}}-{{../empresa.dv}}{{/if}}<br>
+        {{#if ../empresa.ciudad}}{{../empresa.ciudad}}{{/if}}
+      </div>
+      <div>
+        <span class="rotulo">A quien se le retuvo</span>
+        <strong>{{tercero}}</strong><br>
+        {{terceroDocumento}}<br>
+        Período: {{../desde}} a {{../hasta}}
+      </div>
+    </div>
+
+    {{#if renta.length}}
+      <div class="encabezado"><h2>Retención en la fuente a título de renta</h2></div>
+      <div class="detalle detalle--certificado">
+        <div class="fila cabecera">
+          <span>Concepto</span>
+          <span>Tarifa</span>
+          <span class="derecha">Valor sujeto a retención</span>
+          <span class="derecha">Retenido</span>
+        </div>
+        {{#each renta}}
+          <div class="fila renglon">
+            <span>{{concepto}}</span>
+            <span class="mono">{{tarifas}}</span>
+            <span class="derecha cifra">{{base}}</span>
+            <span class="derecha cifra">{{retenido}}</span>
+          </div>
+        {{/each}}
+      </div>
+    {{/if}}
+
+    {{#if iva}}
+      <div class="encabezado"><h2>Retención de IVA</h2></div>
+      <div class="detalle detalle--certificado">
+        <div class="fila cabecera">
+          <span>Concepto</span><span></span>
+          <span class="derecha">IVA sobre el que se retuvo</span>
+          <span class="derecha">Retenido</span>
+        </div>
+        <div class="fila renglon">
+          <span>Retención de IVA</span><span></span>
+          <span class="derecha cifra">{{iva.base}}</span>
+          <span class="derecha cifra">{{iva.retenido}}</span>
+        </div>
+      </div>
+    {{/if}}
+
+    {{#if ica.length}}
+      <div class="encabezado"><h2>Retención de industria y comercio</h2></div>
+      <div class="detalle detalle--certificado">
+        <div class="fila cabecera">
+          <span>Municipio</span><span></span>
+          <span class="derecha">Base</span>
+          <span class="derecha">Retenido</span>
+        </div>
+        {{#each ica}}
+          <div class="fila renglon">
+            <span>{{municipio}}</span><span></span>
+            <span class="derecha cifra">{{base}}</span>
+            <span class="derecha cifra">{{retenido}}</span>
+          </div>
+        {{/each}}
+      </div>
+    {{/if}}
+
+    <div class="detalle detalle--certificado">
+      <div class="fila total">
+        <span>Total retenido</span><span></span><span></span>
+        <span class="derecha cifra">{{totalRetenido}}</span>
+      </div>
+    </div>
+
+    <p class="notas">
+      Ciudad donde se consignaron las retenciones: {{#if ../empresa.ciudad}}{{../empresa.ciudad}}{{else}}la del retenedor{{/if}}<br>
+      Valores en pesos, netos de notas crédito y anulaciones. Expedido el {{../expedido}} por
+      medios electrónicos, sin firma autógrafa.
+    </p>
+  </section>
+{{else}}
+  <p class="notas">No hay retenciones practicadas a terceros en este rango.</p>
+{{/each}}

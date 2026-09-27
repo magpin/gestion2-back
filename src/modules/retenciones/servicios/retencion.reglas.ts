@@ -46,23 +46,3 @@ export function calcularRetencion(entrada: {
 
   return { retiene: true, tarifa, valor: Math.round((base * tarifa) / 100) };
 }
-
-/**
- * Qué tarifa aplica. Solo la retención de renta distingue entre quien declara y
- * quien no —servicios generales 4% y 6%, honorarios 10% y 11%—; la de IVA y la
- * de ICA no dependen de eso.
- */
-export function tarifaAplicable(
-  // `numeric` de Postgres llega como texto; se acepta cualquiera de los dos y
-  // se convierte acá, en vez de obligar a cada consumidor a recordarlo.
-  concepto: {
-    tarifa: number | string;
-    tarifa_no_declarante: number | string | null;
-  },
-  declaranteRenta: boolean,
-): number {
-  if (declaranteRenta || concepto.tarifa_no_declarante === null) {
-    return Number(concepto.tarifa);
-  }
-  return Number(concepto.tarifa_no_declarante);
-}

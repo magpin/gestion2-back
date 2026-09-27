@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
+import { fila, filas } from '../../../common/db/filas';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import type { BuscarPucDto } from '../dto/catalogo.dto';
 import type {
@@ -122,8 +123,9 @@ export class PlanCuentasService {
     dto: EditarCuentaEmpresaDto,
   ): Promise<Record<string, unknown>> {
     return this.tx.enContexto(ctx, async (t) => {
-      const [fila] = await t.query<Array<Record<string, unknown>>>(
-        `UPDATE empresa_cuenta SET
+      const editada = fila<Record<string, unknown>>(
+        await t.query(
+          `UPDATE empresa_cuenta SET
            nombre              = COALESCE($2, nombre),
            naturaleza          = COALESCE($3, naturaleza),
            es_auxiliar         = COALESCE($4, es_auxiliar),
@@ -132,19 +134,20 @@ export class PlanCuentasService {
            exige_base_gravable = COALESCE($7, exige_base_gravable)
          WHERE id = $1
          RETURNING *`,
-        [
-          id,
-          dto.nombre ?? null,
-          dto.naturaleza ?? null,
-          dto.esAuxiliar ?? null,
-          dto.exigeTercero ?? null,
-          dto.exigeCentroCosto ?? null,
-          dto.exigeBaseGravable ?? null,
-        ],
+          [
+            id,
+            dto.nombre ?? null,
+            dto.naturaleza ?? null,
+            dto.esAuxiliar ?? null,
+            dto.exigeTercero ?? null,
+            dto.exigeCentroCosto ?? null,
+            dto.exigeBaseGravable ?? null,
+          ],
+        ),
       );
-      if (fila === undefined)
+      if (editada === undefined)
         throw new NotFoundException('La cuenta no existe');
-      return fila;
+      return editada;
     });
   }
 
@@ -164,11 +167,13 @@ export class PlanCuentasService {
           'La cuenta tiene auxiliares activos. Desactivalos primero: si no, quedarian colgando de una cuenta inactiva.',
         );
       }
-      const filas = await t.query<Array<unknown>>(
-        'UPDATE empresa_cuenta SET activa = false WHERE id = $1 RETURNING id',
-        [id],
+      const desactivadas = filas<{ id: string }>(
+        await t.query(
+          'UPDATE empresa_cuenta SET activa = false WHERE id = $1 RETURNING id',
+          [id],
+        ),
       );
-      if (filas.length === 0)
+      if (desactivadas.length === 0)
         throw new NotFoundException('La cuenta no existe');
     });
   }
@@ -492,23 +497,27 @@ export class PlanCuentasService {
     dto: EditarCentroCostoDto,
   ): Promise<Record<string, unknown>> {
     return this.tx.enContexto(ctx, async (t) => {
-      const [fila] = await t.query<Array<Record<string, unknown>>>(
-        'UPDATE empresa_centro_costo SET nombre = COALESCE($2, nombre) WHERE id = $1 RETURNING *',
-        [id, dto.nombre ?? null],
+      const editado = fila<Record<string, unknown>>(
+        await t.query(
+          'UPDATE empresa_centro_costo SET nombre = COALESCE($2, nombre) WHERE id = $1 RETURNING *',
+          [id, dto.nombre ?? null],
+        ),
       );
-      if (fila === undefined)
+      if (editado === undefined)
         throw new NotFoundException('El centro de costo no existe');
-      return fila;
+      return editado;
     });
   }
 
   async desactivarCentro(ctx: CtxEmpresa, id: string): Promise<void> {
     await this.tx.enContexto(ctx, async (t) => {
-      const filas = await t.query<Array<unknown>>(
-        'UPDATE empresa_centro_costo SET activo = false WHERE id = $1 RETURNING id',
-        [id],
+      const desactivados = filas<{ id: string }>(
+        await t.query(
+          'UPDATE empresa_centro_costo SET activo = false WHERE id = $1 RETURNING id',
+          [id],
+        ),
       );
-      if (filas.length === 0)
+      if (desactivados.length === 0)
         throw new NotFoundException('El centro de costo no existe');
     });
   }
@@ -593,7 +602,17 @@ export class PlanCuentasService {
          COALESCE((SELECT array_agg(ho.hecho ORDER BY ho.hecho)
                      FROM empresa_hecho_operativo ho WHERE ho.empresa_id = e.id),
                   ARRAY[]::text[])                                       AS hechos_operativos,
-         a.codigo_ciiu, a.tarifa_ica_por_mil,
+         a.codigo_ciiu,
+         -- La tarifa de ICA del municipio de la sede principal (paso Impuestos,
+         -- provisional hasta la ley de ICA); la de la actividad, si no hay.
+         COALESCE((SELECT i.tarifa_provisional_por_mil
+                     FROM empresa_ica_municipio i
+                     JOIN empresa_sede s ON s.empresa_id = i.empresa_id
+                                        AND s.municipio_codigo = i.municipio_codigo
+                    WHERE i.empresa_id = e.id AND i.fecha_fin IS NULL
+                      AND s.es_principal AND s.activo
+                    LIMIT 1),
+                  a.tarifa_ica_por_mil)                                  AS tarifa_ica_por_mil,
          g.division_codigo, d.seccion_codigo,
          cc.maneja_centro_de_costo,
          COALESCE((SELECT json_agg(json_build_object('codigo', s.codigo, 'nombre', s.nombre)

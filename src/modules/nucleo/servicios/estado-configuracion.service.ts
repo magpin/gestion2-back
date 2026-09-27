@@ -91,6 +91,18 @@ export class EstadoConfiguracionService {
          (SELECT count(*)::int > 0 FROM empresa_matricula_mercantil mm
            WHERE mm.empresa_id = e.id AND mm.fecha_fin IS NULL)        AS matricula,
 
+         e.impuestos_confirmado_en IS NOT NULL                         AS impuestos_confirmado,
+         COALESCE((SELECT array_agg(DISTINCT m.nombre)
+                     FROM empresa_sede s
+                     JOIN municipio m ON m.codigo = s.municipio_codigo
+                    WHERE s.empresa_id = e.id AND s.activo
+                      AND NOT EXISTS (
+                            SELECT 1 FROM empresa_ica_municipio i
+                             WHERE i.empresa_id = e.id
+                               AND i.municipio_codigo = s.municipio_codigo
+                               AND i.fecha_fin IS NULL)),
+                  ARRAY[]::text[])                                     AS municipios_sin_ica,
+
          (SELECT count(*)::int > 0 FROM empresa_credencial_dian cd
            WHERE cd.empresa_id = e.id
              AND cd.software_id_enc IS NOT NULL)                       AS credenciales
@@ -157,6 +169,10 @@ export class EstadoConfiguracionService {
                 fila.tarifa_ica === null ? null : Number(fila.tarifa_ica),
             },
       matriculaVigente: fila.matricula as boolean,
+      impuestos: {
+        confirmado: fila.impuestos_confirmado as boolean,
+        municipiosSinIca: (fila.municipios_sin_ica as string[]) ?? [],
+      },
       resolucionFacturaVenta:
         res === undefined
           ? null

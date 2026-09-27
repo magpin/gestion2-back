@@ -1,0 +1,156 @@
+{{!--
+  «Formulario 350 — retenciones del mes», el cuerpo.
+
+  Horizontal: cada renglón de renta lleva cuatro cifras —base y retención a
+  personas jurídicas y a naturales—, como el formulario. Todo al múltiplo de
+  mil (art. 577 ET); el detalle al peso está en el Excel.
+
+  Al final, el cuadre con el libro: si no cuadra, la hoja dice qué documentos
+  lo explican. Plan motor de retenciones, Fase 6, §6.2.
+--}}
+
+<section class="cifras">
+  <div class="tarjeta tarjeta--principal">
+    <span class="rotulo">Total a declarar</span>
+    <span class="valor">{{totales.total}}</span>
+    <span class="nota">{{filas}} retenciones del mes</span>
+  </div>
+  <div class="tarjeta">
+    <span class="rotulo">Renta</span>
+    <span class="valor">{{totales.renta}}</span>
+    <span class="nota">incluye autorretenciones</span>
+  </div>
+  <div class="tarjeta">
+    <span class="rotulo">IVA</span>
+    <span class="valor">{{totales.iva}}</span>
+    <span class="nota">retenido a responsables</span>
+  </div>
+  <div class="tarjeta">
+    <span class="rotulo">{{#if cuadre.cuadra}}<span class="punto punto--resuelto"></span>Cuadra con el libro{{else}}<span class="punto punto--atencion"></span>No cuadra con el libro{{/if}}</span>
+    <span class="valor">{{#if cuadre.cuadra}}{{cuadre.libro}}{{else}}{{cuadre.diferencia}}{{/if}}</span>
+    <span class="nota">{{#if cuadre.cuadra}}2365 y 2367 del mes{{else}}de diferencia: ver el cuadre{{/if}}</span>
+  </div>
+</section>
+
+<p class="notas">
+  Casillas del formulario 350 de la Resolución DIAN 000031 de 2024 (vigente en 2026). En la
+  autorretención, «PJ» o «PN» es tu empresa.
+</p>
+
+{{#each secciones}}
+  <section class="bloque">
+    <div class="encabezado"><h2>{{titulo}}</h2></div>
+    <div class="detalle detalle--350">
+      <div class="fila cabecera">
+        <span>Renglón</span>
+        <span>Casillas</span>
+        {{#if porTipoPersona}}
+          <span class="derecha">Base P. jurídicas</span>
+          <span class="derecha">Retención</span>
+          <span class="derecha">Base P. naturales</span>
+          <span class="derecha">Retención</span>
+        {{else}}
+          <span></span>
+          <span></span>
+          <span class="derecha">Base</span>
+          <span class="derecha">Valor</span>
+        {{/if}}
+      </div>
+      {{#each renglones}}
+        <div class="fila renglon{{#if vacio}} vacio{{/if}}">
+          <span>{{nombre}}</span>
+          <span class="mono">{{casillas}}</span>
+          {{#if porTipoPersona}}
+            <span class="derecha cifra">{{pj.base}}</span>
+            <span class="derecha cifra">{{pj.valor}}</span>
+            <span class="derecha cifra">{{pn.base}}</span>
+            <span class="derecha cifra">{{pn.valor}}</span>
+          {{else}}
+            <span></span>
+            <span></span>
+            <span class="derecha cifra">{{#if unico.baseMil}}{{unico.base}}{{/if}}</span>
+            <span class="derecha cifra">{{unico.valor}}</span>
+          {{/if}}
+        </div>
+      {{/each}}
+    </div>
+  </section>
+{{/each}}
+
+<section class="bloque">
+  <div class="detalle detalle--350">
+    <div class="fila total">
+      <span>Total retenciones (casilla 136: renta 130 + IVA 134), al múltiplo de mil</span>
+      <span></span><span></span><span></span><span></span>
+      <span class="derecha cifra">{{totales.total}}</span>
+    </div>
+  </div>
+  <p class="notas">
+    Sin redondear, lo retenido en el mes suma {{totales.exacto}}. Las cifras de cada
+    renglón se muestran al peso y se llevan al formulario al múltiplo de mil; el total
+    es la suma de lo redondeado, como en el formulario.
+  </p>
+</section>
+
+{{#if sinRenglon.length}}
+  <section class="bloque">
+    <div class="encabezado">
+      <h2>Sin renglón</h2>
+      <span class="apunte atencion">no suman en el total: revisalas con el contador</span>
+    </div>
+    <div class="detalle detalle--cuadre">
+      <div class="fila cabecera">
+        <span>Documento</span><span>Tercero</span><span></span><span class="derecha">Valor</span><span>Concepto</span>
+      </div>
+      {{#each sinRenglon}}
+        <div class="fila renglon">
+          <span class="mono">{{documento}}</span><span>{{tercero}}</span><span></span>
+          <span class="derecha cifra">{{valor}}</span><span>{{concepto}}</span>
+        </div>
+      {{/each}}
+    </div>
+  </section>
+{{/if}}
+
+<section class="bloque">
+  <div class="encabezado">
+    <h2>Cuadre con el libro</h2>
+    <span class="apunte">motor {{cuadre.motor}} · libro {{cuadre.libro}} · diferencia {{cuadre.diferencia}}</span>
+  </div>
+  {{#if cuadre.documentos.length}}
+    <div class="detalle detalle--cuadre">
+      <div class="fila cabecera">
+        <span>Documento</span>
+        <span class="derecha">Motor</span>
+        <span class="derecha">Libro</span>
+        <span class="derecha">Diferencia</span>
+        <span>Por qué</span>
+      </div>
+      {{#each cuadre.documentos}}
+        <div class="fila renglon">
+          <span class="mono">{{documento}}</span>
+          <span class="derecha cifra">{{motor}}</span>
+          <span class="derecha cifra">{{libro}}</span>
+          <span class="derecha cifra">{{diferencia}}</span>
+          <span>{{razon}}</span>
+        </div>
+      {{/each}}
+    </div>
+  {{else}}
+    <p class="notas">Cada documento del mes dice lo mismo en el motor y en el libro.</p>
+  {{/if}}
+  {{#if cuadre.sueltos.length}}
+    <p class="notas">
+      Asientos del mes que tocan 2365 o 2367 sin salir de un documento —hechos a mano, o
+      el pago de una declaración—. No entran en el cuadre; se listan para revisarlos:
+      {{#each cuadre.sueltos}}{{numero}} ({{fecha}}, {{neto}}){{#unless @last}} · {{/unless}}{{/each}}.
+    </p>
+  {{/if}}
+</section>
+
+<p class="notas">
+  Incluye las retenciones practicadas en el mes y las autorretenciones. Una nota crédito
+  o una anulación de algo del mismo mes resta en su propio renglón; si corrige un mes
+  anterior, va en «Menos». El ReteICA no va en el 350: tiene su propio reporte.
+  {{#if elaboro}}Generado con los permisos de {{elaboro}}{{#if rol}} ({{rol}}){{/if}}.{{/if}}
+</p>

@@ -142,9 +142,13 @@ export class TrazabilidadService {
           );
 
     const retencion =
-      asiento.origen_tipo === 'COMPRA' && asiento.origen_id !== null
-        ? await this.retencion(t, asiento.origen_id)
-        : undefined;
+      asiento.origen_id === null
+        ? undefined
+        : asiento.origen_tipo === 'COMPRA'
+          ? await this.retencion(t, asiento.origen_id)
+          : asiento.origen_tipo === 'VENTA'
+            ? await this.retencionVenta(t, asiento.origen_id)
+            : undefined;
 
     // Los nombres, de una vez: pocas personas, y casi siempre las mismas.
     const ids = [
@@ -259,6 +263,39 @@ export class TrazabilidadService {
       decision: compra.decision,
       motivo: compra.motivo,
       proveedor: compra.proveedor,
+      calculadas,
+    };
+  }
+
+  /**
+   * Lo que el motor calculó al facturar (autorretenciones, Fase 4). Una venta
+   * sin nada calculado no suma paso: casi ninguna lleva, y decir «sin
+   * retención» en cada factura sería ruido.
+   */
+  private async retencionVenta(t: Tx, ventaId: string) {
+    const calculadas = filas<{ texto: string; norma: string; origen: string }>(
+      await t.query(
+        `SELECT coalesce(explicacion->>'texto', '') AS texto, norma_aplicada AS norma,
+                origen_clasificacion AS origen
+           FROM retencion_calculada
+          WHERE documento_tipo = 'VENTA' AND documento_id = $1 AND estado = 'CONFIRMADA'
+          ORDER BY creado_en`,
+        [ventaId],
+      ),
+    );
+    if (calculadas.length === 0) return undefined;
+    const [venta] = filas<{ cliente: string }>(
+      await t.query(
+        `SELECT coalesce(nullif(te.razon_social, ''), concat_ws(' ', te.primer_nombre, te.primer_apellido)) AS cliente
+           FROM venta_documento v JOIN tercero te ON te.id = v.tercero_id
+          WHERE v.id = $1`,
+        [ventaId],
+      ),
+    );
+    return {
+      decision: 'CALCULADA',
+      motivo: null,
+      proveedor: venta?.cliente ?? '',
       calculadas,
     };
   }

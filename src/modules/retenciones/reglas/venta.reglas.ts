@@ -118,8 +118,15 @@ export function calcularVenta(
     ...extra,
   });
 
-  // 1. Autorretención especial: sobre todo el ingreso, sin base mínima.
-  if (empresa.autorretenedorEspecial) {
+  // 1. Autorretención especial: sobre todo el ingreso, sin base mínima. Es
+  // de sociedades y asimiladas (art. 1.2.6.6 DUR): una persona natural no la
+  // practica, y el 350 no tiene dónde declararla (casillas 59 y 68, solo PJ;
+  // bug 6). No se calcula: se avisa.
+  if (empresa.autorretenedorEspecial && empresa.tipoPersona === 'NATURAL') {
+    avisos.push(
+      'Tenés marcada la autorretención especial, pero sos persona natural: esa autorretención es de sociedades (art. 1.2.6.6 DUR) y el 350 no tiene casilla para ella. No la calculo; revisá tu RUT con tu contador.',
+    );
+  } else if (empresa.autorretenedorEspecial) {
     const t =
       empresa.ciiuPrincipal === null
         ? null
@@ -269,4 +276,35 @@ export function compararConCliente(
   return partes.length === 0
     ? null
     : `Lo que te retiene el cliente no cuadra con la norma: ${partes.join('; ')}. Revisalo con su certificado.`;
+}
+
+/** Las dos cuentas de una autorretención: lo que se debe y su anticipo. */
+const CUENTAS_AUTORRETENCION = {
+  RENTA: {
+    pasivo: '236575 (autorretenciones)',
+    activo: '135515 (retención que te practican)',
+  },
+  ICA: {
+    pasivo: '2368 (ICA retenido)',
+    activo: '135518 (ICA que te retienen)',
+  },
+} as const;
+
+/**
+ * Qué cuenta de la autorretención le falta a la empresa, dicho con precisión:
+ * la del pasivo, la del anticipo o las dos. `null` si tiene las dos.
+ */
+export function faltaCuentaAutorretencion(
+  enlace: { cuenta_id: string | null; cuenta_activo_id: string | null } | null,
+  impuesto: 'RENTA' | 'ICA',
+): string | null {
+  const nombres = CUENTAS_AUTORRETENCION[impuesto];
+  const faltan = [
+    ...(enlace?.cuenta_id == null ? [nombres.pasivo] : []),
+    ...(enlace?.cuenta_activo_id == null ? [nombres.activo] : []),
+  ];
+  if (faltan.length === 0) return null;
+  return faltan.length === 2
+    ? `te faltan las cuentas ${faltan[0]} y ${faltan[1]}. Crealas en el plan de cuentas y se enlazan solas.`
+    : `te falta la cuenta ${faltan[0]}. Creala en el plan de cuentas y se enlaza sola.`;
 }

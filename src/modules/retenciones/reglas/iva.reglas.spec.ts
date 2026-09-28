@@ -1,3 +1,4 @@
+import { calcularLineaCompra } from '../../compras/servicios/compra.reglas';
 import type { FotoParametros, TarifaLey } from '../servicios/parametros.reglas';
 import {
   calcularIva,
@@ -204,5 +205,34 @@ describe('ReteIVA — guardas y bordes', () => {
     expect(esBien(null, 'COMBUSTIBLES')).toBe(true);
     expect(esBien(null, 'HONORARIOS')).toBe(false);
     expect(esBien(null, null)).toBeNull();
+  });
+});
+
+describe('ReteIVA de servicios con AIU (art. 462-1 ET, bug #16)', () => {
+  // El IVA del renglón lo liquida la compra sobre el AIU; la ReteIVA es el
+  // 15 % de ese IVA, no del que saldría sobre el total.
+  const aseo = (aiu: number) => {
+    const l = calcularLineaCompra({
+      cantidad: 1,
+      costoUnitario: 10_000_000,
+      ivaTarifa: 19,
+      ivaDescontable: true,
+      aiu,
+    });
+    return servicio(l.subtotal, 1, l.ivaValor);
+  };
+
+  it('aseo de $10.000.000 con AIU de $1.200.000 → 15 % × $228.000 = $34.200', () => {
+    const r = calcularIva([aseo(1_200_000)], ctx());
+    expect(
+      r.retenciones.map((x) => [x.concepto.codigo, x.base, x.valor]),
+    ).toEqual([['RETEIVA_SERVICIOS', 228_000, 34_200]]);
+  });
+
+  it('con AIU de $500.000 (bajo el 10 %) → IVA $190.000 → ReteIVA $28.500', () => {
+    const r = calcularIva([aseo(500_000)], ctx());
+    expect(
+      r.retenciones.map((x) => [x.concepto.codigo, x.base, x.valor]),
+    ).toEqual([['RETEIVA_SERVICIOS', 190_000, 28_500]]);
   });
 });

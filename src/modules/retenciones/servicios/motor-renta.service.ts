@@ -11,6 +11,7 @@ import {
   type PropuestaIa,
 } from '../reglas/clasificacion.reglas';
 import {
+  acumuladoIcaAntes,
   calcularIca,
   municipioDeCausacion,
   periodoDe,
@@ -36,8 +37,22 @@ import {
   type RenglonRenta,
   type ResultadoRenta,
 } from '../reglas/renta.reglas';
+import { NucleoApi } from '../../nucleo/nucleo.api';
+import {
+  avisoPagoExterior,
+  subcuentaIvaPorCrear,
+  subcuentasPorCrear,
+} from '../reglas/exterior.reglas';
 import { ParametrosService } from './parametros.service';
-import { retencionesVivas } from './retenciones-vivas';
+import {
+  paraReversar,
+  retencionesVivas,
+  type RetencionViva,
+} from './retenciones-vivas';
+import {
+  contrarrestoAlAnular,
+  reversaProporcional,
+} from '../reglas/anulacion.reglas';
 
 /** Un renglón del documento, como lo ve el motor. */
 export interface RenglonDocumento {
@@ -80,6 +95,12 @@ export interface DocumentoRenta {
    * recálculo lo usa en vez del de hoy (Fase 8, §8.10).
    */
   acumuladoAnterior?: Record<string, number>;
+  /**
+   * El acumulado de ICA del período por municipio que había antes de este
+   * documento, el que usó el motor al confirmar. El recálculo lo usa en vez
+   * del de hoy, que ya trae la compra adentro y la contaba dos veces (bug 3).
+   */
+  acumuladoIcaAnterior?: Record<string, number>;
   renglones: RenglonDocumento[];
 }
 
@@ -158,6 +179,8 @@ export interface PropuestaRenta {
   pideAportes: boolean;
   /** El acumulado por concepto que se usó (Fase 8, §8.10). Solo del servidor. */
   acumuladoAnterior?: Record<string, number>;
+  /** El acumulado de ICA del período que se usó, por municipio (bug 3). */
+  acumuladoIcaAnterior?: Record<string, number>;
   conceptos: Array<{ codigo: string; nombre: string }>;
   /** Lo que conviene saber aunque no cambie nada hoy (plan §1.10). */
   avisos: string[];
@@ -169,6 +192,18 @@ export interface PropuestaRenta {
     base: number;
     retenido: number;
   }>;
+}
+
+/** Lo que una nota crédito reversaría de una retención de la compra (bug 4). */
+export interface ReversaPrevista {
+  /** La retención original de la compra. */
+  retencionId: string;
+  /** `concepto|municipio`, como la guarda `compra_retencion`. */
+  clave: string;
+  /** En positivo, al peso en el valor. */
+  base: number;
+  valor: number;
+  viva: RetencionViva;
 }
 
 export interface RentaConfirmada {
@@ -187,6 +222,7 @@ interface ConceptoFila {
   umbral_acumulado_uvt: string | null;
   usa_tabla_383: boolean;
   base_es_aiu: boolean;
+  subcuenta_pasivo: string;
   cuenta_id: string | null;
 }
 
@@ -241,6 +277,7 @@ export class MotorRentaService {
   constructor(
     private readonly tx: TxService,
     private readonly parametros: ParametrosService,
+    private readonly nucleo: NucleoApi,
   ) {}
 
   async proponer(
@@ -294,6 +331,7 @@ export class MotorRentaService {
         JSON.stringify({
           ...doc,
           acumuladoAnterior: propuesta.acumuladoAnterior ?? {},
+          acumuladoIcaAnterior: propuesta.acumuladoIcaAnterior ?? {},
         }),
         JSON.stringify({
           conceptos: propuesta.renglones
@@ -410,10 +448,48 @@ export class MotorRentaService {
   }
 
   /**
-   * Una nota crédito devuelve parte de la compra: la retención de renta baja
-   * en la misma proporción (caso borde 4). Nada se edita: por cada retención
-   * de la compra entra una fila nueva, en negativo, que apunta a la original
+   * Cuánto reversaría una nota crédito de cada retención de la compra, sin
+   * escribir nada. Lo usa la nota para su asiento y `reversar` para sus
+   * filas: la misma cifra en los dos lados, al peso (bug 4).
+   *
+   * Por retención original de la compra (renta, IVA e ICA; no las de una
+   * nota débito, que es otro documento): la proporción de lo que puso la
+   * compra —la original más sus ajustes por cambio de norma—, sin pasar de lo
+   * que le queda viva.
+   */
+  async reversaPrevista(
+    t: Tx,
+    datos: { compraId: string; proporcion: number },
+  ): Promise<ReversaPrevista[]> {
+    const vivas = (await retencionesVivas(t, datos.compraId)).filter(
+      (o) =>
+        o.documento_tipo === 'COMPRA' &&
+        !o.es_autorretencion &&
+        ['RENTA', 'IVA', 'ICA'].includes(o.impuesto),
+    );
+    const previstas: ReversaPrevista[] = [];
+    for (const o of vivas) {
+      const r = reversaProporcional(paraReversar(o), datos.proporcion);
+      if (r === null) continue;
+      previstas.push({
+        retencionId: o.id,
+        clave: `${o.concepto_codigo}|${o.municipio_codigo ?? ''}`,
+        base: r.base,
+        valor: r.valor,
+        viva: o,
+      });
+    }
+    return previstas;
+  }
+
+  /**
+   * Una nota crédito devuelve parte de la compra: la retención baja en la
+   * misma proporción (caso borde 4). Nada se edita: por cada retención de la
+   * compra entra una fila nueva, en negativo, que apunta a la original
    * (`anula_a`), y el acumulado de honorarios baja lo devuelto.
+   *
+   * La cifra es la de `reversaPrevista`: con los ajustes por cambio de norma
+   * adentro y al peso, igual que el asiento de la nota.
    *
    * Devuelve, por `concepto|municipio`, el id de la fila nueva, para
    * `compra_retencion`.
@@ -428,44 +504,10 @@ export class MotorRentaService {
     },
     t: Tx,
   ): Promise<Map<string, string>> {
-    const originales = filas<{
-      id: string;
-      tercero_id: string;
-      concepto_nacional_id: string;
-      codigo: string;
-      usa_acumulado_anual: boolean;
-      impuesto: string;
-      municipio_codigo: string | null;
-      fecha_causacion: string;
-      base: string;
-      tarifa_nominal: string;
-      factor_zomac: string;
-      tarifa_efectiva: string;
-      valor: string;
-      tarifa_id: string | null;
-      uvt_valor: string | null;
-      norma_aplicada: string;
-      origen_clasificacion: string;
-    }>(
-      await t.query(
-        `SELECT rc.id, rc.tercero_id, rc.concepto_nacional_id, n.codigo, n.usa_acumulado_anual, rc.impuesto,
-                rc.fecha_causacion::text, rc.base, rc.tarifa_nominal, rc.factor_zomac,
-                rc.tarifa_efectiva, rc.valor, rc.tarifa_id, rc.uvt_valor, rc.norma_aplicada,
-                rc.origen_clasificacion, rc.municipio_codigo
-           FROM retencion_calculada rc
-           JOIN retencion_concepto_nacional n ON n.id = rc.concepto_nacional_id
-          WHERE rc.documento_tipo = 'COMPRA' AND rc.documento_id = $1
-            AND rc.impuesto IN ('RENTA', 'IVA', 'ICA') AND rc.estado = 'CONFIRMADA'`,
-        [datos.compraId],
-      ),
-    );
-
     const nuevas = new Map<string, string>();
-    for (const o of originales) {
-      const base = Math.round(Number(o.base) * datos.proporcion * 100) / 100;
-      const valor = Math.round(Number(o.valor) * datos.proporcion);
-      if (valor <= 0) continue;
-      const pct = Math.round(datos.proporcion * 10000) / 100;
+    const pct = Math.round(datos.proporcion * 10000) / 100;
+    for (const p of await this.reversaPrevista(t, datos)) {
+      const o = p.viva;
       const [fila] = filas<{ id: string }>(
         await t.query(
           `INSERT INTO retencion_calculada
@@ -482,11 +524,11 @@ export class MotorRentaService {
             o.tercero_id,
             o.concepto_nacional_id,
             datos.fecha,
-            -base,
+            -p.base,
             o.tarifa_nominal,
             o.factor_zomac,
             o.tarifa_efectiva,
-            -valor,
+            -p.valor,
             o.tarifa_id,
             o.uvt_valor,
             o.norma_aplicada,
@@ -495,7 +537,7 @@ export class MotorRentaService {
               motor_version: MOTOR_VERSION,
               reversa_de: o.id,
               proporcion: datos.proporcion,
-              texto: `Nota crédito: reversé el ${pct.toLocaleString('es-CO')} % de la retención (${Math.round(valor).toLocaleString('es-CO')} de ${Math.round(Number(o.valor)).toLocaleString('es-CO')}), con la misma tarifa y norma de la compra.`,
+              texto: `Nota crédito: reversé el ${pct.toLocaleString('es-CO')} % de la retención (${p.valor.toLocaleString('es-CO')} de ${Math.round(Number(o.valor_documento)).toLocaleString('es-CO')}), con la misma tarifa y norma de la compra.`,
             }),
             o.id,
             MOTOR_VERSION,
@@ -505,7 +547,7 @@ export class MotorRentaService {
           ],
         ),
       );
-      nuevas.set(`${o.codigo}|${o.municipio_codigo ?? ''}`, fila.id);
+      nuevas.set(p.clave, fila.id);
 
       if (o.usa_acumulado_anual) {
         await t.query(
@@ -517,7 +559,7 @@ export class MotorRentaService {
             o.tercero_id,
             o.concepto_nacional_id,
             Number(o.fecha_causacion.slice(0, 4)),
-            base,
+            p.base,
           ],
         );
       }
@@ -551,8 +593,10 @@ export class MotorRentaService {
    * había quitado, que vuelve. Va con la fecha de la anulación, que es cuando
    * se declara la corrección.
    *
-   * El acumulado de ICA del período no se mueve: no guarda qué compra aportó
-   * cuánto (plan, §6.0).
+   * Si la nota es de una compra que ya se anuló, no vuelve nada: la
+   * anulación de la compra ya reversó solo lo que quedaba, contando lo que la
+   * nota había quitado. Devolverlo revivía la retención de una compra anulada
+   * (bug 1). Lo mismo con el acumulado de honorarios y el de ICA.
    */
   async anularCompra(
     ctx: CtxEmpresa,
@@ -562,9 +606,9 @@ export class MotorRentaService {
     const vivas = await retencionesVivas(t, datos.compraId);
 
     for (const o of vivas) {
-      const valor = Number(o.valor);
-      const base = Number(o.base);
-      if (valor === 0) continue;
+      const c = contrarrestoAlAnular(paraReversar(o));
+      if (c === null) continue;
+      const { valor, base } = c;
       const texto =
         valor > 0
           ? `Compra anulada: reversé los ${Math.round(valor).toLocaleString('es-CO')} que quedaban de esta retención. Motivo: ${datos.motivo}`
@@ -625,12 +669,25 @@ export class MotorRentaService {
     }
 
     // El acumulado de ICA: una compra resta lo que le quede (lo suyo menos lo
-    // que devolvieron sus notas); una nota devuelve lo que había quitado.
+    // que devolvieron sus notas); una nota devuelve lo que había quitado,
+    // salvo que su compra ya esté anulada (bug 1).
+    const anuladas = new Set(
+      filas<{ id: string }>(
+        await t.query(
+          `SELECT id FROM compra_documento
+            WHERE estado = 'ANULADA'
+              AND id IN (SELECT compra_id FROM ica_acumulado_aporte
+                          WHERE documento_id = $1 AND compra_id <> $1)`,
+          [datos.compraId],
+        ),
+      ).map((c) => c.id),
+    );
     for (const a of await this.aportesIca(
       t,
       'compra_id = $1 OR documento_id = $1',
       datos.compraId,
     )) {
+      if (a.compraId !== datos.compraId && anuladas.has(a.compraId)) continue;
       await this.aportarIca(
         t,
         ctx,
@@ -639,6 +696,45 @@ export class MotorRentaService {
         -a.retenido,
       );
     }
+  }
+
+  /**
+   * El acumulado de ICA del período que había **antes** de una compra, por
+   * municipio, reconstruido con los aportes (0090): lo que aportaron los
+   * demás documentos del mismo proveedor, municipio y período antes del
+   * primer aporte de la compra. Para recalcular compras que se confirmaron
+   * antes de que la entrada guardara `acumuladoIcaAnterior` (bug 3).
+   *
+   * `undefined` si la compra no aportó nada: entonces el acumulado de hoy no
+   * la trae adentro.
+   */
+  async acumuladoIcaAntesDe(
+    t: Tx,
+    compraId: string,
+  ): Promise<Record<string, number> | undefined> {
+    const crudas = filas<{ municipio_codigo: string; base: string }>(
+      await t.query(
+        `WITH propio AS (
+           SELECT tercero_id, municipio_codigo, anio, periodo, min(creado_en) AS desde
+             FROM ica_acumulado_aporte
+            WHERE compra_id = $1 AND documento_id = $1
+            GROUP BY tercero_id, municipio_codigo, anio, periodo
+         )
+         SELECT p.municipio_codigo,
+                coalesce(sum(a.base), 0)::text AS base
+           FROM propio p
+           LEFT JOIN ica_acumulado_aporte a
+             ON a.tercero_id = p.tercero_id AND a.municipio_codigo = p.municipio_codigo
+            AND a.anio = p.anio AND a.periodo = p.periodo
+            AND a.compra_id <> $1 AND a.creado_en < p.desde
+          GROUP BY p.municipio_codigo`,
+        [compraId],
+      ),
+    );
+    if (crudas.length === 0) return undefined;
+    return Object.fromEntries(
+      crudas.map((c) => [c.municipio_codigo, Number(c.base)]),
+    );
   }
 
   /** Lo que queda aportado al acumulado de ICA, por período y municipio. */
@@ -1159,6 +1255,7 @@ export class MotorRentaService {
 
     let resultadoIca: ResultadoIca | null = null;
     const acumularIca: PropuestaRenta['acumularIca'] = [];
+    const acumuladoIcaUsado: Record<string, number> = {};
     const anio = Number(doc.fecha.slice(0, 4));
     if (icaAplica) {
       const municipioCompra = doc.municipioCompra ?? icaEmpresa.principal;
@@ -1192,6 +1289,12 @@ export class MotorRentaService {
         anio,
         doc.fecha,
       );
+      // Al recalcular, el acumulado de antes de la compra; si no, el de hoy.
+      const acumuladoIca = (m: string): number =>
+        acumuladoIcaAntes(doc.acumuladoIcaAnterior, ica.acumulados, m);
+      for (const m of ica.acumulados.keys()) {
+        acumuladoIcaUsado[m] = acumuladoIca(m);
+      }
       const gc = (esGc: boolean) =>
         esGc ? 'GRAN_CONTRIBUYENTE_DIAN' : 'ORDINARIO';
       resultadoIca = calcularIca(renglonesIca, {
@@ -1223,7 +1326,7 @@ export class MotorRentaService {
           );
         },
         matriz: (m) => ica.matriz.filter((x) => x.municipio === m),
-        acumulado: (m) => ica.acumulados.get(m) ?? 0,
+        acumulado: (m) => acumuladoIca(m),
       });
       for (const a of resultadoIca.acumular) {
         const param = ica.parametros.get(a.municipio);
@@ -1259,9 +1362,7 @@ export class MotorRentaService {
         : []),
       ...(resultadoIca?.avisos ?? []),
       ...(exterior && rentaAplica
-        ? [
-            'Pago al exterior: retengo la tarifa del Estatuto (art. 408). Si el proveedor es de un país con convenio y te dio su certificado de residencia fiscal, la tarifa puede ser menor: por ahora hacelo con tu contador.',
-          ]
+        ? [avisoPagoExterior(renglones.some((r) => r.convenios !== undefined))]
         : []),
       ...resultadoRenta.retenciones.flatMap((r) => {
         const a = r.explicacion.acumulado;
@@ -1274,7 +1375,45 @@ export class MotorRentaService {
       }),
     ];
 
+    // Una retención de renta sin cuenta siendo la empresa agente: la
+    // subcuenta del decreto se crea como las del plan sugerido (la 236550 de
+    // pagos al exterior no venía en él) y el trigger de 0076 la enlaza.
+    const porCrear = subcuentasPorCrear(
+      resultadoRenta.retenciones.map((x) => ({
+        cuentaId: porCodigo.get(x.concepto.codigo)?.cuenta_id ?? null,
+        subcuentaPasivo:
+          porCodigo.get(x.concepto.codigo)?.subcuenta_pasivo ?? null,
+      })),
+      contexto.empresaEsAgente,
+    );
+    if (porCrear.length > 0) {
+      await this.crearSubcuentasRenta(t, ctx, porCrear);
+      for (const c of await this.conceptos(t, ctx)) {
+        const actual = porCodigo.get(c.codigo);
+        if (actual !== undefined) actual.cuenta_id = c.cuenta_id;
+      }
+    }
+
+    // Una ReteIVA sin cuenta: la 2367 se crea sola (bug #17). El plan sugerido
+    // solo la trae al agente de IVA, pero el responsable que contrata servicios
+    // del exterior también retiene (art. 437-2 num. 3 ET). El trigger de 0076
+    // la enlaza a los conceptos de IVA.
     const cuentaIva = new Map(conceptosIva.map((c) => [c.codigo, c.cuenta_id]));
+    const ivaPorCrear = subcuentaIvaPorCrear(
+      resultadoIva.retenciones.map((x) => ({
+        cuentaId: cuentaIva.get(x.concepto.codigo) ?? null,
+      })),
+    );
+    if (ivaPorCrear !== null) {
+      await this.nucleo.asegurarCuenta(
+        ctx,
+        { codigo: ivaPorCrear, nombre: 'IVA retenido', exigeTercero: true },
+        t,
+      );
+      for (const c of await this.conceptosIva(t, ctx, 'IVA')) {
+        cuentaIva.set(c.codigo, c.cuenta_id);
+      }
+    }
     const reteica = conceptosIca[0];
     const retenciones: RetencionPropuesta[] = [
       ...resultadoRenta.retenciones.map((x) => ({
@@ -1399,6 +1538,7 @@ export class MotorRentaService {
       pendientes,
       pideAportes: porTabla,
       acumuladoAnterior: Object.fromEntries(acumulados),
+      acumuladoIcaAnterior: acumuladoIcaUsado,
       conceptos: listaConceptos,
       avisos,
       acumularIca,
@@ -1553,10 +1693,45 @@ export class MotorRentaService {
     );
   }
 
+  /**
+   * Crea las subcuentas de retefuente que falten, con el nombre del decreto.
+   * Una que ya existe —aunque esté inactiva— no se toca: quien la desactivó
+   * tuvo un motivo, y la retención sigue pidiendo cuenta.
+   */
+  private async crearSubcuentasRenta(
+    t: Tx,
+    ctx: CtxEmpresa,
+    codigos: string[],
+  ): Promise<void> {
+    const nombres = new Map(
+      filas<{ codigo: string; nombre: string }>(
+        await t.query(
+          'SELECT codigo, nombre FROM cuenta_puc WHERE codigo = ANY($1::varchar[])',
+          [codigos],
+        ),
+      ).map((f) => [f.codigo, f.nombre]),
+    );
+    for (const codigo of codigos) {
+      const delDecreto = nombres.get(codigo);
+      await this.nucleo.asegurarCuenta(
+        ctx,
+        {
+          codigo,
+          nombre:
+            delDecreto === undefined
+              ? 'Retención en la fuente'
+              : `Retención en la fuente - ${delDecreto.toLowerCase()}`,
+          exigeTercero: true,
+        },
+        t,
+      );
+    }
+  }
+
   private async conceptos(t: Tx, ctx: CtxEmpresa): Promise<ConceptoFila[]> {
     return filas<ConceptoFila>(
       await t.query(
-        `SELECT n.id, n.codigo, n.nombre, n.usa_acumulado_anual, n.umbral_acumulado_uvt, n.usa_tabla_383, n.base_es_aiu,
+        `SELECT n.id, n.codigo, n.nombre, n.usa_acumulado_anual, n.umbral_acumulado_uvt, n.usa_tabla_383, n.base_es_aiu, n.subcuenta_pasivo,
                 (SELECT rc.cuenta_id FROM retencion_concepto rc
                   WHERE rc.empresa_id = $1 AND rc.concepto_nacional_id = n.id
                     AND rc.anio IS NULL AND rc.activo

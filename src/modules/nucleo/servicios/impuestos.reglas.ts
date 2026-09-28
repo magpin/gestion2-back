@@ -83,19 +83,22 @@ export const preguntaDe = (clave: ClavePregunta): Pregunta => {
 /**
  * La respuesta a una pregunta, leída de las condiciones vigentes.
  *
- * `null` = nadie contestó. Solo el IVA puede quedar así: los demás «no» son la
- * ausencia de un código, y los distingue la confirmación del paso.
+ * `null` = nadie contestó. Los «no» sin código en la casilla 53 son la
+ * ausencia de un código: los distingue el «No» que contestó la persona
+ * (`dijoNo`, 0101) o la confirmación del paso. Sin lo primero, el botón «No»
+ * quedaba sin marcar hasta «Todo correcto» (bug #18 de la revisión del 27-09).
  */
 export function respuestaDe(
   p: Pregunta,
   vigentes: string[],
   confirmado: boolean,
+  dijoNo: readonly string[] = [],
 ): boolean | null {
   if (vigentes.includes(p.condicion)) return true;
   if (p.clave === 'IVA') {
     return vigentes.includes('NO_RESPONSABLE_IVA') ? false : null;
   }
-  return confirmado ? false : null;
+  return confirmado || dijoNo.includes(p.clave) ? false : null;
 }
 
 /**

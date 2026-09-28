@@ -629,6 +629,8 @@ function bloqueImpuestos(
       ['35', 'Retención en la fuente - rendimientos financieros'],
       ['40', 'Retención en la fuente - compras'],
       ['45', 'Retención en la fuente - loterías, rifas y apuestas'],
+      // La de los conceptos del exterior (art. 406 y siguientes ET).
+      ['50', 'Retención en la fuente - pagos al exterior'],
       ['70', 'Retención en la fuente - otros conceptos'],
     ];
 

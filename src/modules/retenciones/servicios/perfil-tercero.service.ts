@@ -7,6 +7,7 @@ import {
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import { filas } from '../../../common/db/filas';
+import { hoyEnColombia } from '../../../common/fecha';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import type {
   NuevaResidenciaDto,
@@ -48,10 +49,30 @@ const CAMPOS = `p.id, p.tipo_persona, p.regimen_renta, p.declarante_renta, p.es_
   (SELECT u.nombre_completo FROM usuario u WHERE u.id = p.aprobado_por) AS aprobado_por_nombre,
   p.aprobado_en::text`;
 
-const hoy = (): string => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+// El día de la empresa, no el del servidor: en un servidor en UTC, a las 7 de
+// la noche de Bogotá ya es mañana, y así se colaba una versión con fecha
+// futura (bug #7 de la revisión del 27-09).
+const hoy = hoyEnColombia;
+
+/** Una versión del perfil, como la lee la aprobación de una propuesta. */
+interface VersionParaHistoria {
+  id: string;
+  desde: string;
+  hasta: string | null;
+  regimen_renta: PerfilParaComparar['regimenRenta'];
+  es_responsable_iva: boolean;
+  es_gran_contribuyente: boolean;
+  es_autorretenedor_renta: boolean;
+  ciiu_principal: string | null;
+}
+
+const comparable = (v: VersionParaHistoria): PerfilParaComparar => ({
+  regimenRenta: v.regimen_renta,
+  esResponsableIva: v.es_responsable_iva,
+  esGranContribuyente: v.es_gran_contribuyente,
+  esAutorretenedorRenta: v.es_autorretenedor_renta,
+  ciiuPrincipal: v.ciiu_principal,
+});
 
 /**
  * Los datos tributarios de un tercero, con historia (plan motor de
@@ -463,11 +484,17 @@ export class PerfilTerceroService {
       ciiu_principal: string | null;
       contrato_dos_o_mas_trabajadores: boolean;
       desde: string;
+      /** La que puso el sistema al crear el tercero: no es un hecho de nadie. */
+      automatica: boolean;
     }>(
       await t.query(
         `SELECT regimen_renta, declarante_renta, es_responsable_iva, es_gran_contribuyente,
                 es_autorretenedor_renta, es_agente_ret_iva, es_zomac, zomac_tamano,
-                ciiu_principal, contrato_dos_o_mas_trabajadores, vigencia_desde::text AS desde
+                ciiu_principal, contrato_dos_o_mas_trabajadores, vigencia_desde::text AS desde,
+                aprobado_por IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM tercero_perfil_tributario o
+                                   WHERE o.tercero_id = $1 AND o.vigencia_hasta IS NOT NULL)
+                  AS automatica
            FROM tercero_perfil_tributario
           WHERE tercero_id = $1 AND vigencia_hasta IS NULL`,
         [terceroId],
@@ -558,8 +585,14 @@ export class PerfilTerceroService {
 
   /**
    * Una persona aprueba (R-D8): se abre la versión nueva del perfil desde la
-   * fecha de la factura, por el mismo camino que un cambio a mano. Si la
-   * versión vigente es posterior, desde esa fecha: la historia no se reescribe.
+   * fecha de la factura, por el mismo camino que un cambio a mano.
+   *
+   * Si la versión vigente empieza el mismo día de la factura o después, la
+   * factura habla de antes: su versión entra en la historia, en su fecha, y
+   * la vigente queda como está (bug #5 de la revisión del 27-09: antes se
+   * corregía la vigente en el sitio y se perdía lo que decía). La única
+   * excepción es la versión automática del alta, que no es un hecho de nadie
+   * y se reemplaza, como en `nuevaVersion`.
    */
   async aprobarPropuesta(ctx: CtxEmpresa, id: string, tx?: Tx): Promise<void> {
     await this.tx.enContexto(
@@ -569,6 +602,17 @@ export class PerfilTerceroService {
         const v = await this.vigenteParaProponer(t, p.tercero_id);
         if (v === undefined) {
           throw new NotFoundException('El tercero no tiene perfil tributario.');
+        }
+        if (p.desde <= v.desde && !v.automatica) {
+          await this.versionEnLaHistoria(
+            t,
+            ctx,
+            p.tercero_id,
+            p.desde,
+            p.cambios,
+          );
+          await this.marcarAprobada(t, ctx, id);
+          return;
         }
         const nuevo = aplicarCambios(
           {
@@ -591,18 +635,110 @@ export class PerfilTerceroService {
             esZomac: v.es_zomac,
             zomacTamano: v.zomac_tamano ?? undefined,
             contratoDosOMasTrabajadores: v.contrato_dos_o_mas_trabajadores,
-            vigenciaDesde: p.desde > v.desde ? p.desde : v.desde,
+            // Después de la vigente, o reemplazando la automática del alta.
+            vigenciaDesde: p.desde,
           },
           { fuente: 'FACTURA', tx: t },
         );
-        await t.query(
-          `UPDATE tercero_perfil_propuesta
-            SET estado = 'APROBADA', resuelta_por = $2, resuelta_en = now()
-          WHERE id = $1`,
-          [id, ctx.usuarioId],
-        );
+        await this.marcarAprobada(t, ctx, id);
       },
       tx,
+    );
+  }
+
+  private async marcarAprobada(t: Tx, ctx: CtxEmpresa, id: string) {
+    await t.query(
+      `UPDATE tercero_perfil_propuesta
+          SET estado = 'APROBADA', resuelta_por = $2, resuelta_en = now()
+        WHERE id = $1`,
+      [id, ctx.usuarioId],
+    );
+  }
+
+  /**
+   * La versión de una factura anterior a la vigente entra en la historia, en
+   * su fecha: parte la versión que regía ese día y dura hasta que empieza la
+   * siguiente. Ninguna versión cambia lo que dice; la que regía ese día solo
+   * se cierra el día antes, como cuando se abre cualquier versión.
+   *
+   * Si ya hay una versión que empieza ese mismo día, no se pisa: una persona
+   * dijo qué regía desde entonces, y cambiarla es cosa de Datos tributarios.
+   */
+  private async versionEnLaHistoria(
+    t: Tx,
+    ctx: CtxEmpresa,
+    terceroId: string,
+    fecha: string,
+    cambios: CambioPerfil[],
+  ): Promise<void> {
+    const versiones = filas<VersionParaHistoria>(
+      await t.query(
+        `SELECT id, vigencia_desde::text AS desde, vigencia_hasta::text AS hasta,
+                regimen_renta, es_responsable_iva, es_gran_contribuyente,
+                es_autorretenedor_renta, ciiu_principal
+           FROM tercero_perfil_tributario
+          WHERE tercero_id = $1
+          ORDER BY vigencia_desde
+          FOR UPDATE`,
+        [terceroId],
+      ),
+    );
+    if (versiones.some((x) => x.desde === fecha)) {
+      throw new ConflictException(
+        `Ya hay una versión del perfil que empieza el ${fecha}. La propuesta no la reemplaza: si hay que cambiarla, hacelo en Datos tributarios, o rechazá la propuesta.`,
+      );
+    }
+    const anterior = [...versiones].reverse().find((x) => x.desde < fecha);
+    const siguiente = versiones.find((x) => x.desde > fecha);
+    const base = anterior ?? siguiente;
+    if (base === undefined || siguiente === undefined) {
+      // Sin una versión posterior no se llega acá: la vigente empieza después.
+      throw new NotFoundException('El tercero no tiene perfil tributario.');
+    }
+
+    const antes = comparable(base);
+    const nuevo = aplicarCambios(antes, cambios);
+    const campos = Object.keys(antes) as Array<keyof PerfilParaComparar>;
+    // Si ese día ya regía lo que dice la factura, no hay nada que insertar.
+    if (campos.every((k) => antes[k] === nuevo[k])) {
+      return;
+    }
+
+    if (
+      anterior !== undefined &&
+      (anterior.hasta === null || anterior.hasta >= fecha)
+    ) {
+      await t.query(
+        `UPDATE tercero_perfil_tributario SET vigencia_hasta = $2::date - 1 WHERE id = $1`,
+        [anterior.id, fecha],
+      );
+    }
+    await t.query(
+      `INSERT INTO tercero_perfil_tributario
+         (empresa_id, tercero_id, tipo_persona, regimen_renta, declarante_renta,
+          es_responsable_iva, es_gran_contribuyente, es_autorretenedor_renta,
+          es_entidad_publica, es_agente_ret_renta, es_autorretenedor_especial,
+          es_agente_ret_iva, agente_iva_numeral, es_zomac, zomac_tamano,
+          ciiu_principal, ciiu_secundarios, contrato_dos_o_mas_trabajadores,
+          vigencia_desde, vigencia_hasta, fuente, propuesto_por, aprobado_por, aprobado_en)
+       SELECT empresa_id, tercero_id, tipo_persona, $2, declarante_renta,
+              $3, $4, $5,
+              es_entidad_publica, es_agente_ret_renta, es_autorretenedor_especial,
+              es_agente_ret_iva, agente_iva_numeral, es_zomac, zomac_tamano,
+              $6, ciiu_secundarios, contrato_dos_o_mas_trabajadores,
+              $7::date, $8::date - 1, 'FACTURA', $9, $9, now()
+         FROM tercero_perfil_tributario WHERE id = $1`,
+      [
+        base.id,
+        nuevo.regimenRenta,
+        nuevo.esResponsableIva,
+        nuevo.esGranContribuyente,
+        nuevo.esAutorretenedorRenta,
+        nuevo.ciiuPrincipal,
+        fecha,
+        siguiente.desde,
+        ctx.usuarioId,
+      ],
     );
   }
 

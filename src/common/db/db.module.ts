@@ -4,6 +4,8 @@ import { DataSource } from 'typeorm';
 
 import { ENTORNO, leerEntorno, type Entorno } from '../../config/env';
 import { TxService } from './tx.service';
+// Antes de abrir cualquier conexión: las columnas `date` llegan como texto.
+import './tipos-pg';
 
 /**
  * Conexión de aprovisionamiento: `gestion_provision`, con BYPASSRLS.

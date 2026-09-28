@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -10,6 +11,7 @@ import {
 import type { CtxEmpresa } from '../../../common/ctx';
 import { fila, filas } from '../../../common/db/filas';
 import { esFechaFutura, hoyEnColombia } from '../../../common/fecha';
+import { mensajeNotasVivas, type NotaViva } from '../../../common/notas-vivas';
 import { armarPagina, type Pagina } from '../../../common/dto/paginacion.dto';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import type { LineaAsientoDto } from '../../contabilidad/dto/asiento.dto';
@@ -95,6 +97,8 @@ export interface CompraDocumentoLineaResumen {
   iva_valor: string;
   total: string;
   iva_descontable: boolean;
+  /** La base del IVA cuando es el AIU (0102); `null`: el subtotal. */
+  iva_base?: string | null;
 }
 
 export interface CompraRetencionResumen {
@@ -170,7 +174,7 @@ export const CAMPOS_DOCUMENTO = `id, tipo, documento_origen_id,
                            ${SALDO_A_FAVOR} AS saldo_a_favor`;
 
 const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cuenta_id, detalle, cantidad,
-                       costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable,
+                       costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable, iva_base,
                        (SELECT x.codigo FROM producto x WHERE x.id = producto_id) AS producto_codigo,
                        (SELECT x.nombre FROM producto x WHERE x.id = producto_id) AS producto_nombre,
                        (SELECT x.codigo FROM empresa_cuenta x WHERE x.id = cuenta_id) AS cuenta_codigo,
@@ -318,7 +322,14 @@ export class CompraService {
         }
 
         const { lineas, totales, cuentaDebitoDe, renglonesRenta } =
-          await this.prepararLineas(ctx, dto.lineas, proveedor, dto.fecha, t);
+          await this.prepararLineas(
+            ctx,
+            dto.lineas,
+            proveedor,
+            dto.fecha,
+            t,
+            dto.aiuRenglones,
+          );
         // El id antes que todo: el motor guarda cada retención contra la compra.
         const documentoId = randomUUID();
 
@@ -560,8 +571,9 @@ export class CompraService {
             await t.query(
               `INSERT INTO compra_documento_linea
                (empresa_id, compra_documento_id, orden, producto_id, cuenta_id, detalle,
-                cantidad, costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+                cantidad, costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable,
+                iva_base)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
              RETURNING ${CAMPOS_LINEA}`,
               [
                 ctx.empresaId,
@@ -579,6 +591,7 @@ export class CompraService {
                 l.ivaValor,
                 l.total,
                 l.ivaDescontable,
+                l.ivaBase,
               ],
             ),
           );
@@ -711,6 +724,7 @@ export class CompraService {
             proveedor,
             dto.fecha,
             t,
+            dto.aiuRenglones,
           );
           const doc = {
             terceroId: dto.terceroId,
@@ -755,6 +769,7 @@ export class CompraService {
     proveedor: { responsableIva: boolean },
     fecha: string,
     t: Tx,
+    aiuRenglones?: CrearCompraDto['aiuRenglones'],
   ) {
     // Dos preguntas distintas (decisión 4 del plan): ¿hay IVA en la
     // línea? lo decide el PROVEEDOR. ¿ese IVA es descontable? lo decide
@@ -803,6 +818,9 @@ export class CompraService {
               : Number(producto.iva_tarifa)
             : 0,
         ivaDescontable: responsableIva,
+        // Aseo, vigilancia, temporales y cooperativas: el IVA va sobre el AIU
+        // (art. 462-1 ET, bug #16), el mismo que usa la retención de renta.
+        aiu: aiuRenglones?.find((a) => a.orden === entradas.length + 1)?.aiu,
       });
     }
 
@@ -959,7 +977,8 @@ export class CompraService {
       }>(
         await t.query(
           `SELECT estado, asiento_id, monto_pagado, numero_factura_proveedor
-             FROM compra_documento WHERE id = $1`,
+             FROM compra_documento WHERE id = $1
+             FOR UPDATE`,
           [id],
         ),
       );
@@ -968,6 +987,24 @@ export class CompraService {
       }
       if (documento.estado === 'ANULADA') {
         throw new BadRequestException('Esta compra ya está anulada.');
+      }
+      // Con notas vivas no se anula: primero las notas (`notas-vivas.ts`). El
+      // `FOR UPDATE` de arriba es el candado contra una nota que se registre
+      // mientras tanto: la nota bloquea la compra antes de mirarla
+      // (`CompraNotaService.exigirCompraVigente`).
+      const notasVivas = filas<NotaViva>(
+        await t.query(
+          `SELECT tipo, numero_factura_proveedor AS numero
+             FROM compra_documento
+            WHERE documento_origen_id = $1
+              AND tipo IN ('NOTA_CREDITO', 'NOTA_DEBITO')
+              AND estado <> 'ANULADA'
+            ORDER BY fecha, numero_factura_proveedor`,
+          [id],
+        ),
+      );
+      if (notasVivas.length > 0) {
+        throw new ConflictException(mensajeNotasVivas('compra', notasVivas));
       }
       // Mismo criterio que la factura cobrada: un pago que ya salió del
       // banco no desaparece anulando el documento que lo motivó.

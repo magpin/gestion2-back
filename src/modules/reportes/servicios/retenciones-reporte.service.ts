@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import { filas } from '../../../common/db/filas';
-import { hoyEnColombia } from '../../../common/fecha';
+import { fechaEnLetras, hoyEnColombia } from '../../../common/fecha';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import {
   libro350,
@@ -371,9 +371,11 @@ export class RetencionesReporteService {
     const cuerpo = this.plantillas.cuerpo('certificados-retencion', {
       ...datos,
       empresa,
-      desde: rango.desde,
-      hasta: rango.hasta,
-      expedido: hoyEnColombia(),
+      // En letras: es un documento que se entrega a un tercero, no una
+      // pantalla; «2026-09-28» no se lee así en un certificado.
+      desde: fechaEnLetras(rango.desde),
+      hasta: fechaEnLetras(rango.hasta),
+      expedido: fechaEnLetras(hoyEnColombia()),
       elaboro: quien.nombre,
       rol: quien.rol,
     });

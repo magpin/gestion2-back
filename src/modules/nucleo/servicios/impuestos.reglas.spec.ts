@@ -19,6 +19,19 @@ describe('paso Impuestos — respuestas', () => {
     expect(respuestaDe(gc, ['RESPONSABLE_IVA'], true)).toBe(false);
     expect(respuestaDe(gc, ['GRAN_CONTRIBUYENTE'], false)).toBe(true);
   });
+
+  it('el «No» que contestó la persona se ve antes de confirmar (bug #18)', () => {
+    const simple = preguntaDe('SIMPLE');
+    expect(respuestaDe(simple, [], false, ['SIMPLE'])).toBe(false);
+    // Solo el de esa pregunta.
+    expect(respuestaDe(simple, [], false, ['AUTORRETENEDOR'])).toBeNull();
+    // El código abierto (el RUT) manda sobre el «No» anotado.
+    expect(respuestaDe(simple, ['REGIMEN_SIMPLE'], false, ['SIMPLE'])).toBe(
+      true,
+    );
+    // El IVA tiene su código de «no» (49): la lista no lo toca.
+    expect(respuestaDe(preguntaDe('IVA'), [], false, ['IVA'])).toBeNull();
+  });
 });
 
 describe('paso Impuestos — lo deducido no se pregunta', () => {

@@ -154,6 +154,8 @@ export interface Formulario350 {
     tercero: string;
     concepto: string;
     valor: string;
+    /** Por qué no entró, cuando no es solo que el concepto no tiene renglón. */
+    motivo?: string;
   }[];
   cuadre: {
     motor: string;
@@ -170,6 +172,7 @@ export interface Formulario350 {
     }[];
     sueltos: { numero: string; fecha: string; glosa: string; neto: string }[];
   };
+  /** Retenciones del mes que siguen en pie (`retencionesEfectivas`), no filas. */
   filas: number;
 }
 
@@ -244,6 +247,30 @@ export function renglonDe(
   );
 }
 
+/**
+ * Si la fila cae en un renglón que separa persona jurídica de natural, pero
+ * el formulario no trae casilla para la suya: la autorretención especial
+ * (casillas 59 y 68) es solo de personas jurídicas (art. 1.2.6.6 DUR), y la
+ * de una persona natural se quedaba en una columna que no existe en MUISCA
+ * (bug 6). Devuelve el porqué, o `null` si tiene casilla.
+ *
+ * Se mira el renglón de su concepto sin importar el signo: la reversa de una
+ * fila sin casilla tampoco tiene dónde restar.
+ */
+export function sinCasilla(
+  f: RetencionLeida,
+  renglones: Renglon350[],
+): string | null {
+  const positiva = { ...f, valor: f.valor.replace(/^-/, '') };
+  const r = renglonDe(positiva, renglones);
+  if (r === null || !r.porTipoPersona) return null;
+  const casilla = f.tipoPersona === 'NATURAL' ? r.casillas[3] : r.casillas[1];
+  if (casilla !== null && casilla !== undefined) return null;
+  const persona =
+    f.tipoPersona === 'NATURAL' ? 'persona natural' : 'persona jurídica';
+  return `El formulario no trae casilla de «${r.nombre}» para ${persona}: no la sumo. Revisala con tu contador.`;
+}
+
 export function armar350(
   mes: string,
   filas: RetencionLeida[],
@@ -282,12 +309,15 @@ export function armar350(
     if (f.impuesto === 'ICA') continue;
     const r = renglonDe(origenEnElMes(f) ?? f, ordenados);
     const valor = valorDe(f);
-    if (r === null) {
+    const motivo =
+      r === null ? null : sinCasilla(origenEnElMes(f) ?? f, ordenados);
+    if (r === null || motivo !== null) {
       sinRenglon.push({
         documento: f.documento,
         tercero: f.tercero,
         concepto: f.conceptoNombre,
         valor: pesos(valor),
+        ...(motivo === null ? {} : { motivo }),
       });
       continue;
     }
@@ -362,8 +392,34 @@ export function armar350(
     },
     sinRenglon,
     cuadre: cuadrar(filas, libro),
-    filas: filas.filter((f) => f.impuesto !== 'ICA').length,
+    filas: retencionesEfectivas(filas),
   };
+}
+
+/**
+ * Cuántas retenciones del mes siguen en pie: las originales (no las reversas
+ * ni las anulaciones, que son movimientos sobre otra) a las que, con lo que
+ * les cuelga en el mismo mes, les queda algo. Una compra y su nota crédito,
+ * anuladas las dos, son cuatro filas y ninguna retención (bug 21). Sin ICA,
+ * que no va al 350.
+ */
+export function retencionesEfectivas(filas: RetencionLeida[]): number {
+  const delMes = filas.filter((f) => f.impuesto !== 'ICA');
+  const hijas = new Map<string, RetencionLeida[]>();
+  for (const f of delMes) {
+    if (f.anulaA === null) continue;
+    hijas.set(f.anulaA, [...(hijas.get(f.anulaA) ?? []), f]);
+  }
+  const vivo = (f: RetencionLeida, vistas: Set<string>): number => {
+    if (vistas.has(f.id)) return 0;
+    vistas.add(f.id);
+    return (hijas.get(f.id) ?? []).reduce(
+      (s, h) => s + vivo(h, vistas),
+      valorDe(f),
+    );
+  };
+  return delMes.filter((f) => f.anulaA === null && vivo(f, new Set()) !== 0)
+    .length;
 }
 
 /**

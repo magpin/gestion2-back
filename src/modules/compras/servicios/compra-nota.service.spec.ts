@@ -147,6 +147,19 @@ function comprasFalso(compra: CompraDocumentoDetalle = compraVigente) {
   } as unknown as ConstructorParameters<typeof CompraNotaService>[4];
 }
 
+/**
+ * El motor de retenciones de mentira: sin retenciones propias del motor (las
+ * de la compra de prueba son de antes de él) salvo que se pasen previstas.
+ */
+function retencionesFalso(
+  previstas = new Map<string, { base: number; valor: number }>(),
+) {
+  return {
+    reversarRenta: jest.fn(() => Promise.resolve(new Map())),
+    reversaRentaPrevista: jest.fn(() => Promise.resolve(previstas)),
+  } as never;
+}
+
 function txFalso(
   yaDevuelto: Array<{ linea_origen_id: string; cantidad: string }> = [],
 ) {
@@ -154,6 +167,8 @@ function txFalso(
   const tx = {
     query: jest.fn((sql: string, params?: unknown[]) => {
       if (sql.includes('sum(l.cantidad)')) return yaDevuelto;
+      // El candado sobre la compra, contra una anulación simultánea.
+      if (sql.includes('FOR SHARE')) return [{ '?column?': 1 }];
       if (sql.startsWith('INSERT')) {
         insertadas.push([sql, params ?? []]);
         if (sql.includes('INSERT INTO compra_documento\n')) {
@@ -182,7 +197,7 @@ describe('CompraNotaService.crearNotaCredito', () => {
       inventarioFalso(),
       contabilidad,
       comprasFalso(),
-      { reversarRenta: jest.fn(() => Promise.resolve(new Map())) } as never,
+      retencionesFalso(),
     );
 
     // Se devuelven 2 de las 10: subtotal 200.000, IVA 38.000, total 238.000.
@@ -227,6 +242,109 @@ describe('CompraNotaService.crearNotaCredito', () => {
     expect(totalDebito).toBe(totalCredito);
   });
 
+  it('bug 4: con la retención del motor, el asiento reversa lo que reversa el motor (con el ajuste y al peso)', async () => {
+    // La compra retuvo 29.750 y un recálculo le ajustó +5.000: lo vivo son
+    // 34.750. Se devuelve 1 de 10 (10 %). Antes el asiento reversaba el 10 %
+    // de lo registrado al comprar, en centavos (2.975,00), y el motor 3.475:
+    // la 2365 y el 350 no cuadraban.
+    const compra: CompraDocumentoDetalle = {
+      ...compraVigente,
+      retenciones: [
+        {
+          ...compraVigente.retenciones[0],
+          concepto: 'COMPRAS_GENERALES',
+          retencion_calculada_id: 'rc-1',
+        },
+      ],
+    };
+    const { tx } = txFalso();
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+    const retenciones = retencionesFalso(
+      new Map([['rc-1', { base: 100000, valor: 3475 }]]),
+    );
+    const servicio = new CompraNotaService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      inventarioFalso(),
+      contabilidad,
+      comprasFalso(compra),
+      retenciones,
+    );
+
+    await servicio.crearNotaCredito(ctx, {
+      documentoOrigenId: 'c-1',
+      fecha: '2026-09-12',
+      numeroNotaProveedor: 'NCP-8',
+      motivo: 'Una unidad llegó rota',
+      lineas: [{ lineaOrigenId: 'lc-1', cantidad: 1 }],
+    });
+
+    expect(
+      (retenciones as { reversaRentaPrevista: jest.Mock }).reversaRentaPrevista,
+    ).toHaveBeenCalledWith({ compraId: 'c-1', proporcion: 0.1 }, tx);
+    const [, dtoAsiento] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      { lineas: Array<{ cuentaId: string; debito: number; credito: number }> },
+    ];
+    expect(dtoAsiento.lineas).toEqual([
+      {
+        cuentaId: 'cta-proveedores',
+        terceroId: 'prov-1',
+        debito: 115525,
+        credito: 0,
+      },
+      {
+        cuentaId: 'cta-retefuente',
+        terceroId: 'prov-1',
+        baseGravable: 100000,
+        debito: 3475,
+        credito: 0,
+      },
+      { cuentaId: 'cuenta-inventario', debito: 0, credito: 100000 },
+      {
+        cuentaId: 'cta-iva-descontable',
+        baseGravable: 100000,
+        debito: 0,
+        credito: 19000,
+      },
+    ]);
+  });
+
+  it('bug 4: si al motor ya no le queda nada de esa retención, el asiento tampoco la reversa', async () => {
+    const compra: CompraDocumentoDetalle = {
+      ...compraVigente,
+      retenciones: [
+        { ...compraVigente.retenciones[0], retencion_calculada_id: 'rc-1' },
+      ],
+    };
+    const { tx } = txFalso();
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+    const servicio = new CompraNotaService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      inventarioFalso(),
+      contabilidad,
+      comprasFalso(compra),
+      retencionesFalso(),
+    );
+
+    await servicio.crearNotaCredito(ctx, {
+      documentoOrigenId: 'c-1',
+      fecha: '2026-09-12',
+      numeroNotaProveedor: 'NCP-9',
+      motivo: 'Una unidad llegó rota',
+      lineas: [{ lineaOrigenId: 'lc-1', cantidad: 1 }],
+    });
+
+    const [, dtoAsiento] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      { lineas: Array<{ cuentaId: string }> },
+    ];
+    expect(dtoAsiento.lineas.map((l) => l.cuentaId)).not.toContain(
+      'cta-retefuente',
+    );
+  });
+
   it('la línea de la nota queda enlazada a la línea de la compra', async () => {
     const { tx, insertadas } = txFalso();
     const servicio = new CompraNotaService(
@@ -235,7 +353,7 @@ describe('CompraNotaService.crearNotaCredito', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       comprasFalso(),
-      { reversarRenta: jest.fn(() => Promise.resolve(new Map())) } as never,
+      retencionesFalso(),
     );
 
     await servicio.crearNotaCredito(ctx, {
@@ -263,7 +381,7 @@ describe('CompraNotaService.crearNotaCredito', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       comprasFalso(),
-      { reversarRenta: jest.fn(() => Promise.resolve(new Map())) } as never,
+      retencionesFalso(),
     );
 
     await expect(
@@ -285,7 +403,7 @@ describe('CompraNotaService.crearNotaCredito', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       comprasFalso({ ...compraVigente, tipo: 'NOTA_CREDITO' }),
-      { reversarRenta: jest.fn(() => Promise.resolve(new Map())) } as never,
+      retencionesFalso(),
     );
 
     await expect(
@@ -306,7 +424,7 @@ describe('CompraNotaService.crearNotaCredito', () => {
       inventarioFalso(),
       contabilidadFalso(false).fake,
       comprasFalso(),
-      { reversarRenta: jest.fn(() => Promise.resolve(new Map())) } as never,
+      retencionesFalso(),
     );
 
     await expect(

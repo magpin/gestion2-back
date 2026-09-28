@@ -1,4 +1,8 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import type { Tx, TxService } from '../../../common/db/tx.service';
@@ -727,12 +731,17 @@ describe('VentaDocumentoService.anular', () => {
   function txAnularFalso(
     documento:
       { tipo: string; estado: string; asiento_id: string | null } | undefined,
+    /** Las notas vivas que corrigen al documento. */
+    notasVivas: Array<{ tipo: string; numero: string }> = [],
   ) {
     const actualizaciones: unknown[][] = [];
     const tx = {
       query: jest.fn((sql: string, params?: unknown[]) => {
         if (sql.includes('SELECT tipo, estado, asiento_id')) {
           return documento === undefined ? [] : [documento];
+        }
+        if (sql.includes('WHERE documento_origen_id = $1')) {
+          return notasVivas;
         }
         if (sql.includes('UPDATE venta_documento')) {
           actualizaciones.push(params ?? []);
@@ -782,6 +791,90 @@ describe('VentaDocumentoService.anular', () => {
       tx,
     );
     expect(actualizaciones).toHaveLength(1);
+    // La factura se bloquea antes de mirar sus notas: una nota que se emita
+    // mientras tanto espera, y la anulación no se cruza con ella.
+    const consultas = (tx.query as jest.Mock).mock.calls.map(
+      ([sql]: [string]) => sql,
+    );
+    expect(consultas[0]).toContain('FOR UPDATE');
+  });
+
+  it('rechaza anular una factura con una nota viva, y la nombra', async () => {
+    const { tx, actualizaciones } = txAnularFalso(
+      { tipo: 'FACTURA', estado: 'EMITIDA', asiento_id: 'asiento-1' },
+      [{ tipo: 'NOTA_CREDITO', numero: 'NC-5' }],
+    );
+    const { fake: contabilidad, anular: anularAsiento } = contabilidadFalso();
+    const anularAutorretencion = jest.fn(() => Promise.resolve());
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      inventarioFalso(),
+      contabilidad,
+      {} as never, // TesoreriaApi: no la usa anular.
+      { anularAutorretencion } as never,
+    );
+
+    const intento = servicio.anular(ctx, 'fv-1', 'Error de digitación');
+    await expect(intento).rejects.toThrow(ConflictException);
+    await expect(intento).rejects.toThrow(
+      'Esta factura tiene la nota crédito NC-5 viva: anulala primero.',
+    );
+    // Nada se tocó: ni el asiento, ni la autorretención, ni el documento.
+    expect(anularAsiento).not.toHaveBeenCalled();
+    expect(anularAutorretencion).not.toHaveBeenCalled();
+    expect(actualizaciones).toHaveLength(0);
+  });
+
+  it('nombra todas las notas vivas, crédito y débito', async () => {
+    const { tx } = txAnularFalso(
+      { tipo: 'FACTURA', estado: 'EMITIDA', asiento_id: 'asiento-1' },
+      [
+        { tipo: 'NOTA_CREDITO', numero: 'NC-5' },
+        { tipo: 'NOTA_DEBITO', numero: 'ND-2' },
+      ],
+    );
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      inventarioFalso(),
+      contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa anular.
+      retencionesVentaFalsas(),
+    );
+
+    await expect(servicio.anular(ctx, 'fv-1', 'motivo')).rejects.toThrow(
+      'Esta factura tiene vivas la nota crédito NC-5 y la nota débito ND-2: anulalas primero.',
+    );
+  });
+
+  it('solo cuenta las notas vivas: la consulta descarta las anuladas', async () => {
+    const { tx } = txAnularFalso({
+      tipo: 'FACTURA',
+      estado: 'EMITIDA',
+      asiento_id: 'asiento-1',
+    });
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      {
+        ...inventarioFalso(),
+        revertirPorAnulacion: jest.fn(() =>
+          Promise.resolve({ movimientos: 0 }),
+        ),
+      } as unknown as ConstructorParameters<typeof VentaDocumentoService>[2],
+      contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa anular.
+      retencionesVentaFalsas(),
+    );
+
+    await servicio.anular(ctx, 'fv-1', 'motivo');
+
+    const notas = (tx.query as jest.Mock).mock.calls.find(([sql]: [string]) =>
+      sql.includes('WHERE documento_origen_id = $1'),
+    ) as [string, unknown[]];
+    expect(notas[0]).toContain(`estado <> 'ANULADA'`);
+    expect(notas[1]).toEqual(['fv-1']);
   });
 
   it('rechaza anular una cotización', async () => {

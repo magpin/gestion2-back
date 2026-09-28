@@ -19,6 +19,7 @@ import {
   type RetencionVivaClave,
 } from '../reglas/recalculo.reglas';
 import { MOTOR_VERSION } from '../reglas/renta.reglas';
+import { faltaCuentaAutorretencion } from '../reglas/venta.reglas';
 import {
   MotorRentaService,
   type DocumentoRenta,
@@ -137,9 +138,20 @@ export class RecalculoService {
           }
           resumen.documentos += 1;
 
+          // El acumulado de ICA de antes de la compra: el de hoy ya la trae
+          // adentro y la contaba dos veces (bug 3). Las entradas viejas no lo
+          // guardaron: se reconstruye con los aportes.
+          const entrada: DocumentoRenta =
+            c.entrada.acumuladoIcaAnterior !== undefined
+              ? c.entrada
+              : {
+                  ...c.entrada,
+                  acumuladoIcaAnterior:
+                    await this.motorRenta.acumuladoIcaAntesDe(t, c.id),
+                };
           const propuesta = await this.motorRenta.proponer(
             ctx,
-            c.entrada,
+            entrada,
             c.respuestas,
             t,
           );
@@ -667,9 +679,15 @@ export class RecalculoService {
           [ctx.empresaId],
         ),
       );
-      if (c?.cuenta_id == null || c.cuenta_activo_id == null) {
+      const falta = faltaCuentaAutorretencion(c ?? null, 'RENTA');
+      if (
+        falta !== null ||
+        c?.cuenta_id == null ||
+        c.cuenta_activo_id == null
+      ) {
+        const texto = falta ?? '';
         throw new BadRequestException(
-          'Te falta la cuenta 236575 (autorretenciones) o la 135515 (retención que te practican).',
+          texto.charAt(0).toUpperCase() + texto.slice(1),
         );
       }
       const valor = Math.abs(Number(d.diferencia));

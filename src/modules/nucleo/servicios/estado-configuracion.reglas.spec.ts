@@ -250,12 +250,41 @@ describe('paso · Impuestos', () => {
   });
 
   it('el plan de cuentas espera a los impuestos', () => {
+    // Sin plan todavía: el bloqueo es para entrar al paso. Antes esta prueba
+    // corría con el plan ya aplicado (42 cuentas) y esperaba el bloqueo igual;
+    // el dueño decidió que un plan aplicado no se vuelve a bloquear (bug #23).
     const p = paso(
-      con({ impuestos: { confirmado: false, municipiosSinIca: [] } }),
+      con({
+        impuestos: { confirmado: false, municipiosSinIca: [] },
+        plan: { cuentasActivas: 0, auxiliares: 0 },
+      }),
       'PLAN_CUENTAS',
     );
     expect(p.estado).toBe('BLOQUEADO');
     expect(p.bloqueadoPor).toBe('IMPUESTOS');
+  });
+
+  it('una sede nueva sin ICA deja Impuestos pendiente, pero el plan aplicado sigue listo (bug #23)', () => {
+    // El ICA es municipal: el municipio nuevo se contesta en Impuestos. Las
+    // cuentas de ICA del plan sirven para todos los municipios.
+    const hechos = con({
+      sedes: {
+        activas: 4,
+        tienePrincipal: true,
+        municipioPrincipal: 'Medellín',
+      },
+      impuestos: { confirmado: true, municipiosSinIca: ['Pereira'] },
+    });
+    const estado = calcularEstado(hechos);
+
+    expect(paso(hechos, 'IMPUESTOS').estado).toBe('FALTA');
+    const plan = paso(hechos, 'PLAN_CUENTAS');
+    expect(plan.estado).toBe('LISTO');
+    expect(plan.bloqueadoPor).toBeUndefined();
+    expect(plan.resumen).toBe('42 cuentas · 31 con movimiento');
+    // Solo baja el paso de Impuestos: cinco de seis, no cuatro.
+    expect(estado.completados).toBe(5);
+    expect(estado.siguiente).toBe('IMPUESTOS');
   });
 });
 
@@ -333,6 +362,30 @@ describe('calcularEstado · plan de cuentas', () => {
     );
     expect(p.estado).toBe('BLOQUEADO');
     expect(p.bloqueadoPor).toBe('SITUACION_LEGAL');
+  });
+
+  it('ya aplicado no se vuelve a bloquear, aunque un paso anterior quede pendiente', () => {
+    const p = paso(
+      con({
+        actividadPrincipal: null,
+        impuestos: { confirmado: false, municipiosSinIca: [] },
+      }),
+      'PLAN_CUENTAS',
+    );
+    expect(p.estado).toBe('LISTO');
+    expect(p.bloqueadoPor).toBeUndefined();
+  });
+
+  it('ya empezado y a medias sigue mostrando lo que le falta, no el bloqueo', () => {
+    const p = paso(
+      con({
+        impuestos: { confirmado: true, municipiosSinIca: ['Pereira'] },
+        plan: { cuentasActivas: 9, auxiliares: 0 },
+      }),
+      'PLAN_CUENTAS',
+    );
+    expect(p.estado).toBe('FALTA');
+    expect(p.faltantes.map((x) => x.campo)).toContain('esAuxiliar');
   });
 
   it('con cuentas y auxiliares queda listo', () => {

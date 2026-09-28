@@ -80,6 +80,14 @@ export class NotaCreditoService {
         );
       }
 
+      // El candado contra una anulación simultánea: `VentaDocumentoService.
+      // anular` toma la factura `FOR UPDATE` y rechaza si tiene notas vivas.
+      // Sin esto, la factura podía anularse mientras esta nota se emitía y la
+      // nota quedaba corrigiendo una factura anulada. Se toma antes de leerla,
+      // para leerla ya con la anulación confirmada si la hubo.
+      await t.query(`SELECT 1 FROM venta_documento WHERE id = $1 FOR SHARE`, [
+        dto.documentoOrigenId,
+      ]);
       const factura = await this.ventas.porId(
         ctx,
         'FACTURA',

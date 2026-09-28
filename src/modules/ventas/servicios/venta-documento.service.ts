@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,6 +9,7 @@ import type { CtxEmpresa } from '../../../common/ctx';
 import { fila, filas } from '../../../common/db/filas';
 import { armarPagina, type Pagina } from '../../../common/dto/paginacion.dto';
 import { hoyEnColombia } from '../../../common/fecha';
+import { mensajeNotasVivas, type NotaViva } from '../../../common/notas-vivas';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import { InventarioApi } from '../../inventario/inventario.api';
@@ -663,7 +665,8 @@ export class VentaDocumentoService {
         await t.query(
           `SELECT tipo, estado, asiento_id, monto_pagado, historica,
                   concat_ws('-', nullif(prefijo, ''), consecutivo::text) AS numero
-             FROM venta_documento WHERE id = $1`,
+             FROM venta_documento WHERE id = $1
+             FOR UPDATE`,
           [id],
         ),
       );
@@ -677,6 +680,26 @@ export class VentaDocumentoService {
       }
       if (documento.estado === 'ANULADA') {
         throw new BadRequestException('Este documento ya está anulado.');
+      }
+      // Con notas vivas no se anula: primero las notas (`notas-vivas.ts`). El
+      // `FOR UPDATE` de arriba es el candado contra una nota que se emita
+      // mientras tanto: la nota bloquea la factura antes de mirarla
+      // (`NotaCreditoService.crear`, `NotaDebitoService.crear`). Una nota no
+      // tiene notas propias: para ella esto no encuentra nada.
+      const notasVivas = filas<NotaViva>(
+        await t.query(
+          `SELECT tipo,
+                  concat_ws('-', nullif(prefijo, ''), consecutivo::text) AS numero
+             FROM venta_documento
+            WHERE documento_origen_id = $1
+              AND tipo IN ('NOTA_CREDITO', 'NOTA_DEBITO')
+              AND estado <> 'ANULADA'
+            ORDER BY fecha, consecutivo`,
+          [id],
+        ),
+      );
+      if (notasVivas.length > 0) {
+        throw new ConflictException(mensajeNotasVivas('factura', notasVivas));
       }
       // La plata ya entró: anular el documento dejaría un cobro colgado de
       // nada y la cartera del cliente en negativo. Lo que corrige una

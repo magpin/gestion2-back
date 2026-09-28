@@ -395,3 +395,24 @@ export function calcularIca(
     acumular,
   };
 }
+
+/**
+ * El acumulado de ICA del período con el que se calcula un documento.
+ *
+ * Al confirmar es el de hoy. Al recalcular, el de hoy ya trae el aporte de la
+ * misma compra: sumarlo otra vez a su base la contaba dos veces y en Medellín
+ * (que acumula el bimestre) salía una diferencia falsa (bug 3). Por eso el
+ * recálculo pasa el que había antes de la compra —el guardado en su entrada,
+ * o el reconstruido con los aportes anteriores— y, si lo trae para ese
+ * municipio, manda ese.
+ */
+export function acumuladoIcaAntes(
+  guardado: Record<string, number> | undefined,
+  hoy: Map<string, number>,
+  municipio: string,
+): number {
+  if (guardado !== undefined && Object.hasOwn(guardado, municipio)) {
+    return Number(guardado[municipio]);
+  }
+  return hoy.get(municipio) ?? 0;
+}

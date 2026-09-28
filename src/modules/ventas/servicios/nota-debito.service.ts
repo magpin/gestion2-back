@@ -87,6 +87,11 @@ export class NotaDebitoService {
         );
       }
 
+      // El candado contra una anulación simultánea de la factura: ver
+      // `NotaCreditoService.crear`.
+      await t.query(`SELECT 1 FROM venta_documento WHERE id = $1 FOR SHARE`, [
+        dto.documentoOrigenId,
+      ]);
       const factura = await this.ventas.porId(
         ctx,
         'FACTURA',

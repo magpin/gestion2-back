@@ -110,6 +110,7 @@ describe('sugerirPlan · impuestos derivados del regimen', () => {
         '236535',
         '236540',
         '236545',
+        '236550',
         '236570',
       ]),
     );

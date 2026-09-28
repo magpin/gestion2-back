@@ -212,3 +212,33 @@ describe('pasosDelAsiento — la retención de la compra', () => {
     });
   });
 });
+
+describe('pasosDelAsiento — la autorretención de la venta (bug #22)', () => {
+  it('una factura con autorretención muestra «Retención calculada»', () => {
+    const pasos = pasosDelAsiento({
+      asiento,
+      registro: {
+        tipo: 'VENTA',
+        nombre: 'la factura FE-120',
+        creadoEn: '2026-09-25T15:00:00.000Z',
+        creadoPor: { nombre: 'Ana Ruiz' },
+      },
+      retencion: {
+        decision: 'CALCULADA',
+        motivo: null,
+        proveedor: 'Cliente S.A.S.',
+        calculadas: [
+          {
+            texto: 'Autorretención especial · 0,8 % sobre $1.000.000 = $8.000.',
+            norma: 'DUR 1625/2016 art. 1.2.6.8',
+            origen: 'PRODUCTO',
+          },
+        ],
+      },
+    });
+    const paso = pasos.find((p) => p.clave === 'RETENCION');
+    expect(paso).toMatchObject({ titulo: 'Retención calculada' });
+    expect(paso?.detalle).toContain('Autorretención especial');
+    expect(paso?.detalle).not.toContain('recordado');
+  });
+});

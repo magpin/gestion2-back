@@ -130,6 +130,25 @@ export class RetencionesApi {
   }
 
   /**
+   * Lo que la nota crédito va a reversar de cada retención de la compra, sin
+   * escribir nada: la nota lo usa en su asiento para que la 2365 diga lo mismo
+   * que el motor (bug 4). Por id de la retención original y, de respaldo, por
+   * `concepto|municipio`.
+   */
+  async reversaRentaPrevista(
+    datos: { compraId: string; proporcion: number },
+    tx: Tx,
+  ): Promise<Map<string, { base: number; valor: number }>> {
+    const previstas = new Map<string, { base: number; valor: number }>();
+    for (const p of await this.motorRenta.reversaPrevista(tx, datos)) {
+      const cifra = { base: p.base, valor: p.valor };
+      previstas.set(p.retencionId, cifra);
+      if (!previstas.has(p.clave)) previstas.set(p.clave, cifra);
+    }
+    return previstas;
+  }
+
+  /**
    * La nota crédito de venta baja la autorretención en proporción (plan,
    * §6.0). Devuelve las líneas que van en el asiento de la nota.
    */

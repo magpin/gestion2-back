@@ -1,4 +1,5 @@
 import {
+  acumuladoIcaAntes,
   calcularIca,
   municipioDeCausacion,
   periodoDe,
@@ -209,5 +210,43 @@ describe('ReteICA — varios municipios y bordes', () => {
     expect(periodoDe('2026-09-25', 'BIMESTRAL')).toBe(5);
     expect(periodoDe('2026-09-25', 'MENSUAL')).toBe(9);
     expect(periodoDe('2026-09-25', 'ANUAL')).toBe(1);
+  });
+});
+
+describe('Recálculo de ReteICA en un municipio que acumula — bug 3', () => {
+  // Una compra de $500.000 en Medellín, sola en el bimestre: no llega a 15 UVT
+  // ($785.610) y no retiene. Al confirmarla, su aporte entra al acumulado.
+  const compra = [r(500_000)];
+  const acumuladoHoy = new Map([[MEDELLIN, 500_000]]);
+
+  it('así estaba: el recálculo leía el acumulado de hoy, que ya trae la compra, y retenía', () => {
+    const res = calcularIca(
+      compra,
+      ctx({ acumulado: (m) => acumuladoHoy.get(m) ?? 0 }),
+    );
+    expect(res.retenciones.map((x) => x.valor)).toEqual([1_000]);
+    expect(res.retenciones[0].explicacion.acumulado?.con_este).toBe(1_000_000);
+  });
+
+  it('con el acumulado de antes de la compra, recalcular da lo mismo que al confirmar', () => {
+    const alConfirmar = calcularIca(compra, ctx());
+    const alRecalcular = calcularIca(
+      compra,
+      ctx({
+        acumulado: (m) => acumuladoIcaAntes({ [MEDELLIN]: 0 }, acumuladoHoy, m),
+      }),
+    );
+    expect(alConfirmar.retenciones).toEqual([]);
+    expect(alRecalcular.retenciones).toEqual([]);
+    expect(alRecalcular.acumular).toEqual(alConfirmar.acumular);
+  });
+
+  it('acumuladoIcaAntes: lo guardado manda; sin dato de ese municipio, el de hoy', () => {
+    expect(
+      acumuladoIcaAntes({ [MEDELLIN]: 300_000 }, acumuladoHoy, MEDELLIN),
+    ).toBe(300_000);
+    expect(acumuladoIcaAntes({}, acumuladoHoy, MEDELLIN)).toBe(500_000);
+    expect(acumuladoIcaAntes(undefined, acumuladoHoy, MEDELLIN)).toBe(500_000);
+    expect(acumuladoIcaAntes(undefined, acumuladoHoy, PEREIRA)).toBe(0);
   });
 });

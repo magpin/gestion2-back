@@ -25,7 +25,7 @@ import {
 } from './compra.service';
 
 const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cuenta_id, detalle, cantidad,
-                       costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable,
+                       costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable, iva_base,
                        (SELECT x.codigo FROM producto x WHERE x.id = producto_id) AS producto_codigo,
                        (SELECT x.nombre FROM producto x WHERE x.id = producto_id) AS producto_nombre,
                        (SELECT x.codigo FROM empresa_cuenta x WHERE x.id = cuenta_id) AS cuenta_codigo,
@@ -113,6 +113,13 @@ export class CompraNotaService {
           costoUnitario: Number(original.costo_unitario),
           ivaTarifa: Number(original.iva_tarifa),
           ivaDescontable: original.iva_descontable,
+          // Con IVA sobre el AIU (0102), la devolución lleva la parte del AIU
+          // que le toca: el IVA que se reversa es el que se cobró.
+          aiu:
+            original.iva_base === null || original.iva_base === undefined
+              ? undefined
+              : (Number(original.iva_base) * p.cantidad) /
+                Number(original.cantidad),
         });
       }
       if (entradas.length === 0) {
@@ -127,18 +134,36 @@ export class CompraNotaService {
       // le retuvo al proveedor por una compra que se devolvió en parte ya no
       // se le debe a la DIAN en esa parte.
       const proporcion = totales.total / Number(compra.total);
-      const retenciones = compra.retenciones.map((r) => ({
-        concepto: r.concepto,
-        cuentaId: r.cuenta_id,
-        tipo: r.tipo ?? null,
-        conceptoNacionalId: r.concepto_nacional_id ?? null,
-        tarifa:
-          r.tarifa === null || r.tarifa === undefined ? null : Number(r.tarifa),
-        asumida: r.asumida === true,
-        municipio: r.municipio_codigo ?? null,
-        base: redondear2(Number(r.base) * proporcion),
-        valor: redondear2(Number(r.valor) * proporcion),
-      }));
+      // Lo que calculó el motor se reversa con la cifra del motor: la
+      // proporción de lo vivo de la compra —con los ajustes por cambio de
+      // norma— y al peso. Si el asiento iba en centavos sobre lo registrado
+      // al comprar, la 2365 y el 350 no cuadraban (bug 4). Lo registrado sin
+      // motor (antes de él) sigue en la proporción de lo registrado.
+      const previstas = await this.retenciones.reversaRentaPrevista(
+        { compraId: compra.id, proporcion },
+        t,
+      );
+      const retenciones = compra.retenciones.map((r) => {
+        const municipio = r.municipio_codigo ?? null;
+        const delMotor =
+          r.retencion_calculada_id != null
+            ? (previstas.get(r.retencion_calculada_id) ?? { base: 0, valor: 0 })
+            : previstas.get(`${r.concepto}|${municipio ?? ''}`);
+        return {
+          concepto: r.concepto,
+          cuentaId: r.cuenta_id,
+          tipo: r.tipo ?? null,
+          conceptoNacionalId: r.concepto_nacional_id ?? null,
+          tarifa:
+            r.tarifa === null || r.tarifa === undefined
+              ? null
+              : Number(r.tarifa),
+          asumida: r.asumida === true,
+          municipio,
+          base: delMotor?.base ?? redondear2(Number(r.base) * proporcion),
+          valor: delMotor?.valor ?? redondear2(Number(r.valor) * proporcion),
+        };
+      });
       // El IVA asumido no bajó lo que se le debía al proveedor: su reversa
       // tampoco lo toca.
       const retenido = redondear2(
@@ -280,6 +305,9 @@ export class CompraNotaService {
               ? (l.ivaTarifa ?? 0)
               : Number(producto.iva_tarifa),
           ivaDescontable,
+          // El IVA de aseo, vigilancia y temporales va sobre el AIU (bug #16).
+          aiu: dto.aiuRenglones?.find((x) => x.orden === entradas.length + 1)
+            ?.aiu,
         });
       }
 
@@ -439,6 +467,14 @@ export class CompraNotaService {
       );
     }
 
+    // El candado contra una anulación simultánea: `CompraService.anular` toma
+    // la compra `FOR UPDATE` y rechaza si tiene notas vivas. Sin esto, la
+    // compra podía anularse mientras esta nota se registraba y la nota quedaba
+    // corrigiendo una compra anulada. Se toma antes de leerla, para leerla ya
+    // con la anulación confirmada si la hubo.
+    await t.query(`SELECT 1 FROM compra_documento WHERE id = $1 FOR SHARE`, [
+      dto.documentoOrigenId,
+    ]);
     const compra = await this.compras.porId(ctx, dto.documentoOrigenId, t);
     if (compra.tipo !== 'FACTURA') {
       throw new BadRequestException(
@@ -535,6 +571,8 @@ export class CompraNotaService {
         costoUnitario: number;
         ivaTarifa: number;
         subtotal: number;
+        /** La base del IVA cuando es el AIU (0102); `null`: el subtotal. */
+        ivaBase: number | null;
         ivaValor: number;
         total: number;
         ivaDescontable: boolean;
@@ -632,8 +670,8 @@ export class CompraNotaService {
           `INSERT INTO compra_documento_linea
              (empresa_id, compra_documento_id, orden, producto_id, cuenta_id, detalle,
               cantidad, costo_unitario, iva_tarifa, subtotal, iva_valor, total,
-              iva_descontable, linea_origen_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+              iva_descontable, linea_origen_id, iva_base)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
            RETURNING ${CAMPOS_LINEA}`,
           [
             ctx.empresaId,
@@ -650,6 +688,7 @@ export class CompraNotaService {
             l.total,
             l.ivaDescontable,
             lineaOrigenIds[i],
+            l.ivaBase,
           ],
         ),
       );

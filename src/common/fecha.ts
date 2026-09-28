@@ -32,3 +32,35 @@ export function esFechaFutura(fecha: string): boolean {
 export function esDeHoy(fecha: string): boolean {
   return fecha === hoyEnColombia();
 }
+
+const MESES = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+];
+
+/**
+ * Una fecha `AAAA-MM-DD` como se lee en un documento: «28 de septiembre de
+ * 2026».
+ *
+ * Se arma desde el texto y no con `Date`: una fecha sin hora pasada por `Date`
+ * queda a la medianoche de alguna zona y, formateada en otra, sale el día
+ * anterior. Si no tiene esa forma se devuelve tal cual.
+ */
+export function fechaEnLetras(fecha: string): string {
+  const partes = /^(\d{4})-(\d{2})-(\d{2})/.exec(fecha);
+  if (partes === null) return fecha;
+  const [, anio, mes, dia] = partes;
+  const nombre = MESES[Number(mes) - 1];
+  if (nombre === undefined) return fecha;
+  return `${Number(dia)} de ${nombre} de ${anio}`;
+}

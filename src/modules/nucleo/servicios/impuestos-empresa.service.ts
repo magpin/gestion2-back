@@ -97,14 +97,24 @@ export class ImpuestosEmpresaService {
         [ctx.empresaId],
       );
 
-      const [empresa] = await t.query<Array<{ confirmado: string | null }>>(
-        'SELECT impuestos_confirmado_en::text AS confirmado FROM empresa WHERE id = $1',
+      const [empresa] = await t.query<
+        Array<{ confirmado: string | null; dijo_no: string[] | null }>
+      >(
+        `SELECT impuestos_confirmado_en::text AS confirmado,
+                impuestos_dijo_no AS dijo_no
+           FROM empresa WHERE id = $1`,
         [ctx.empresaId],
       );
       const confirmadoEn = empresa?.confirmado ?? null;
+      const dijoNo = empresa?.dijo_no ?? [];
 
       const preguntas = PREGUNTAS.map((p): RespuestaPregunta => {
-        const respuesta = respuestaDe(p, vigentes, confirmadoEn !== null);
+        const respuesta = respuestaDe(
+          p,
+          vigentes,
+          confirmadoEn !== null,
+          dijoNo,
+        );
         const codigo =
           respuesta === true
             ? p.codigoSi
@@ -168,7 +178,30 @@ export class ImpuestosEmpresaService {
     } else {
       await this.cerrarCodigo(ctx, p.codigoSi, fecha);
     }
+    if (p.codigoNo === undefined) {
+      await this.anotarNo(ctx, p.clave, !dto.valor);
+    }
     return this.estado(ctx);
+  }
+
+  /**
+   * El «No» a una pregunta sin código de «no» no deja rastro en la casilla 53:
+   * se anota aparte para que se vea contestado (0101). Un «Sí» lo quita.
+   */
+  private async anotarNo(
+    ctx: CtxEmpresa,
+    clave: ClavePregunta,
+    dijoNo: boolean,
+  ): Promise<void> {
+    await this.tx.enContexto(ctx, (t) =>
+      t.query(
+        `UPDATE empresa
+            SET impuestos_dijo_no = array_remove(impuestos_dijo_no, $2::text)
+                                    || CASE WHEN $3 THEN ARRAY[$2::text] ELSE '{}'::text[] END
+          WHERE id = $1`,
+        [ctx.empresaId, clave, dijoNo],
+      ),
+    );
   }
 
   /** Responsable de IVA (48) o no (49): siempre queda uno, nunca los dos. */

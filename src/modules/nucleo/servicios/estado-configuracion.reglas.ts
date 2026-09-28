@@ -331,6 +331,14 @@ function evaluarImpuestos(h: HechosConfiguracion): Paso {
  * deriva de ellos. La sugerencia lee la actividad CIIU para saber cuál es la
  * cuenta de ingresos, y los impuestos para saber si proponer IVA y las cuentas
  * de retención. Armarlo antes obliga a rehacerlo.
+ *
+ * El bloqueo es para **entrar** al paso, no para después: con el plan ya
+ * aplicado, que un paso anterior vuelva a quedar pendiente no lo deshace. El
+ * caso típico es una sede nueva en un municipio sin ICA contestado: Impuestos
+ * queda pendiente —el ICA es municipal—, pero las cuentas de ICA del plan
+ * sirven para todos los municipios y el plan sigue listo. Antes se volvía a
+ * «Bloqueado · Requiere impuestos» y el avance bajaba por una cuenta que ya
+ * estaba creada.
  */
 function evaluarPlanCuentas(
   h: HechosConfiguracion,
@@ -344,7 +352,8 @@ function evaluarPlanCuentas(
     obligatorio: true,
   };
 
-  if (!legalLista || !impuestosListos) {
+  const yaAplicado = h.plan.cuentasActivas > 0;
+  if (!yaAplicado && (!legalLista || !impuestosListos)) {
     return {
       ...comun,
       estado: 'BLOQUEADO',

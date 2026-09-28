@@ -7,9 +7,18 @@ import {
   type PaginacionDto,
 } from '../../../common/dto/paginacion.dto';
 import { fila } from '../../../common/db/filas';
+import { hoyEnColombia } from '../../../common/fecha';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import type { CrearTerceroDto, EditarTerceroDto } from '../dto/tercero.dto';
 import { exigirTipoDocumento } from './validaciones-catalogo';
+
+/**
+ * Hoy en Colombia, en SQL. `current_date` depende de la zona de la sesión:
+ * con la base en UTC, a las 7 de la noche de Bogotá ya es mañana, y el alta
+ * dejaba la primera versión del perfil con fecha futura (bug #7 de la
+ * revisión del 27-09).
+ */
+const HOY_SQL = `(now() AT TIME ZONE 'America/Bogota')::date`;
 
 /**
  * Los datos tributarios de hoy, del perfil con historia (plan motor de
@@ -22,7 +31,7 @@ const PERFIL_VIGENTE = `LEFT JOIN LATERAL (
            p.es_autorretenedor_renta AS es_autorretenedor,
            p.es_gran_contribuyente, (p.regimen_renta = 'SIMPLE') AS regimen_simple
       FROM tercero_perfil_tributario p
-     WHERE p.tercero_id = t.id AND p.vigencia_desde <= current_date
+     WHERE p.tercero_id = t.id AND p.vigencia_desde <= ${HOY_SQL}
      ORDER BY p.vigencia_desde DESC
      LIMIT 1) pv ON true`;
 
@@ -101,7 +110,7 @@ export class TerceroService {
            (empresa_id, tercero_id, tipo_persona, regimen_renta, declarante_renta,
             es_responsable_iva, es_gran_contribuyente, es_autorretenedor_renta,
             es_agente_ret_renta, vigencia_desde, fuente)
-         VALUES ($1, $2, $3, $4, true, $5, $6, $7, $8, current_date, 'MANUAL')`,
+         VALUES ($1, $2, $3, $4, true, $5, $6, $7, $8, ${HOY_SQL}, 'MANUAL')`,
         [
           ctx.empresaId,
           fila.id,
@@ -283,36 +292,49 @@ export class TerceroService {
 
   /**
    * Un cambio de calidad tributaria en la ficha abre una versión del perfil
-   * desde hoy, con lo demás que el perfil sabe (ZOMAC, CIIU…). Si la vigente
-   * empezó hoy, se corrige: no se abre una de un día. Para decir desde cuándo
-   * rige de verdad está Datos tributarios.
+   * desde hoy, con lo demás que el perfil sabe (ZOMAC, CIIU…). Si la versión
+   * de hoy empezó hoy, se corrige: no se abre una de un día. Para decir desde
+   * cuándo rige de verdad está Datos tributarios.
+   *
+   * Se compara con la versión que rige hoy —la que muestra la ficha—, no con
+   * la abierta: si hay una con fecha futura, la abierta es esa, y cerrarla
+   * ayer rompía `ck_perfil_vigencia` (error 500, bug #7 de la revisión del
+   * 27-09). La futura no se toca: la versión nueva dura hasta el día antes.
    */
   private async perfilDesdeFicha(
     t: Tx,
     terceroId: string,
     c: CalidadesFicha,
   ): Promise<void> {
-    const [v] = await t.query<
-      Array<{
-        id: string;
-        hoy: boolean;
-        responsable_iva: boolean;
-        es_agente_retenedor: boolean;
-        es_autorretenedor: boolean;
-        es_gran_contribuyente: boolean;
-        regimen_simple: boolean;
-      }>
-    >(
-      `SELECT id, vigencia_desde = current_date AS hoy,
+    type Version = {
+      id: string;
+      desde: string;
+      hasta: string | null;
+      responsable_iva: boolean;
+      es_agente_retenedor: boolean;
+      es_autorretenedor: boolean;
+      es_gran_contribuyente: boolean;
+      regimen_simple: boolean;
+    };
+    const hoy = hoyEnColombia();
+    const versiones = await t.query<Version[]>(
+      `SELECT id, vigencia_desde::text AS desde, vigencia_hasta::text AS hasta,
               es_responsable_iva AS responsable_iva,
               es_agente_ret_renta AS es_agente_retenedor,
               es_autorretenedor_renta AS es_autorretenedor,
               es_gran_contribuyente, (regimen_renta = 'SIMPLE') AS regimen_simple
          FROM tercero_perfil_tributario
-        WHERE tercero_id = $1 AND vigencia_hasta IS NULL
+        WHERE tercero_id = $1
+        ORDER BY vigencia_desde
         FOR UPDATE`,
       [terceroId],
     );
+    const deHoy = [...versiones]
+      .reverse()
+      .find((x) => x.desde <= hoy && (x.hasta === null || x.hasta >= hoy));
+    const futura = versiones.find((x) => x.desde > hoy);
+    // Sin versión que rija hoy, la nueva sale de la futura (o de la última).
+    const v = deHoy ?? futura ?? versiones[versiones.length - 1];
     if (v === undefined) return;
     const nuevo = {
       responsable_iva: c.responsableIva ?? v.responsable_iva,
@@ -333,7 +355,7 @@ export class TerceroService {
       nuevo.es_autorretenedor,
       nuevo.es_agente_retenedor,
     ];
-    if (v.hoy) {
+    if (deHoy !== undefined && deHoy.desde === hoy) {
       await t.query(
         `UPDATE tercero_perfil_tributario
             SET regimen_renta = CASE WHEN $2 THEN 'SIMPLE'
@@ -346,11 +368,15 @@ export class TerceroService {
       );
       return;
     }
-    await t.query(
-      `UPDATE tercero_perfil_tributario SET vigencia_hasta = current_date - 1
-        WHERE id = $1`,
-      [v.id],
-    );
+    if (deHoy !== undefined) {
+      await t.query(
+        `UPDATE tercero_perfil_tributario SET vigencia_hasta = $2::date - 1
+          WHERE id = $1`,
+        [deHoy.id, hoy],
+      );
+    }
+    // Hasta el día antes de la futura, si la hay; si no, abierta.
+    const hasta = futura?.desde ?? null;
     await t.query(
       `INSERT INTO tercero_perfil_tributario
          (empresa_id, tercero_id, tipo_persona, regimen_renta, declarante_renta,
@@ -358,7 +384,7 @@ export class TerceroService {
           es_entidad_publica, es_agente_ret_renta, es_autorretenedor_especial,
           es_agente_ret_iva, agente_iva_numeral, es_zomac, zomac_tamano,
           ciiu_principal, ciiu_secundarios, contrato_dos_o_mas_trabajadores,
-          vigencia_desde, fuente)
+          vigencia_desde, vigencia_hasta, fuente)
        SELECT empresa_id, tercero_id, tipo_persona,
               CASE WHEN $2 THEN 'SIMPLE'
                    WHEN regimen_renta = 'SIMPLE' THEN 'ORDINARIO'
@@ -367,9 +393,9 @@ export class TerceroService {
               es_entidad_publica, $6, es_autorretenedor_especial,
               es_agente_ret_iva, agente_iva_numeral, es_zomac, zomac_tamano,
               ciiu_principal, ciiu_secundarios, contrato_dos_o_mas_trabajadores,
-              current_date, 'MANUAL'
+              $7::date, $8::date - 1, 'MANUAL'
          FROM tercero_perfil_tributario WHERE id = $1`,
-      [v.id, ...valores],
+      [v.id, ...valores, hoy, hasta],
     );
   }
 

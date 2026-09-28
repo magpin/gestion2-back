@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -1131,10 +1132,15 @@ describe('CompraService.anular', () => {
           numero_factura_proveedor?: string;
         }
       | undefined,
+    /** Las notas vivas que corrigen a la compra. */
+    notasVivas: Array<{ tipo: string; numero: string }> = [],
   ) {
     const actualizaciones: unknown[][] = [];
     const tx = {
       query: jest.fn((sql: string, params?: unknown[]) => {
+        if (sql.includes('WHERE documento_origen_id = $1')) {
+          return notasVivas;
+        }
         if (sql.includes('SELECT estado, asiento_id')) {
           return documento === undefined
             ? []
@@ -1222,6 +1228,69 @@ describe('CompraService.anular', () => {
       tx,
     );
     expect(actualizaciones).toHaveLength(1);
+    // La compra se bloquea antes de mirar sus notas: una nota que se registre
+    // mientras tanto espera, y la anulación no se cruza con ella.
+    const consultas = (tx.query as jest.Mock).mock.calls.map(
+      ([sql]: [string]) => sql,
+    );
+    expect(consultas[0]).toContain('FOR UPDATE');
+    const notas = (tx.query as jest.Mock).mock.calls.find(([sql]: [string]) =>
+      sql.includes('WHERE documento_origen_id = $1'),
+    ) as [string, unknown[]];
+    expect(notas[0]).toContain(`estado <> 'ANULADA'`);
+    expect(notas[1]).toEqual(['c-1']);
+  });
+
+  it('rechaza anular una compra con una nota viva, y la nombra', async () => {
+    const { tx, actualizaciones } = txAnularFalso(
+      { estado: 'EMITIDA', asiento_id: 'asiento-1' },
+      [{ tipo: 'NOTA_CREDITO', numero: 'NC-77' }],
+    );
+    const { fake: contabilidad, anular: anularAsiento } =
+      contabilidadAnularFalso();
+    const { fake: inventario, revertir } = inventarioAnularFalso(5);
+    const retenciones = retencionesFalso();
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      {} as never,
+      inventario,
+      contabilidad,
+      {} as never,
+      retenciones.fake,
+    );
+
+    const intento = servicio.anular(ctx, 'c-1', 'Factura duplicada');
+    await expect(intento).rejects.toThrow(ConflictException);
+    await expect(intento).rejects.toThrow(
+      'Esta compra tiene la nota crédito NC-77 viva: anulala primero.',
+    );
+    // Nada se tocó: ni el asiento, ni el kardex, ni la retención.
+    expect(anularAsiento).not.toHaveBeenCalled();
+    expect(revertir).not.toHaveBeenCalled();
+    expect(retenciones.anularRetencionesCompra).not.toHaveBeenCalled();
+    expect(actualizaciones).toHaveLength(0);
+  });
+
+  it('nombra todas las notas vivas de la compra, crédito y débito', async () => {
+    const { tx } = txAnularFalso(
+      { estado: 'EMITIDA', asiento_id: 'asiento-1' },
+      [
+        { tipo: 'NOTA_DEBITO', numero: 'ND-3' },
+        { tipo: 'NOTA_CREDITO', numero: 'NC-77' },
+      ],
+    );
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      {} as never,
+      inventarioAnularFalso(5).fake,
+      contabilidadAnularFalso().fake,
+      {} as never,
+      retencionesFalso().fake,
+    );
+
+    await expect(servicio.anular(ctx, 'c-1', 'Motivo')).rejects.toThrow(
+      'Esta compra tiene vivas la nota débito ND-3 y la nota crédito NC-77: anulalas primero.',
+    );
   });
 
   it('anula también el ajuste de retención por cambio de norma (Fase 8, §8.3)', async () => {

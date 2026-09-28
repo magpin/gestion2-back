@@ -4,9 +4,21 @@ import type { CtxEmpresa } from '../../../common/ctx';
 import { filas } from '../../../common/db/filas';
 import type { Tx } from '../../../common/db/tx.service';
 import { MOTOR_VERSION } from '../reglas/renta.reglas';
-import { calcularVenta, compararConCliente } from '../reglas/venta.reglas';
+import {
+  calcularVenta,
+  compararConCliente,
+  faltaCuentaAutorretencion,
+} from '../reglas/venta.reglas';
 import { ParametrosService } from './parametros.service';
-import { retencionesVivas, type RetencionViva } from './retenciones-vivas';
+import {
+  paraReversar,
+  retencionesVivas,
+  type RetencionViva,
+} from './retenciones-vivas';
+import {
+  contrarrestoAlAnular,
+  reversaProporcional,
+} from '../reglas/anulacion.reglas';
 
 export interface VentaConfirmada {
   /** Las líneas que suma el asiento de la venta: anticipo contra autorretención. */
@@ -79,9 +91,14 @@ export class MotorVentaService {
     if (resultado.autorretenciones.length > 0) {
       // Las dos van contra la 236575 (autorretenciones) y su anticipo 135515.
       const cuentas = conceptos.get('AUTORRETENCION_ESPECIAL');
-      if (cuentas?.cuenta_id == null || cuentas.cuenta_activo_id == null) {
+      const falta = faltaCuentaAutorretencion(cuentas ?? null, 'RENTA');
+      if (
+        falta !== null ||
+        cuentas?.cuenta_id == null ||
+        cuentas.cuenta_activo_id == null
+      ) {
         throw new BadRequestException(
-          'Esta venta lleva autorretención y te falta la cuenta 236575 (autorretenciones) o la 135515 (retención que te practican). Creala en el plan de cuentas y se enlaza sola.',
+          `Esta venta lleva autorretención y ${falta}`,
         );
       }
       for (const a of resultado.autorretenciones) {
@@ -173,12 +190,21 @@ export class MotorVentaService {
           `Sos autorretenedor de ICA en ${autoIca.nombre} y no tengo la tarifa de tu actividad para ${fecha.slice(0, 4)}: no la calculé. Pedile al administrador que cargue la ley de ICA de ese municipio.`,
         );
       } else {
-        const cuentasIca = await this.cuentasAutorretencion(t, ctx, 'RETEICA');
-        if (cuentasIca === null) {
+        const enlaceIca = await this.enlaceAutorretencion(t, ctx, 'RETEICA');
+        const faltaIca = faltaCuentaAutorretencion(enlaceIca, 'ICA');
+        if (
+          faltaIca !== null ||
+          enlaceIca?.cuenta_id == null ||
+          enlaceIca.cuenta_activo_id == null
+        ) {
           throw new BadRequestException(
-            `Sos autorretenedor de ICA en ${autoIca.nombre} y te falta la cuenta 2368 (ICA retenido) o la 135518 (ICA que te retienen). Creala en el plan de cuentas y se enlaza sola.`,
+            `Sos autorretenedor de ICA en ${autoIca.nombre} y ${faltaIca}`,
           );
         }
+        const cuentasIca = {
+          pasivo: enlaceIca.cuenta_id,
+          activo: enlaceIca.cuenta_activo_id,
+        };
         const [reteica] = filas<{ id: string }>(
           await t.query(
             `SELECT id FROM retencion_concepto_nacional WHERE codigo = 'RETEICA'`,
@@ -432,11 +458,11 @@ export class MotorVentaService {
     // Renta e ICA van a cuentas distintas (Fase 8, §8.9).
     const total: Record<string, number> = {};
     for (const o of vivas) {
-      const valor = Math.min(
-        Math.round(Number(o.valor_original) * datos.proporcion),
-        Number(o.valor),
-      );
-      if (valor <= 0) continue;
+      // La proporción de lo que puso la venta (con sus ajustes por cambio de
+      // norma), al peso y sin pasar de lo vivo: la misma regla que en compras.
+      const r = reversaProporcional(paraReversar(o), datos.proporcion);
+      if (r === null) continue;
+      const valor = r.valor;
       await this.insertarReversa(
         ctx,
         o,
@@ -444,8 +470,7 @@ export class MotorVentaService {
           documentoTipo: 'NOTA_CREDITO_VENTA',
           documentoId: datos.notaId,
           fecha: datos.fecha,
-          base:
-            Math.round(Number(o.base_original) * datos.proporcion * 100) / 100,
+          base: r.base,
           valor,
           explicacion: {
             proporcion: datos.proporcion,
@@ -460,16 +485,16 @@ export class MotorVentaService {
     const lineas: VentaConfirmada['lineasAsiento'] = [];
     for (const [impuesto, valor] of Object.entries(total)) {
       if (valor <= 0) continue;
-      const cuentas = await this.cuentasAutorretencion(
-        t,
-        ctx,
-        impuesto === 'ICA' ? 'RETEICA' : 'AUTORRETENCION_ESPECIAL',
-      );
+      const codigo = impuesto === 'ICA' ? 'RETEICA' : 'AUTORRETENCION_ESPECIAL';
+      const cuentas = await this.cuentasAutorretencion(t, ctx, codigo);
       if (cuentas === null) {
+        // Dice cuál falta, no «esta o aquella» (bug #13).
+        const falta = faltaCuentaAutorretencion(
+          await this.enlaceAutorretencion(t, ctx, codigo),
+          impuesto === 'ICA' ? 'ICA' : 'RENTA',
+        );
         throw new BadRequestException(
-          impuesto === 'ICA'
-            ? 'Esta nota devuelve una venta con autorretención de ICA y te falta la cuenta 2368 (ICA retenido) o la 135518 (ICA que te retienen). Creala en el plan de cuentas y se enlaza sola.'
-            : 'Esta nota devuelve una venta con autorretención y te falta la cuenta 236575 (autorretenciones) o la 135515 (retención que te practican). Creala en el plan de cuentas y se enlaza sola.',
+          `Esta nota devuelve una venta con autorretención${impuesto === 'ICA' ? ' de ICA' : ''} y ${falta}`,
         );
       }
       lineas.push(
@@ -486,6 +511,21 @@ export class MotorVentaService {
     ctx: CtxEmpresa,
     codigo: string,
   ): Promise<{ pasivo: string; activo: string } | null> {
+    const c = await this.enlaceAutorretencion(t, ctx, codigo);
+    return c?.cuenta_id == null || c.cuenta_activo_id == null
+      ? null
+      : { pasivo: c.cuenta_id, activo: c.cuenta_activo_id };
+  }
+
+  /** El enlace del concepto a sus dos cuentas, tenga las dos o no. */
+  private async enlaceAutorretencion(
+    t: Tx,
+    ctx: CtxEmpresa,
+    codigo: string,
+  ): Promise<{
+    cuenta_id: string | null;
+    cuenta_activo_id: string | null;
+  } | null> {
     const [c] = filas<{
       cuenta_id: string | null;
       cuenta_activo_id: string | null;
@@ -500,9 +540,7 @@ export class MotorVentaService {
         [ctx.empresaId, codigo],
       ),
     );
-    return c?.cuenta_id == null || c.cuenta_activo_id == null
-      ? null
-      : { pasivo: c.cuenta_id, activo: c.cuenta_activo_id };
+    return c ?? null;
   }
 
   /**
@@ -510,6 +548,9 @@ export class MotorVentaService {
    * (plan, §6.0): en la factura se reversa lo que le quedaba; en la nota
    * vuelve lo que la nota había quitado. El asiento ya se anula entero, así
    * que acá no hay líneas: solo el registro que lee el 350.
+   *
+   * Si la venta ya estaba anulada, anular después su nota no devuelve nada:
+   * eso revivía la autorretención de una venta anulada (bug 1).
    */
   async anular(
     ctx: CtxEmpresa,
@@ -520,8 +561,11 @@ export class MotorVentaService {
       (o) => o.es_autorretencion,
     );
     for (const o of vivas) {
-      const valor = Number(o.valor);
-      if (valor === 0) continue;
+      // Una nota de una venta ya anulada no devuelve nada: la anulación de la
+      // venta ya dejó la autorretención en cero (bug 1).
+      const c = contrarrestoAlAnular(paraReversar(o));
+      if (c === null) continue;
+      const valor = c.valor;
       await this.insertarReversa(
         ctx,
         o,
@@ -529,7 +573,7 @@ export class MotorVentaService {
           documentoTipo: o.documento_tipo,
           documentoId: datos.documentoId,
           fecha: datos.fecha,
-          base: Number(o.base),
+          base: c.base,
           valor,
           explicacion: {
             anulacion: datos.motivo,

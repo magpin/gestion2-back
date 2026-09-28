@@ -2,6 +2,7 @@ import type { FotoParametros, TarifaLey } from '../servicios/parametros.reglas';
 import {
   calcularVenta,
   compararConCliente,
+  faltaCuentaAutorretencion,
   type ClienteComprador,
   type ContextoVenta,
   type EmpresaVendedora,
@@ -110,6 +111,18 @@ describe('Ventas — autorretenciones (especificación §14)', () => {
     expect(r.autorretenciones).toEqual([]);
     expect(r.avisos[0]).toMatch(/CIIU 9999/);
   });
+
+  it('bug 6: una persona natural no practica autorretención especial (art. 1.2.6.6 DUR): no la calcula y avisa', () => {
+    const r = calcularVenta(
+      venta,
+      { ...EMPRESA, autorretenedorEspecial: true, tipoPersona: 'NATURAL' },
+      CLIENTE,
+      ctx(),
+    );
+    expect(r.autorretenciones).toEqual([]);
+    expect(r.avisos[0]).toMatch(/persona natural/);
+    expect(r.avisos[0]).toMatch(/1\.2\.6\.6/);
+  });
 });
 
 describe('Ventas — lo que el cliente debería retener', () => {
@@ -140,5 +153,50 @@ describe('Ventas — lo que el cliente debería retener', () => {
     expect(
       compararConCliente({ renta: 25_000, iva: 0 }, { renta: 0, iva: 0 }),
     ).toMatch(/corresponden \$25\.000/);
+  });
+});
+
+describe('faltaCuentaAutorretencion (bug #13)', () => {
+  it('dice cuál falta: solo la 236575', () => {
+    const texto = faltaCuentaAutorretencion(
+      { cuenta_id: null, cuenta_activo_id: 'a' },
+      'RENTA',
+    );
+    expect(texto).toContain('te falta la cuenta 236575');
+    expect(texto).not.toContain('135515');
+    expect(texto).not.toContain(' o la ');
+  });
+
+  it('dice cuál falta: solo la 135515', () => {
+    const texto = faltaCuentaAutorretencion(
+      { cuenta_id: 'p', cuenta_activo_id: null },
+      'RENTA',
+    );
+    expect(texto).toContain('te falta la cuenta 135515');
+    expect(texto).not.toContain('236575');
+  });
+
+  it('sin enlace faltan las dos', () => {
+    expect(faltaCuentaAutorretencion(null, 'RENTA')).toContain(
+      'te faltan las cuentas 236575 (autorretenciones) y 135515',
+    );
+  });
+
+  it('ICA nombra sus propias cuentas', () => {
+    expect(
+      faltaCuentaAutorretencion(
+        { cuenta_id: 'p', cuenta_activo_id: null },
+        'ICA',
+      ),
+    ).toContain('135518');
+  });
+
+  it('con las dos no falta nada', () => {
+    expect(
+      faltaCuentaAutorretencion(
+        { cuenta_id: 'p', cuenta_activo_id: 'a' },
+        'RENTA',
+      ),
+    ).toBeNull();
   });
 });

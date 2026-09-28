@@ -446,3 +446,157 @@ describe('renglonDe: pagos al exterior con convenio (§8.15)', () => {
     ).toBe('EXTERIOR_CON_CONVENIO');
   });
 });
+
+describe('armar350: cuántas retenciones hay en el mes — bug 21', () => {
+  const compra = () =>
+    fila({ id: 'c', documentoId: 'compra', valor: '25000.00' });
+  const nota = () =>
+    fila({
+      id: 'n',
+      anulaA: 'c',
+      documentoId: 'nota',
+      valor: '-10000.00',
+      base: '-400000.00',
+    });
+
+  it('compra y nota, anuladas las dos: cuatro movimientos y ninguna retención', () => {
+    // La nota se anula primero (devuelve 10.000) y la compra después (quita
+    // los 25.000 que le quedaban): antes decía «4 retenciones del mes».
+    const f = armar350(
+      '2026-09',
+      [
+        compra(),
+        nota(),
+        fila({
+          id: 'an',
+          anulaA: 'n',
+          documentoId: 'nota',
+          valor: '10000.00',
+          base: '400000.00',
+        }),
+        fila({
+          id: 'ac',
+          anulaA: 'c',
+          documentoId: 'compra',
+          valor: '-25000.00',
+          base: '-1000000.00',
+        }),
+      ],
+      RENGLONES,
+      SIN_LIBRO,
+    );
+    expect(f.totales.total).toBe('$ 0');
+    expect(f.filas).toBe(0);
+  });
+
+  it('compra anulada y después su nota: tres movimientos y ninguna retención', () => {
+    const f = armar350(
+      '2026-09',
+      [
+        compra(),
+        nota(),
+        fila({
+          id: 'ac',
+          anulaA: 'c',
+          documentoId: 'compra',
+          valor: '-15000.00',
+          base: '-600000.00',
+        }),
+      ],
+      RENGLONES,
+      SIN_LIBRO,
+    );
+    expect(f.totales.total).toBe('$ 0');
+    expect(f.filas).toBe(0);
+  });
+
+  it('una compra con su nota crédito es una retención, no dos', () => {
+    const f = armar350('2026-09', [compra(), nota()], RENGLONES, SIN_LIBRO);
+    expect(f.filas).toBe(1);
+  });
+
+  it('la reversa de una retención de otro mes no se cuenta como retención del mes', () => {
+    const f = armar350(
+      '2026-09',
+      [fila({ id: 'r', anulaA: 'de-agosto', valor: '-10000.00' })],
+      RENGLONES,
+      SIN_LIBRO,
+    );
+    expect(f.filas).toBe(0);
+  });
+});
+
+describe('armar350: autorretención especial de persona natural — bug 6', () => {
+  // Como en la semilla 0087: el renglón distingue persona, pero el formulario
+  // solo trae casillas para las jurídicas (59 y 68).
+  const CON_CASILLAS: Renglon350[] = [
+    ...RENGLONES.filter((r) => r.codigo !== 'AUTO_EXONERADOS'),
+    {
+      ...renglon(
+        'AUTO_EXONERADOS',
+        'AUTORRETENCION',
+        120,
+        ['AUTORRETENCION_ESPECIAL'],
+        true,
+      ),
+      nombre: 'Contribuyentes exonerados de aportes (art. 114-1 ET)',
+      casillas: [59, 68, null, null],
+    },
+  ];
+  const especial = (p: Partial<RetencionLeida>) =>
+    fila({
+      esAutorretencion: true,
+      concepto: 'AUTORRETENCION_ESPECIAL',
+      conceptoNombre: 'Autorretención especial',
+      base: '1000000.00',
+      valor: '8000.00',
+      ...p,
+    });
+
+  it('la de una persona natural no se pierde en una columna sin casilla: sale aparte y avisada', () => {
+    const f = armar350(
+      '2026-09',
+      [especial({ tipoPersona: 'NATURAL' })],
+      CON_CASILLAS,
+      SIN_LIBRO,
+    );
+    const auto = f.secciones
+      .flatMap((s) => s.renglones)
+      .find((r) => r.codigo === 'AUTO_EXONERADOS');
+    expect(auto?.pn?.valor).toBe('$ 0');
+    expect(f.totales.total).toBe('$ 0');
+    expect(f.sinRenglon).toEqual([
+      expect.objectContaining({
+        valor: '$ 8.000',
+        motivo: expect.stringContaining('persona natural') as unknown,
+      }),
+    ]);
+  });
+
+  it('su reversa tampoco resta en «Menos»: va aparte con ella', () => {
+    const f = armar350(
+      '2026-09',
+      [
+        especial({
+          tipoPersona: 'NATURAL',
+          anulaA: 'agosto',
+          valor: '-8000.00',
+        }),
+      ],
+      CON_CASILLAS,
+      SIN_LIBRO,
+    );
+    expect(f.totales.total).toBe('$ 0');
+    expect(f.sinRenglon).toHaveLength(1);
+  });
+
+  it('la de una persona jurídica va a las casillas 59 y 68', () => {
+    const f = armar350('2026-09', [especial({})], CON_CASILLAS, SIN_LIBRO);
+    const auto = f.secciones
+      .flatMap((s) => s.renglones)
+      .find((r) => r.codigo === 'AUTO_EXONERADOS');
+    expect(auto?.pj?.valor).toBe('$ 8.000');
+    expect(auto?.casillas).toBe('PJ 59 / 68');
+    expect(f.sinRenglon).toEqual([]);
+  });
+});

@@ -112,6 +112,10 @@ function ventasFalso(factura: VentaDocumentoDetalle) {
 function txFalso() {
   const tx = {
     query: jest.fn((sql: string, params?: unknown[]) => {
+      // El candado sobre la factura, contra una anulación simultánea.
+      if (sql.includes('FOR SHARE')) {
+        return [{ '?column?': 1 }];
+      }
       if (sql.includes('INSERT INTO venta_documento\n')) {
         const [id, , terceroId, fecha, prefijo, consecutivo, resolucionId] =
           params as unknown[];

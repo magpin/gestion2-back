@@ -7,7 +7,7 @@ import { TxService, type Tx } from '../../../common/db/tx.service';
 /**
  * Lo que espera una decisión de quien mira: el número de la barra lateral y la
  * píldora «2 pendientes» del encabezado del chat (lámina `Aplicada` de
- * `maria-identidad/`).
+ * `mocks/maria-identidad/`).
  *
  * **Solo lo que esa persona puede resolver.** Una factura leída le pesa a quien
  * registra compras; un pedido, a quien factura. Contarle a alguien de consulta

@@ -8,7 +8,7 @@ import {
 
 /**
  * El fixture **son los datos del diseño**, sacados de
- * `docs/reportes-pdf-diseno/VentasPorCliente-pag2.dc.html`.
+ * `docs/mocks/reportes-pdf-diseno/VentasPorCliente-pag2.dc.html`.
  *
  * No es comodidad: el LEEME del diseño promete que «las sumas cuadran entre el
  * resumen y el detalle», así que si el armador reproduce esos números, la hoja

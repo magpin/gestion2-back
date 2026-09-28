@@ -252,7 +252,7 @@ body {
  * Están acá y no en la plantilla de cada reporte porque los dos las usan: las
  * cifras de arriba, la tabla con subtotales y las barras proporcionales son el
  * vocabulario de estas hojas, no de una sola. Salen del diseño de
- * `docs/reportes-pdf-diseno/`, con sus medidas.
+ * `docs/mocks/reportes-pdf-diseno/`, con sus medidas.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── La fila de cifras ────────────────────────────────────────────────────── */

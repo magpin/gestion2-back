@@ -2,7 +2,7 @@
  * El historial de un asiento: de dónde salió, quién hizo qué y cuándo.
  *
  * Tanda 2 del diseño de María (`docs/planes/maria.md` §11), sobre el prototipo
- * `docs/asistente-ia-diseno/Trazabilidad.dc.html`. Con una diferencia que no es
+ * `docs/mocks/asistente-ia-diseno/Trazabilidad.dc.html`. Con una diferencia que no es
  * de diseño sino de producto: el prototipo tiene un paso «Asentado sin
  * preguntar», y **eso ya no existe** —María no registra nada sola desde el 22
  * de septiembre de 2026—. En su lugar va quién lo aprobó.

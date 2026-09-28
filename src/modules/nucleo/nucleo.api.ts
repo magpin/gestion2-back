@@ -18,6 +18,7 @@ import type {
 } from './dto/empresa-legal.dto';
 import type { CrearResolucionDto } from './dto/resolucion.dto';
 import { AutenticacionService } from './servicios/autenticacion.service';
+import { ConceptosService } from './servicios/conceptos.service';
 import { EmpresaService } from './servicios/empresa.service';
 import { EmpresaLegalService } from './servicios/empresa-legal.service';
 import { EstadoConfiguracionService } from './servicios/estado-configuracion.service';
@@ -56,7 +57,21 @@ export class NucleoApi {
     private readonly plan: PlanCuentasService,
     private readonly resoluciones: ResolucionService,
     private readonly terceros: TerceroService,
+    private readonly conceptos: ConceptosService,
   ) {}
+
+  /**
+   * Un concepto de ingreso o egreso, con su cuenta. Lo usan Tesorería, Compras
+   * y Ventas para asentar lo que la persona eligió. Ver `ConceptosService`.
+   */
+  async concepto(ctx: CtxEmpresa, id: string, tx?: Tx) {
+    return this.conceptos.obtener(ctx, id, tx);
+  }
+
+  /** Los conceptos activos, para elegir uno. */
+  async conceptosActivos(ctx: CtxEmpresa) {
+    return this.conceptos.listar(ctx);
+  }
 
   /** Roles del usuario en una empresa, leídos de la base y no del token. */
   async rolesDe(ctx: Ctx, empresaId: string, tx?: Tx): Promise<RolCodigo[]> {

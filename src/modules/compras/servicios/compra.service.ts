@@ -118,6 +118,8 @@ export interface CompraRetencionResumen {
   asumida?: boolean;
   /** Solo en ReteICA: dónde se causó. */
   municipio_codigo?: string | null;
+  /** El nombre del concepto de la ley, para mostrarlo (solo en el detalle). */
+  concepto_nombre?: string | null;
 }
 
 export interface CompraDocumentoDetalle extends CompraDocumentoResumen {
@@ -935,7 +937,12 @@ export class CompraService {
 
         const retenciones = filas<CompraRetencionResumen>(
           await t.query(
-            `SELECT ${CAMPOS_RETENCION} FROM compra_retencion
+            // El nombre del concepto de la ley: el detalle no muestra el código
+            // («RETEIVA_SERVICIOS») sino lo que es (bug 19).
+            `SELECT ${CAMPOS_RETENCION},
+                    (SELECT n.nombre FROM retencion_concepto_nacional n
+                      WHERE n.id = compra_retencion.concepto_nacional_id) AS concepto_nombre
+               FROM compra_retencion
               WHERE compra_documento_id = $1
               ORDER BY concepto`,
             [id],

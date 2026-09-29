@@ -5,6 +5,7 @@ import type { Tx } from '../../common/db/tx.service';
 import { BancoMovimientoService } from './servicios/banco-movimiento.service';
 import { CajaMovimientoService } from './servicios/caja-movimiento.service';
 import { CajaService } from './servicios/caja.service';
+import type { Contrapartida } from './servicios/contrapartida';
 import { CuentaBancariaService } from './servicios/cuenta-bancaria.service';
 import {
   MovimientoConceptoService,
@@ -234,6 +235,65 @@ export class TesoreriaApi {
    */
   registrarPorConcepto(ctx: CtxEmpresa, datos: DatosMovimientoConcepto, t: Tx) {
     return this.porConcepto.registrar(ctx, datos, t);
+  }
+
+  /**
+   * Plata que sale de una caja o un banco contra **varias cuentas** a la vez:
+   * el pago de una declaración (una 2365 por concepto, la autorretención y los
+   * intereses). Las contrapartidas son los débitos; su suma tiene que dar el
+   * valor que sale. Por caja no deja el cajón en negativo; por banco admite
+   * sobregiro, como toda salida.
+   */
+  async registrarSalidaConPartidas(
+    ctx: CtxEmpresa,
+    datos: {
+      medio: 'CAJA' | 'BANCO';
+      cajaId?: string | null;
+      cuentaBancariaId?: string | null;
+      fecha: string;
+      valor: number;
+      concepto: string;
+      terceroId: string | null;
+      contrapartidas: Contrapartida[];
+    },
+    t: Tx,
+  ): Promise<ResultadoTesoreria> {
+    const debitos = datos.contrapartidas.reduce(
+      (s, c) => s + c.debito - c.credito,
+      0,
+    );
+    if (Math.abs(debitos - datos.valor) > 0.005) {
+      throw new Error(
+        `Inconsistencia: las partidas suman ${debitos} y sale ${datos.valor}.`,
+      );
+    }
+    const comun = {
+      fecha: datos.fecha,
+      valor: datos.valor,
+      concepto: datos.concepto,
+      terceroId: datos.terceroId,
+      contrapartidas: datos.contrapartidas,
+    };
+    if (datos.medio === 'CAJA') {
+      if (!datos.cajaId) throw new Error('Falta la caja.');
+      return this.exigirAsiento(
+        await this.cajaMovimientos.registrarConContrapartidas(
+          ctx,
+          datos.cajaId,
+          { ...comun, tipo: 'EGRESO' },
+          t,
+        ),
+      );
+    }
+    if (!datos.cuentaBancariaId) throw new Error('Falta la cuenta bancaria.');
+    return this.exigirAsiento(
+      await this.bancoMovimientos.registrarConContrapartidas(
+        ctx,
+        datos.cuentaBancariaId,
+        { ...comun, tipo: 'TRANSFERENCIA_SALIENTE' },
+        t,
+      ),
+    );
   }
 
   /** Lo anula con su contrario en el mismo libro. */

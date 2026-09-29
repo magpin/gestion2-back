@@ -219,6 +219,21 @@ export class RetencionesReporteService {
     }));
   }
 
+  /**
+   * El 350 del mes, como datos: lo que muestra Impuestos → Retención antes de
+   * presentarlo. Es el mismo armado de la hoja, sin el dibujo.
+   */
+  async formulario350(ctx: CtxEmpresa, mes: string): Promise<Formulario350> {
+    const [anio, m] = mes.split('-').map(Number);
+    const ultimo = new Date(Date.UTC(anio, m, 0)).getUTCDate();
+    const d = await this.datos350(ctx, {
+      desde: `${mes}-01`,
+      hasta: `${mes}-${String(ultimo).padStart(2, '0')}`,
+      etiqueta: mes,
+    });
+    return armar350(d.mes, d.filas, d.renglones, d.libro);
+  }
+
   async hoja350(
     ctx: CtxEmpresa,
     rango: Rango,
@@ -278,16 +293,29 @@ export class RetencionesReporteService {
 
   /* ── ReteICA ───────────────────────────────────────────────────────────── */
 
-  private async datosIca(ctx: CtxEmpresa, rango: Rango) {
-    return this.tx.enContexto(ctx, async (t) => ({
-      filas: (await this.retenciones(t, rango)).filter(
-        (f) => f.impuesto === 'ICA',
-      ),
-      periodicidades: await this.periodicidades(
-        t,
-        Number(rango.hasta.slice(0, 4)),
-      ),
-    }));
+  private async datosIca(ctx: CtxEmpresa, rango: Rango, tx?: Tx) {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => ({
+        filas: (await this.retenciones(t, rango)).filter(
+          (f) => f.impuesto === 'ICA',
+        ),
+        periodicidades: await this.periodicidades(
+          t,
+          Number(rango.hasta.slice(0, 4)),
+        ),
+      }),
+      tx,
+    );
+  }
+
+  /**
+   * El ReteICA del rango, como datos: lo que muestra Impuestos → ICA y
+   * ReteICA. Es el mismo armado de la hoja, sin el dibujo.
+   */
+  async reteIca(ctx: CtxEmpresa, rango: Rango, tx?: Tx): Promise<ReteIca> {
+    const d = await this.datosIca(ctx, rango, tx);
+    return armarReteIca(d.filas, d.periodicidades, rango);
   }
 
   async hojaIca(

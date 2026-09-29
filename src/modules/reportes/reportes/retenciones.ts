@@ -130,6 +130,13 @@ export interface RenglonVista {
   pn: Cifra350 | null;
   unico: Cifra350 | null;
   vacio: boolean;
+  /** Cuántos documentos suman en el renglón: «14 facturas de proveedor». */
+  documentos: number;
+  /**
+   * La tarifa del renglón, «2,5 %», si todas sus retenciones van a la misma;
+   * `null` si hay varias (la autorretención, que va según el CIIU).
+   */
+  tarifa: string | null;
 }
 
 export interface Formulario350 {
@@ -281,6 +288,9 @@ export function armar350(
   // Por renglón y columna: 'PJ', 'PN' o 'U'.
   const acumulado = new Map<string, Acumulado>();
   const sinRenglon: Formulario350['sinRenglon'] = [];
+  // Por renglón: qué documentos lo suman y con qué tarifas.
+  const documentos = new Map<string, Set<string>>();
+  const tarifas = new Map<string, Set<string>>();
   let exacto = 0;
 
   const sumar = (llave: string, base: number, valor: number) => {
@@ -331,6 +341,16 @@ export function armar350(
         : 'PJ'
       : 'U';
     sumar(`${r.codigo}|${columna}`, base, menos ? -valor : valor);
+    if (f.anulaA === null) {
+      documentos.set(
+        r.codigo,
+        (documentos.get(r.codigo) ?? new Set()).add(f.documentoId),
+      );
+      tarifas.set(
+        r.codigo,
+        (tarifas.get(r.codigo) ?? new Set()).add(tarifaTexto(f.tarifa)),
+      );
+    }
   }
 
   const vistas: RenglonVista[] = ordenados.map((r) => {
@@ -349,6 +369,11 @@ export function armar350(
         ? null
         : (cifra(u) ?? cifra({ base: 0, valor: 0 })),
       vacio: pj === undefined && pn === undefined && u === undefined,
+      documentos: documentos.get(r.codigo)?.size ?? 0,
+      tarifa:
+        tarifas.get(r.codigo)?.size === 1
+          ? [...tarifas.get(r.codigo)!][0]
+          : null,
     };
   });
 

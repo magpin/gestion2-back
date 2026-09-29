@@ -13,6 +13,8 @@ export interface MovimientoDelDia {
   concepto: string;
   /** El número del asiento: «CE-000074», «CI-000230». */
   documento: string | null;
+  /** Con quién: «Transportes Rápido Urabá». */
+  tercero: string | null;
   entra: number;
   sale: number;
 }
@@ -23,6 +25,8 @@ export interface DiaDeCaja {
     nombre: string;
     tipo: 'PRINCIPAL' | 'MENOR';
     responsable: string | null;
+    /** El municipio de su sede: «Apartadó». */
+    sede: string | null;
   };
   fecha: string;
   saldo: number;
@@ -49,6 +53,7 @@ export interface MovimientoTesoreria {
   cuenta: string;
   concepto: string;
   documento: string | null;
+  tercero: string | null;
   entra: number;
   sale: number;
   /** El saldo de esa cuenta después del movimiento, como lo lleva su libro. */
@@ -90,12 +95,15 @@ export class CajaBancosService {
           nombre: string;
           tipo: 'PRINCIPAL' | 'MENOR';
           responsable: string | null;
+          sede: string | null;
           saldo: string;
         }>(
           await t.query(
             `SELECT c.id, c.nombre, c.tipo,
                     (SELECT COALESCE(NULLIF(BTRIM(x.razon_social), ''), BTRIM(CONCAT_WS(' ', x.primer_nombre, x.primer_apellido)))
                        FROM tercero x WHERE x.id = c.responsable_tercero_id) AS responsable,
+                    (SELECT mu.nombre FROM empresa_sede s JOIN municipio mu ON mu.codigo = s.municipio_codigo
+                      WHERE s.id = c.sede_id) AS sede,
                     coalesce((SELECT m.saldo_valor FROM caja_movimiento m WHERE m.caja_id = c.id
                                ORDER BY m.secuencia DESC LIMIT 1), 0) AS saldo
                FROM caja c WHERE c.id = $1`,
@@ -111,10 +119,13 @@ export class CajaBancosService {
           concepto: string;
           valor: string;
           documento: string | null;
+          tercero: string | null;
         }>(
           await t.query(
             `SELECT m.id, to_char(m.creado_en AT TIME ZONE 'America/Bogota', 'HH24:MI') AS hora,
-                    m.tipo, m.concepto, m.valor, a.numero AS documento
+                    m.tipo, m.concepto, m.valor, a.numero AS documento,
+                    (SELECT COALESCE(NULLIF(BTRIM(x.razon_social), ''), BTRIM(CONCAT_WS(' ', x.primer_nombre, x.primer_apellido)))
+                         FROM tercero x WHERE x.id = m.tercero_id) AS tercero
                FROM caja_movimiento m
                LEFT JOIN asiento a ON a.id = m.asiento_id
               WHERE m.caja_id = $1 AND m.fecha = $2 AND m.tipo <> 'SALDO_INICIAL'
@@ -126,6 +137,7 @@ export class CajaBancosService {
           hora: m.hora,
           concepto: m.concepto,
           documento: m.documento,
+          tercero: m.tercero,
           entra: m.tipo === 'INGRESO' ? Number(m.valor) : 0,
           sale: m.tipo === 'EGRESO' ? Number(m.valor) : 0,
         }));
@@ -146,6 +158,7 @@ export class CajaBancosService {
             nombre: caja.nombre,
             tipo: caja.tipo,
             responsable: caja.responsable,
+            sede: caja.sede,
           },
           fecha: dia,
           saldo,
@@ -191,6 +204,8 @@ export class CajaBancosService {
             `SELECT * FROM (
                SELECT m.id, m.fecha::text AS fecha, m.secuencia, m.creado_en, 'CAJA' AS medio,
                       m.caja_id AS cuenta_id, k.nombre AS cuenta, m.concepto, a.numero AS documento,
+                      (SELECT COALESCE(NULLIF(BTRIM(x.razon_social), ''), BTRIM(CONCAT_WS(' ', x.primer_nombre, x.primer_apellido)))
+                         FROM tercero x WHERE x.id = m.tercero_id) AS tercero,
                       CASE WHEN m.tipo = 'INGRESO' THEN m.valor ELSE 0 END AS entra,
                       CASE WHEN m.tipo = 'EGRESO' THEN m.valor ELSE 0 END AS sale,
                       m.saldo_valor AS saldo
@@ -201,6 +216,8 @@ export class CajaBancosService {
                UNION ALL
                SELECT m.id, m.fecha::text, m.secuencia, m.creado_en, 'BANCO',
                       m.cuenta_bancaria_id, b.banco, m.concepto, a.numero,
+                      (SELECT COALESCE(NULLIF(BTRIM(x.razon_social), ''), BTRIM(CONCAT_WS(' ', x.primer_nombre, x.primer_apellido)))
+                         FROM tercero x WHERE x.id = m.tercero_id),
                       CASE WHEN m.tipo = ANY ($3) THEN m.valor ELSE 0 END,
                       CASE WHEN m.tipo <> ALL ($3) THEN m.valor ELSE 0 END,
                       m.saldo_valor
@@ -227,6 +244,7 @@ export class CajaBancosService {
           cuenta: m.cuenta as string,
           concepto: m.concepto as string,
           documento: (m.documento as string | null) ?? null,
+          tercero: (m.tercero as string | null) ?? null,
           entra: Number(m.entra),
           sale: Number(m.sale),
           saldo: Number(m.saldo),

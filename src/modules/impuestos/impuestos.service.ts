@@ -92,6 +92,13 @@ export interface Declaracion {
   intereses: number;
   gmf: number;
   asientoId: string | null;
+  /** El número del egreso con que se pagó (E28): el mismo que sale en Pagos → Comprobantes. */
+  egreso: string | null;
+  /** Quién la registró como presentada y quién registró el pago: la trazabilidad del 350. */
+  presentadaPor: string | null;
+  pagadaPor: string | null;
+  /** Si el pago por banco ya se concilió con el extracto; `null` si no se pagó por banco. */
+  conciliada: boolean | null;
   /** Renta: el impuesto neto del 110 (para el anticipo por promedio del año siguiente). */
   impuestoNeto: number | null;
   /** Renta: el anticipo que se liquidó para el año siguiente. */
@@ -311,7 +318,11 @@ const CAMPOS = `id, obligacion, periodo, municipio_codigo, estado, numero_formul
   recibo_490, pagada_el::text, intereses, gmf, asiento_id, impuesto_neto,
   anticipo_siguiente, cuotas,
   (SELECT coalesce(sum(p.valor), 0) FROM declaracion_pago p WHERE p.declaracion_id = declaracion.id) AS pagado,
-  (SELECT count(*) FROM declaracion_pago p WHERE p.declaracion_id = declaracion.id) AS cuotas_pagadas`;
+  (SELECT count(*) FROM declaracion_pago p WHERE p.declaracion_id = declaracion.id) AS cuotas_pagadas,
+  (SELECT a.numero FROM asiento a WHERE a.id = declaracion.asiento_id) AS egreso,
+  (SELECT u.nombre_completo FROM usuario u WHERE u.id = declaracion.creado_por) AS presentada_por,
+  (SELECT u.nombre_completo FROM usuario u WHERE u.id = declaracion.pagado_por) AS pagada_por,
+  (SELECT b.conciliado FROM banco_movimiento b WHERE b.id = declaracion.movimiento_id) AS conciliada`;
 
 function aDeclaracion(f: Record<string, unknown>): Declaracion {
   return {
@@ -331,6 +342,10 @@ function aDeclaracion(f: Record<string, unknown>): Declaracion {
     intereses: Number(f.intereses),
     gmf: Number(f.gmf),
     asientoId: f.asiento_id as string | null,
+    egreso: (f.egreso as string | null) ?? null,
+    presentadaPor: (f.presentada_por as string | null) ?? null,
+    pagadaPor: (f.pagada_por as string | null) ?? null,
+    conciliada: (f.conciliada as boolean | null) ?? null,
     impuestoNeto: f.impuesto_neto === null ? null : Number(f.impuesto_neto),
     anticipoSiguiente:
       f.anticipo_siguiente === null ? null : Number(f.anticipo_siguiente),

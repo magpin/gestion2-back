@@ -14,8 +14,8 @@ export type TipoEgreso = 'PROVEEDOR' | 'SIN_FACTURA' | 'NO_GASTO' | 'IMPUESTO';
 
 export interface Egreso {
   id: string;
-  /** De dónde sale: el comprobante de egreso, un pago por concepto o una declaración. */
-  origen: 'COMPROBANTE' | 'CONCEPTO' | 'DECLARACION' | 'CUOTA';
+  /** De dónde sale: el comprobante de egreso, un pago por concepto, una devolución a un cliente o una declaración. */
+  origen: 'COMPROBANTE' | 'CONCEPTO' | 'DEVOLUCION' | 'DECLARACION' | 'CUOTA';
   /** El número que la persona reconoce: «EG-000074» o el del asiento. */
   numero: string;
   fecha: string;
@@ -108,6 +108,28 @@ export class EgresosService {
                LEFT JOIN gmf g ON g.origen_id = m.id
               WHERE m.direccion = 'SALIDA' AND m.origen IN ('MANUAL', 'DEVOLUCION_ANTICIPO')
                 AND m.fecha >= $1::date AND m.fecha < $1::date + interval '1 month'
+             UNION ALL
+             -- Lo que se le devolvió a un cliente de lo que pagó de más (el saldo a
+             -- favor, «Devolver» en la factura). Sale por caja o banco sin pasar
+             -- por los conceptos. La anulación de un recibo usa el mismo camino,
+             -- pero no es un egreso: su concepto empieza por el número del recibo.
+             SELECT v.id, 'DEVOLUCION', a.numero, v.fecha,
+                    (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.primer_apellido))
+                       FROM tercero x WHERE x.id = v.tercero_id),
+                    v.concepto, 'NO_GASTO', v.medio, v.caja_id, v.cuenta_bancaria_id, v.valor,
+                    0, 'VIGENTE'
+               FROM (SELECT id, fecha, tercero_id, concepto, valor, asiento_id, 'CAJA' AS medio,
+                            caja_id, NULL::uuid AS cuenta_bancaria_id
+                       FROM caja_movimiento
+                      WHERE tipo = 'EGRESO' AND origen_tipo = 'FACTURA_VENTA' AND reversa_de IS NULL
+                     UNION ALL
+                     SELECT id, fecha, tercero_id, concepto, valor, asiento_id, 'BANCO',
+                            NULL::uuid, cuenta_bancaria_id
+                       FROM banco_movimiento
+                      WHERE tipo = 'TRANSFERENCIA_SALIENTE' AND origen_tipo = 'FACTURA_VENTA') v
+               LEFT JOIN asiento a ON a.id = v.asiento_id
+              WHERE v.concepto LIKE 'Devolución de cobro%'
+                AND v.fecha >= $1::date AND v.fecha < $1::date + interval '1 month'
              UNION ALL
              -- Las declaraciones pagadas de una vez.
              SELECT d.id, 'DECLARACION', a.numero, d.pagada_el,

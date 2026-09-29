@@ -45,6 +45,18 @@ export interface Traslado {
   motivoAnulacion: string | null;
 }
 
+/** Lo que se muestra antes de guardar: el 4×1000, el número y las cuentas del asiento. */
+export interface PreviaTraslado {
+  causa: boolean;
+  gmf: number;
+  numero: string;
+  cuentas: {
+    origen: { codigo: string; nombre: string } | null;
+    destino: { codigo: string; nombre: string } | null;
+    gmf: { codigo: string; nombre: string } | null;
+  };
+}
+
 /** Un extremo ya resuelto: su cuenta contable y cómo se llama. */
 interface ExtremoResuelto extends Extremo {
   cuentaId: string;
@@ -88,14 +100,49 @@ export class TrasladoService {
     destino: ExtremoInput,
     valor: number,
     tx?: Tx,
-  ): Promise<{ causa: boolean; gmf: number }> {
+  ): Promise<PreviaTraslado> {
     return this.tx.enContexto(
       ctx,
       async (t) => {
         const o = await this.resolver(ctx, origen, t);
         const d = await this.resolver(ctx, destino, t);
         const causa = causaGmf(o, d);
-        return { causa, gmf: causa ? gmfDe(valor, o.exentaGmf) : 0 };
+        // Para mostrar «En el libro · TR-000019» con sus cuentas antes de
+        // guardar. El número es el que sigue: otro traslado simultáneo
+        // podría tomarlo, y entonces el guardado lleva el siguiente.
+        const siguiente = fila<{ n: number }>(
+          await t.query(
+            `SELECT coalesce((SELECT consecutivo_actual FROM traslado_consecutivo
+                               WHERE empresa_id = $1), 0) + 1 AS n`,
+            [ctx.empresaId],
+          ),
+        );
+        const cuenta = async (id: string) =>
+          fila<{ codigo: string; nombre: string }>(
+            await t.query(
+              'SELECT codigo, nombre FROM empresa_cuenta WHERE id = $1',
+              [id],
+            ),
+          ) ?? null;
+        const gmfCuenta = causa
+          ? (fila<{ codigo: string; nombre: string }>(
+              await t.query(
+                `SELECT ec.codigo, ec.nombre FROM concepto_movimiento c
+                   JOIN empresa_cuenta ec ON ec.id = c.cuenta_id
+                  WHERE c.codigo = 'GTO-GMF'`,
+              ),
+            ) ?? null)
+          : null;
+        return {
+          causa,
+          gmf: causa ? gmfDe(valor, o.exentaGmf) : 0,
+          numero: numeroTraslado(Number(siguiente?.n ?? 1)),
+          cuentas: {
+            origen: await cuenta(o.cuentaId),
+            destino: await cuenta(d.cuentaId),
+            gmf: gmfCuenta,
+          },
+        };
       },
       tx,
     );

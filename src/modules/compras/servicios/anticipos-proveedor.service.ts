@@ -22,6 +22,8 @@ export interface AnticipoAProveedor {
   identificacion: string;
   /** El comprobante que lo pagó: «EG-000068». */
   comprobante: string | null;
+  /** Para abrir el comprobante («Ver»). */
+  comprobanteId: string | null;
   fecha: string;
   detalle: string;
   /** El anticipo bruto: lo que va a 133005. */
@@ -33,6 +35,8 @@ export interface AnticipoAProveedor {
   porLegalizar: number;
   /** Compras del proveedor por pagar: si hay, se legaliza con una de ellas. */
   comprasPendientes: number;
+  /** La primera compra por pagar, para decir «Llegó la factura FC-771». */
+  primeraCompra: string | null;
 }
 
 export interface DevolucionDeProveedor {
@@ -91,6 +95,11 @@ export class AnticiposProveedorService {
                     (SELECT ${NOMBRE} FROM tercero x WHERE x.id = m.tercero_id) AS tercero,
                     (SELECT x.numero_documento FROM tercero x WHERE x.id = m.tercero_id) AS identificacion,
                     (SELECT c.numero FROM comprobante_egreso c WHERE c.id = m.origen_id AND m.origen = 'COMPROBANTE_EGRESO') AS comprobante,
+                    CASE WHEN m.origen = 'COMPROBANTE_EGRESO' THEN m.origen_id END AS comprobante_id,
+                    (SELECT f.numero_factura_proveedor FROM (SELECT ${CAMPOS_DOCUMENTO} FROM compra_documento
+                                            WHERE tipo = 'FACTURA' AND estado = 'EMITIDA'
+                                              AND tercero_id = m.tercero_id) f
+                      WHERE f.pendiente > 0 ORDER BY f.fecha, f.id LIMIT 1) AS primera_compra,
                     coalesce((SELECT sum(x.valor) FROM cruce_pago x
                                WHERE x.origen_movimiento_id = m.id AND x.estado = 'VIGENTE'), 0) AS cruzado,
                     coalesce((SELECT sum(d.valor_concepto) FROM movimiento_concepto d
@@ -119,6 +128,7 @@ export class AnticiposProveedorService {
                 a.comprobante === null
                   ? null
                   : numeroComprobante(Number(a.comprobante)),
+              comprobanteId: (a.comprobante_id as string | null) ?? null,
               fecha: a.fecha as string,
               detalle: a.detalle as string,
               anticipo,
@@ -127,6 +137,7 @@ export class AnticiposProveedorService {
               devuelto,
               porLegalizar: r2(anticipo - cruzado - devuelto),
               comprasPendientes: Number(a.compras),
+              primeraCompra: (a.primera_compra as string | null) ?? null,
             };
           })
           .filter((a) => a.porLegalizar > 0);

@@ -6,6 +6,7 @@ import { LibrosController } from './controladores/libros.controller';
 import { PeriodosController } from './controladores/periodos.controller';
 import { ContabilidadApi } from './contabilidad.api';
 import { AsientoService } from './servicios/asiento.service';
+import { ComprobanteManualService } from './servicios/comprobante-manual.service';
 import { ComprobanteService } from './servicios/comprobante.service';
 import { LibrosService } from './servicios/libros.service';
 import { PeriodoService } from './servicios/periodo.service';
@@ -30,6 +31,7 @@ import { PeriodoService } from './servicios/periodo.service';
     PeriodoService,
     ComprobanteService,
     AsientoService,
+    ComprobanteManualService,
     LibrosService,
     ContabilidadApi,
   ],

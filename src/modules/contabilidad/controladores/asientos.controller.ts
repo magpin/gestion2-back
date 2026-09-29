@@ -22,6 +22,8 @@ import {
   FiltroAsientosDto,
 } from '../dto/asiento.dto';
 import { AsientoService } from '../servicios/asiento.service';
+import { ComprobanteManualService } from '../servicios/comprobante-manual.service';
+import { FirmarSoporteDto, PropuestaDto } from '../dto/comprobante-manual.dto';
 
 /**
  * No hay PATCH.
@@ -33,7 +35,29 @@ import { AsientoService } from '../servicios/asiento.service';
 @Controller('asientos')
 @ExigeEmpresa()
 export class AsientosController {
-  constructor(private readonly asientos: AsientoService) {}
+  constructor(
+    private readonly asientos: AsientoService,
+    private readonly manual: ComprobanteManualService,
+  ) {}
+
+  /** Lo que María propone para el comprobante manual. No guarda nada. */
+  @Roles('CONTADOR')
+  @Post('propuesta')
+  @HttpCode(HttpStatus.OK)
+  propuesta(@ActorEmpresa() ctx: CtxEmpresa, @Body() dto: PropuestaDto) {
+    return this.manual.propuesta(ctx, dto);
+  }
+
+  /** Dónde subir el soporte del comprobante manual. */
+  @Roles('CONTADOR')
+  @Post('soporte/firmar')
+  @HttpCode(HttpStatus.OK)
+  firmarSoporte(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Body() dto: FirmarSoporteDto,
+  ) {
+    return this.manual.firmarSoporte(ctx, dto.tipoMime);
+  }
 
   @Roles('DIRECTOR', 'CONTADOR', 'CONSULTA')
   @Get()
@@ -54,7 +78,17 @@ export class AsientosController {
   @Roles('CONTADOR')
   @Post()
   crear(@ActorEmpresa() ctx: CtxEmpresa, @Body() dto: CrearAsientoDto) {
-    return this.asientos.crear(ctx, dto);
+    // El manual puede traer su soporte: se guarda en la misma transacción.
+    return this.manual.crear(ctx, dto);
+  }
+
+  @Roles('DIRECTOR', 'CONTADOR', 'CONSULTA')
+  @Get(':id/soportes')
+  soportes(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.manual.soportes(ctx, id);
   }
 
   @Roles('CONTADOR')

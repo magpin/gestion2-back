@@ -1,0 +1,32 @@
+{{!--
+  Un estado financiero: resultados, balance o flujo de caja, con su columna
+  de comparación si se pidió. Una tabla, como se presenta en papel: grupos en
+  negrilla, cuentas sangradas, subtotales con línea y el total con doble.
+--}}
+
+<div class="estado{{#if compara}} estado--compara{{/if}}">
+  <div class="fila cabecera">
+    <span>Concepto</span>
+    <span class="derecha">{{columnas.actual}}</span>
+    {{#if compara}}
+      <span class="derecha">{{columnas.comparado}}</span>
+      <span class="derecha">Variación</span>
+    {{/if}}
+  </div>
+  {{#each filas}}
+    <div class="fila {{clase}}">
+      <span>{{#if codigo}}<span class="mono codigo">{{codigo}}</span>{{/if}}{{etiqueta}}</span>
+      <span class="cifra derecha">{{actual}}</span>
+      {{#if ../compara}}
+        <span class="cifra derecha">{{comparado}}</span>
+        <span class="cifra derecha">{{variacion}}</span>
+      {{/if}}
+    </div>
+  {{/each}}
+</div>
+
+{{#if notas.length}}
+  <section class="bloque">
+    {{#each notas}}<p class="apunte">{{this}}</p>{{/each}}
+  </section>
+{{/if}}

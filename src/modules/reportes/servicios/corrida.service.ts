@@ -10,6 +10,9 @@ export type ClaveCorrida =
   | 'RETENCIONES_350'
   | 'RETEICA'
   | 'CERTIFICADOS_RETENCION'
+  | 'ESTADO_RESULTADOS'
+  | 'BALANCE_GENERAL'
+  | 'FLUJO_CAJA'
   | 'GUARDADO';
 export type FormatoCorrida = 'HTML' | 'PDF' | 'XLSX';
 

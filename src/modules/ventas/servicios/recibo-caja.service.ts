@@ -136,6 +136,25 @@ export class ReciboCajaService {
   ) {}
 
   /** La cartera de hoy: por cliente, con las edades de lo vencido. */
+  /**
+   * Lo que falta cobrar, factura por factura, con cuándo vence: lo que el
+   * flujo de caja proyectado pone en su semana.
+   */
+  async pendientesConVence(
+    ctx: CtxEmpresa,
+    tx?: Tx,
+  ): Promise<Array<{ vence: string; pendiente: number }>> {
+    const facturas = await this.tx.enContexto(
+      ctx,
+      async (t) => filas<Record<string, unknown>>(await t.query(PENDIENTES)),
+      tx,
+    );
+    return facturas.map((f) => ({
+      vence: venceEfectivo(f.fecha as string, f.vence as string | null),
+      pendiente: Number(f.pendiente),
+    }));
+  }
+
   async porCobrar(ctx: CtxEmpresa, tx?: Tx): Promise<Cartera> {
     const hoy = hoyEnColombia();
     const facturas = await this.tx.enContexto(

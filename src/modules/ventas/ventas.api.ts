@@ -19,6 +19,7 @@ import {
   type FacturaHistoricaEntrada,
 } from './servicios/historico.reglas';
 import { calcularLineas } from './servicios/venta.reglas';
+import { ReciboCajaService } from './servicios/recibo-caja.service';
 import {
   FacturaService,
   type OrigenDeLaFactura,
@@ -57,7 +58,18 @@ export class VentasApi {
     private readonly contabilidad: ContabilidadApi,
     private readonly facturas: FacturaService,
     private readonly historico: HistoricoService,
+    private readonly recibos: ReciboCajaService,
   ) {}
+
+  /** Lo que falta cobrar, con su vencimiento. Lo lee el flujo de caja proyectado. */
+  pendientesPorCobrar(ctx: CtxEmpresa, tx?: Tx) {
+    return this.recibos.pendientesConVence(ctx, tx);
+  }
+
+  /** La cartera por cliente, lo más vencido primero. La lee el tablero de Inicio. */
+  cartera(ctx: CtxEmpresa, tx?: Tx) {
+    return this.recibos.porCobrar(ctx, tx);
+  }
 
   /**
    * Cuáles de estos números de factura ya están en el sistema —emitidas acá o

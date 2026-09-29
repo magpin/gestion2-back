@@ -651,3 +651,68 @@ body {
   text-transform: uppercase;
   color: var(--texto-apagado);
 }
+
+/* ── Estados financieros ──────────────────────────────────────────────────── */
+
+.estado .fila {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  gap: 12px;
+  align-items: baseline;
+  padding: 4px 9px;
+  font-size: 10px;
+}
+
+.estado--compara .fila {
+  grid-template-columns: 1fr 110px 110px 70px;
+}
+
+.estado .cabecera {
+  padding: 6px 9px;
+  background: var(--n-900);
+  color: var(--n-0);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.estado .seccion {
+  margin-top: 8px;
+  padding-top: 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.estado .grupo {
+  border-top: 1px solid var(--n-300);
+  font-weight: 600;
+}
+
+.estado .cuenta {
+  padding-left: 22px;
+  color: var(--texto-apagado);
+}
+
+.estado .codigo {
+  margin-right: 6px;
+  font-size: 8.5px;
+}
+
+.estado .subtotal {
+  background: var(--n-50);
+  border-top: 1px solid var(--n-300);
+  font-weight: 600;
+}
+
+/* El total cierra con doble línea, como se cierra una cuenta en papel. */
+.estado .total {
+  margin-top: 4px;
+  padding: 8px 9px;
+  border-top: 2px solid var(--n-900);
+  border-bottom: 2px solid var(--n-900);
+  font-size: 11px;
+  font-weight: 700;
+}

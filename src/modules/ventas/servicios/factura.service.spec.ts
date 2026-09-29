@@ -64,12 +64,14 @@ function nucleoFalso(
     tercero?: Record<string, unknown> | null;
     responsableIva?: boolean;
     cuentas?: Record<string, { id: string } | null>;
+    conceptos?: Record<string, Record<string, unknown>>;
   } = {},
 ) {
   const {
     tercero = clienteActivo,
     responsableIva = true,
     cuentas = { '130505': { id: 'cta-cartera' }, '240805': { id: 'cta-iva' } },
+    conceptos = {},
   } = opciones;
   // Referencias sueltas, sin pasar por el cast: leerlas a través del objeto
   // casteado dispara `unbound-method` porque el tipo declarado (`NucleoApi`)
@@ -83,6 +85,9 @@ function nucleoFalso(
     esResponsableDeIva: jest.fn(() => Promise.resolve(responsableIva)),
     cuenta,
     tomarConsecutivo,
+    concepto: jest.fn((_ctx: unknown, id: string) =>
+      Promise.resolve(conceptos[id]),
+    ),
   } as unknown as ConstructorParameters<typeof FacturaService>[1];
   return { fake, cuenta, tomarConsecutivo };
 }
@@ -212,6 +217,8 @@ function txFalso(opciones: { estadoCotizacion?: string | null } = {}) {
   const lineasInsertadas: unknown[][] = [];
   const tx = {
     query: jest.fn((sql: string, params?: unknown[]) => {
+      // El plazo del tercero (PC25): sin plazo, el vence queda como venga.
+      if (sql.includes('dias_plazo_')) return Promise.resolve([]);
       if (sql.includes("WHERE id = $1 AND tipo = 'COTIZACION'")) {
         return estadoCotizacion === null || estadoCotizacion === undefined
           ? []
@@ -293,6 +300,141 @@ function txFalso(opciones: { estadoCotizacion?: string | null } = {}) {
   } as unknown as Tx;
   return { tx, faltantesInsertados, lineasInsertadas };
 }
+
+/** Un concepto de ingreso sembrado: servicio operacional a 415595. */
+const conceptoServicio = {
+  id: 'con-flete',
+  nombre: 'Fletes cobrados',
+  tipo: 'INGRESO',
+  activo: true,
+  automatico: false,
+  cuenta: { id: 'cta-servicio', codigo: '414505', nombre: 'Transporte' },
+};
+
+describe('FacturaService.crear — servicios y otros ingresos (Fase 8)', () => {
+  const motor = {
+    confirmarVenta: jest.fn(() =>
+      Promise.resolve({ lineasAsiento: [], aviso: null }),
+    ),
+  } as never;
+
+  it('la línea de concepto acredita su cuenta, no costea ni toca el kardex', async () => {
+    const { tx, lineasInsertadas } = txFalso();
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+    const inventario = inventarioFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso({ conceptos: { 'con-flete': conceptoServicio } }).fake,
+      inventario,
+      contabilidad,
+      {} as never,
+      motor,
+    );
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CREDITO',
+      lineas: [
+        { productoId: 'p-1', cantidad: 1 },
+        {
+          conceptoId: 'con-flete',
+          detalle: 'Transporte a Turbo',
+          cantidad: 1,
+          precioUnitario: 120000,
+          ivaTarifa: 19,
+        },
+      ],
+    });
+
+    const [, dtoAsiento] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      { lineas: Array<{ cuentaId: string; debito: number; credito: number }> },
+    ];
+    // Ingreso del producto y del servicio, cada uno a su cuenta; un solo par
+    // costo/inventario, el del producto.
+    expect(dtoAsiento.lineas).toContainEqual({
+      cuentaId: 'cta-servicio',
+      debito: 0,
+      credito: 120000,
+    });
+    expect(
+      dtoAsiento.lineas.filter((l) => l.cuentaId === 'cta-costo'),
+    ).toHaveLength(1);
+    const d = dtoAsiento.lineas.reduce((x, l) => x + l.debito, 0);
+    const c = dtoAsiento.lineas.reduce((x, l) => x + l.credito, 0);
+    expect(d).toBe(c);
+
+    const inv = inventario as unknown as {
+      costearSalida: jest.Mock;
+      descontarPorVenta: jest.Mock;
+    };
+    expect(inv.costearSalida).toHaveBeenCalledTimes(1);
+    expect(inv.descontarPorVenta).toHaveBeenCalledTimes(1);
+
+    // La línea del servicio: sin producto ni costo, con concepto, cuenta y detalle.
+    const linea = lineasInsertadas[1];
+    expect(linea[3]).toBeNull();
+    expect(linea[10]).toBeNull();
+    expect(linea.slice(12)).toEqual([
+      'con-flete',
+      'cta-servicio',
+      'Transporte a Turbo',
+    ]);
+  });
+
+  it('rechaza un concepto que no es de ingreso', async () => {
+    const { tx } = txFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso({
+        conceptos: {
+          'con-gasto': { ...conceptoServicio, id: 'con-gasto', tipo: 'GASTO' },
+        },
+      }).fake,
+      inventarioFalso(),
+      contabilidadFalso().fake,
+      {} as never,
+      motor,
+    );
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        formaPago: 'CREDITO',
+        lineas: [
+          {
+            conceptoId: 'con-gasto',
+            detalle: 'Algo',
+            cantidad: 1,
+            precioUnitario: 1000,
+            ivaTarifa: 0,
+          },
+        ],
+      }),
+    ).rejects.toThrow('elegí un concepto de ingreso');
+  });
+
+  it('rechaza una línea con producto y concepto a la vez', async () => {
+    const { tx } = txFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso(),
+      contabilidadFalso().fake,
+      {} as never,
+      motor,
+    );
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        formaPago: 'CREDITO',
+        lineas: [{ productoId: 'p-1', conceptoId: 'con-flete', cantidad: 1 }],
+      }),
+    ).rejects.toThrow('elegí uno de los dos');
+  });
+});
 
 describe('FacturaService.crear', () => {
   it('arma el asiento completo (cartera, ingreso, IVA, costo, inventario) y descuenta el kardex', async () => {
@@ -579,9 +721,9 @@ describe('FacturaService.crear', () => {
       },
     );
 
-    // El último parámetro del INSERT de la línea es quién autorizó.
+    // El duodécimo parámetro del INSERT de la línea es quién autorizó.
     const linea = lineasInsertadas[0];
-    expect(linea[linea.length - 1]).toBe('u-1');
+    expect(linea[11]).toBe('u-1');
   });
 
   it('no anota nada cuando había existencia', async () => {

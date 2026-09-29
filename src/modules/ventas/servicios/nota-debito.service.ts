@@ -5,6 +5,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { CtxEmpresa } from '../../../common/ctx';
 import { fila } from '../../../common/db/filas';
 import { esDeHoy, hoyEnColombia } from '../../../common/fecha';
+import { cuentaDeIngreso } from './concepto-ingreso';
 import { TxService } from '../../../common/db/tx.service';
 import type { LineaAsientoDto } from '../../contabilidad/dto/asiento.dto';
 import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
@@ -20,7 +21,7 @@ import {
   type VentaDocumentoResumen,
 } from './venta-documento.service';
 
-const CAMPOS_LINEA = `id, venta_documento_id, orden, producto_id, cantidad, precio_unitario,
+const CAMPOS_LINEA = `id, venta_documento_id, orden, producto_id, concepto_id, cuenta_id, detalle, cantidad, precio_unitario,
                        iva_tarifa, subtotal, iva_valor, total, costo_unitario`;
 
 const CODIGO_CUENTA_CARTERA = '130505';
@@ -69,7 +70,16 @@ export class NotaDebitoService {
         );
       }
 
-      const productoIds = dto.lineas.map((l) => l.productoId);
+      for (const l of dto.lineas) {
+        if ((l.productoId === undefined) === (l.conceptoId === undefined)) {
+          throw new BadRequestException(
+            'Cada línea es un producto o un servicio: elegí uno de los dos.',
+          );
+        }
+      }
+      const productoIds = dto.lineas
+        .map((l) => l.productoId)
+        .filter((id): id is string => id !== undefined);
       if (new Set(productoIds).size !== productoIds.length) {
         throw new BadRequestException(
           'No repitas el mismo producto en dos líneas — sumá la cantidad en una sola.',
@@ -117,9 +127,28 @@ export class NotaDebitoService {
       );
 
       const cuentaIngresoDe: Array<string | null> = [];
+      /** Por línea: el concepto de ingreso, o `null` si es producto. */
+      const conceptoDe: Array<{ conceptoId: string; cuentaId: string } | null> =
+        [];
       const entradas = [];
       for (const l of dto.lineas) {
-        const producto = await this.inventario.producto(ctx, l.productoId, t);
+        if (l.conceptoId !== undefined) {
+          const ingreso = await cuentaDeIngreso(
+            this.nucleo,
+            ctx,
+            l.conceptoId,
+            t,
+          );
+          cuentaIngresoDe.push(ingreso.cuentaId);
+          conceptoDe.push(ingreso);
+          entradas.push({
+            cantidad: l.cantidad,
+            precioUnitario: l.precioUnitario,
+            ivaTarifa: responsableIva ? (l.ivaTarifa ?? 0) : 0,
+          });
+          continue;
+        }
+        const producto = await this.inventario.producto(ctx, l.productoId!, t);
         if (producto === null || !producto.activo) {
           throw new BadRequestException(
             `El producto ${l.productoId} no existe o está inactivo.`,
@@ -131,6 +160,7 @@ export class NotaDebitoService {
           );
         }
         cuentaIngresoDe.push(producto.cuenta_ingreso_id);
+        conceptoDe.push(null);
         entradas.push({
           cantidad: l.cantidad,
           precioUnitario: l.precioUnitario,
@@ -265,20 +295,24 @@ export class NotaDebitoService {
           await t.query(
             `INSERT INTO venta_documento_linea
                (empresa_id, venta_documento_id, orden, producto_id, cantidad,
-                precio_unitario, iva_tarifa, subtotal, iva_valor, total)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                precio_unitario, iva_tarifa, subtotal, iva_valor, total,
+                concepto_id, cuenta_id, detalle)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
              RETURNING ${CAMPOS_LINEA}`,
             [
               ctx.empresaId,
               documento.id,
               i + 1,
-              dto.lineas[i].productoId,
+              dto.lineas[i].productoId ?? null,
               l.cantidad,
               l.precioUnitario,
               l.ivaTarifa,
               l.subtotal,
               l.ivaValor,
               l.total,
+              conceptoDe[i]?.conceptoId ?? null,
+              conceptoDe[i]?.cuentaId ?? null,
+              conceptoDe[i] === null ? null : dto.lineas[i].detalle!.trim(),
             ],
           ),
         );

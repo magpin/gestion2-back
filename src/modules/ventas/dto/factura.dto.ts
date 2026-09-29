@@ -5,8 +5,11 @@ import {
   IsIn,
   IsNumber,
   IsOptional,
+  IsString,
   IsUUID,
+  Length,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
@@ -16,11 +19,38 @@ import {
   type FormaPago,
 } from './venta.dto';
 
+/**
+ * Una línea de la factura: un producto del catálogo, o un concepto de ingreso
+ * —un servicio (41) u otro ingreso (42)—. Una de las dos (Fase 8, pantalla 13).
+ */
 export class LineaFacturaDto {
+  @ValidateIf((l: LineaFacturaDto) => l.conceptoId === undefined)
   @IsUUID()
-  productoId!: string;
+  productoId?: string;
 
-  /** Sin `precioUnitario`: se toma el precio de lista vigente — ver `CrearCotizacionDto`. */
+  /** Concepto de INGRESO: la línea no mueve kardex y entra a la cuenta del concepto. */
+  @ValidateIf((l: LineaFacturaDto) => l.productoId === undefined)
+  @IsUUID()
+  conceptoId?: string;
+
+  /** Solo en la de concepto: qué se cobró («Transporte de la mercancía a Turbo»). */
+  @ValidateIf((l: LineaFacturaDto) => l.conceptoId !== undefined)
+  @IsString()
+  @Length(2, 200)
+  detalle?: string;
+
+  /** Solo en la de concepto: un servicio no tiene precio de lista, lo pone quien factura. */
+  @ValidateIf((l: LineaFacturaDto) => l.conceptoId !== undefined)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  precioUnitario?: number;
+
+  /** Solo en la de concepto: 0, 5 o 19. En la de producto la dice el producto. */
+  @ValidateIf((l: LineaFacturaDto) => l.conceptoId !== undefined)
+  @IsIn([0, 5, 19])
+  ivaTarifa?: number;
+
+  /** En la de producto, sin `precioUnitario`: se toma el precio de lista vigente — ver `CrearCotizacionDto`. */
   @IsNumber({ maxDecimalPlaces: 6 })
   @Min(0.000001)
   cantidad!: number;

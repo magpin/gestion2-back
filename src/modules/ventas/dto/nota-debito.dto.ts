@@ -1,18 +1,36 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
+  IsIn,
   IsNumber,
   IsString,
   IsUUID,
   Length,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
 
+/** Un producto, o un concepto de ingreso con su detalle (Fase 8). Uno de los dos. */
 export class LineaNotaDebitoDto {
+  @ValidateIf((l: LineaNotaDebitoDto) => l.conceptoId === undefined)
   @IsUUID()
-  productoId!: string;
+  productoId?: string;
+
+  @ValidateIf((l: LineaNotaDebitoDto) => l.productoId === undefined)
+  @IsUUID()
+  conceptoId?: string;
+
+  @ValidateIf((l: LineaNotaDebitoDto) => l.conceptoId !== undefined)
+  @IsString()
+  @Length(2, 200)
+  detalle?: string;
+
+  /** Solo en la de concepto: 0, 5 o 19. */
+  @ValidateIf((l: LineaNotaDebitoDto) => l.conceptoId !== undefined)
+  @IsIn([0, 5, 19])
+  ivaTarifa?: number;
 
   @IsNumber({ maxDecimalPlaces: 6 })
   @Min(0.000001)

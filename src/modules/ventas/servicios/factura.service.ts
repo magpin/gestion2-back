@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
+import { numeracionDe, type Numeracion } from '../../../common/numeracion';
+import { diasDePlazo, venceDesdePlazo } from '../../../common/plazo';
+import { cuentaDeIngreso } from './concepto-ingreso';
 import {
   BadRequestException,
   Injectable,
@@ -7,7 +10,7 @@ import {
 } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
-import { fila } from '../../../common/db/filas';
+import { fila, filas } from '../../../common/db/filas';
 import { esDeHoy, hoyEnColombia } from '../../../common/fecha';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import type { LineaAsientoDto } from '../../contabilidad/dto/asiento.dto';
@@ -32,7 +35,8 @@ import {
 } from './venta.reglas';
 
 const CAMPOS_LINEA = `id, venta_documento_id, orden, producto_id, cantidad, precio_unitario,
-                       iva_tarifa, subtotal, iva_valor, total, costo_unitario`;
+                       iva_tarifa, subtotal, iva_valor, total, costo_unitario,
+                       concepto_id, cuenta_id, detalle`;
 
 /** [BASE] en toda empresa (`preactivacion-cuentas-comercio.md`): cartera, exige tercero. */
 const CODIGO_CUENTA_CARTERA = '130505';
@@ -96,6 +100,131 @@ export class FacturaService {
     );
   }
 
+  /** El número que sale si se emite ahora, de la resolución de facturación. */
+  async numeracion(ctx: CtxEmpresa, tx?: Tx): Promise<Numeracion | null> {
+    return this.tx.enContexto(ctx, (t) => numeracionDe(t, 'FACTURA_VENTA'), tx);
+  }
+
+  /**
+   * Cómo quedaría la factura, sin emitirla (pantalla 13): corre `crear` de
+   * verdad dentro de un savepoint y lo deshace. No hay una segunda cuenta que
+   * se pueda desalinear de la que se guarda; el consecutivo, el kardex y el
+   * cobro de contado también se deshacen.
+   */
+  async previo(
+    ctx: CtxEmpresa,
+    dto: CrearFacturaDto,
+    tx?: Tx,
+  ): Promise<{
+    numero: string;
+    subtotal: number;
+    iva: number;
+    total: number;
+    /** Lo que el cliente nos retiene, una por una. */
+    retenciones: Array<{
+      tipo: string;
+      nombre: string;
+      tarifa: number;
+      base: number;
+      valor: number;
+    }>;
+    retenido: number;
+    /** Lo que va a entrar: el total menos lo retenido. */
+    neto: number;
+    vence: string | null;
+    asiento: Array<{
+      codigo: string;
+      nombre: string;
+      debito: number;
+      credito: number;
+    }>;
+    /** El par costo de venta contra inventario, aparte: no es lo que se cobra. */
+    costo: number;
+  }> {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        await t.query('SAVEPOINT factura_previa');
+        try {
+          const factura = await this.crearInterno(ctx, dto, null, t);
+          const [doc] = filas<{ asiento_id: string; vence: string | null }>(
+            await t.query(
+              `SELECT asiento_id, vence::text AS vence FROM venta_documento WHERE id = $1`,
+              [factura.id],
+            ),
+          );
+          const lineas = filas<{
+            codigo: string;
+            nombre: string;
+            debito: string;
+            credito: string;
+          }>(
+            await t.query(
+              `SELECT c.codigo, c.nombre, l.debito, l.credito
+                 FROM asiento_linea l JOIN empresa_cuenta c ON c.id = l.cuenta_id
+                WHERE l.asiento_id = $1 ORDER BY l.orden`,
+              [doc.asiento_id],
+            ),
+          );
+          const retenciones = filas<{
+            tipo: string;
+            nombre: string;
+            tarifa: string;
+            base: string;
+            valor: string;
+          }>(
+            await t.query(
+              `SELECT r.tipo, c.nombre, r.tarifa, r.base, r.valor
+                 FROM venta_retencion r JOIN empresa_cuenta c ON c.id = r.cuenta_id
+                WHERE r.venta_documento_id = $1 ORDER BY r.valor DESC`,
+              [factura.id],
+            ),
+          );
+          const [costo] = filas<{ costo: string | null }>(
+            await t.query(
+              `SELECT sum(round(cantidad * costo_unitario, 2)) AS costo
+                 FROM venta_documento_linea WHERE venta_documento_id = $1`,
+              [factura.id],
+            ),
+          );
+          // El costo se muestra aparte: 6 (costo de venta) y 14 (inventario).
+          const esCosto = (codigo: string) =>
+            codigo.startsWith('6') || codigo.startsWith('14');
+          const retenido = retenciones.reduce((s, r) => s + Number(r.valor), 0);
+          const total = Number(factura.total);
+          return {
+            numero: `${factura.prefijo ?? ''}${factura.consecutivo}`,
+            subtotal: Number(factura.subtotal),
+            iva: Number(factura.total_iva),
+            total,
+            retenciones: retenciones.map((r) => ({
+              tipo: r.tipo,
+              nombre: r.nombre,
+              tarifa: Number(r.tarifa),
+              base: Number(r.base),
+              valor: Number(r.valor),
+            })),
+            retenido,
+            neto: Math.round((total - retenido) * 100) / 100,
+            vence: doc.vence,
+            asiento: lineas
+              .filter((l) => !esCosto(l.codigo))
+              .map((l) => ({
+                codigo: l.codigo,
+                nombre: l.nombre,
+                debito: Number(l.debito),
+                credito: Number(l.credito),
+              })),
+            costo: Number(costo?.costo ?? 0),
+          };
+        } finally {
+          await t.query('ROLLBACK TO SAVEPOINT factura_previa');
+        }
+      },
+      tx,
+    );
+  }
+
   /**
    * Convierte una cotización EMITIDA en factura: el cliente y las líneas
    * (producto + cantidad) vienen de la cotización, no se vuelven a pedir.
@@ -145,8 +274,10 @@ export class FacturaService {
       const dto: CrearFacturaDto = {
         terceroId: cotizacion.tercero_id,
         fecha: opciones.fecha,
+        // Una cotización es solo de productos: la línea de concepto es de la
+        // factura (Fase 8).
         lineas: cotizacion.lineas.map((l) => ({
-          productoId: l.producto_id,
+          productoId: l.producto_id!,
           cantidad: Number(l.cantidad),
         })),
         confirmaSinExistencia: opciones.confirmaSinExistencia ?? false,
@@ -182,7 +313,16 @@ export class FacturaService {
     t: Tx,
     origen?: OrigenDeLaFactura,
   ): Promise<VentaDocumentoDetalle> {
-    const productoIds = dto.lineas.map((l) => l.productoId);
+    for (const l of dto.lineas) {
+      if ((l.productoId === undefined) === (l.conceptoId === undefined)) {
+        throw new BadRequestException(
+          'Cada línea es un producto o un servicio: elegí uno de los dos.',
+        );
+      }
+    }
+    const productoIds = dto.lineas
+      .map((l) => l.productoId)
+      .filter((id): id is string => id !== undefined);
     if (new Set(productoIds).size !== productoIds.length) {
       throw new BadRequestException(
         'No repitas el mismo producto en dos líneas — sumá la cantidad en una sola.',
@@ -230,15 +370,39 @@ export class FacturaService {
     const cuentaInventarioDe: string[] = [];
     /** Por línea: quién autorizó venderla bajo costo, o `null`. */
     const autorizoBajoCosto: Array<string | null> = [];
+    /** `null` en la línea de concepto: no sale nada del kardex. */
     const costeos: Array<{
       costoUnitario: number;
       valorTotal: number;
       /** Unidades que salieron sin estar; `0` cuando había existencia. */
       faltante: number;
-    }> = [];
+    } | null> = [];
+    /** Por línea: el concepto y la cuenta a la que entró, o `null` si es producto. */
+    const conceptoDe: Array<{ conceptoId: string; cuentaId: string } | null> =
+      [];
 
     for (const l of dto.lineas) {
-      const producto = await this.inventario.producto(ctx, l.productoId, t);
+      if (l.conceptoId !== undefined) {
+        const ingreso = await cuentaDeIngreso(
+          this.nucleo,
+          ctx,
+          l.conceptoId,
+          t,
+        );
+        cuentaIngresoDe.push(ingreso.cuentaId);
+        cuentaCostoDe.push('');
+        cuentaInventarioDe.push('');
+        costeos.push(null);
+        autorizoBajoCosto.push(null);
+        conceptoDe.push(ingreso);
+        entradas.push({
+          cantidad: l.cantidad,
+          precioUnitario: l.precioUnitario!,
+          ivaTarifa: responsableIva ? (l.ivaTarifa ?? 0) : 0,
+        });
+        continue;
+      }
+      const producto = await this.inventario.producto(ctx, l.productoId!, t);
       if (producto === null || !producto.activo) {
         throw new BadRequestException(
           `El producto ${l.productoId} no existe o está inactivo.`,
@@ -257,7 +421,7 @@ export class FacturaService {
 
       const precioVigente = await this.inventario.precioVigente(
         ctx,
-        l.productoId,
+        l.productoId!,
         t,
       );
       // Un precio en cero también cuenta como "sin precio": la línea saldría en
@@ -275,7 +439,7 @@ export class FacturaService {
       // entrada tampoco hay costo con el que valorarla.
       const costeo = await this.inventario.costearSalida(
         ctx,
-        l.productoId,
+        l.productoId!,
         l.cantidad,
         t,
         dto.confirmaSinExistencia ?? false,
@@ -310,6 +474,7 @@ export class FacturaService {
       cuentaCostoDe.push(producto.cuenta_costo_venta_id);
       cuentaInventarioDe.push(producto.cuenta_inventario_id);
       costeos.push(costeo);
+      conceptoDe.push(null);
       entradas.push({
         cantidad: l.cantidad,
         precioUnitario: precioVigente,
@@ -468,16 +633,19 @@ export class FacturaService {
       });
     }
     lineasAsiento.push(...motor.lineasAsiento);
-    lineas.forEach((_l, i) => {
+    // El par costo/inventario solo en las de producto: un servicio no sale de
+    // ninguna bodega.
+    costeos.forEach((costeo, i) => {
+      if (costeo === null) return;
       lineasAsiento.push({
         cuentaId: cuentaCostoDe[i],
-        debito: costeos[i].valorTotal,
+        debito: costeo.valorTotal,
         credito: 0,
       });
       lineasAsiento.push({
         cuentaId: cuentaInventarioDe[i],
         debito: 0,
-        credito: costeos[i].valorTotal,
+        credito: costeo.valorTotal,
       });
     });
 
@@ -493,6 +661,11 @@ export class FacturaService {
       t,
     );
 
+    // A crédito sin vence: el plazo del cliente (PC25).
+    const plazo =
+      dto.formaPago === 'CREDITO' && !dto.vence
+        ? await diasDePlazo(t, dto.terceroId, 'cliente')
+        : null;
     const documento = fila<VentaDocumentoResumen>(
       await t.query(
         `INSERT INTO venta_documento
@@ -517,7 +690,9 @@ export class FacturaService {
           ctx.usuarioId,
           origen?.documentoLeidoId ?? null,
           motor.aviso,
-          dto.formaPago === 'CREDITO' ? (dto.vence ?? null) : null,
+          dto.formaPago === 'CREDITO'
+            ? (dto.vence ?? venceDesdePlazo(dto.fecha, plazo))
+            : null,
         ],
       ),
     );
@@ -533,22 +708,25 @@ export class FacturaService {
           `INSERT INTO venta_documento_linea
                (empresa_id, venta_documento_id, orden, producto_id, cantidad,
                 precio_unitario, iva_tarifa, subtotal, iva_valor, total, costo_unitario,
-                precio_bajo_costo_autorizado_por)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+                precio_bajo_costo_autorizado_por, concepto_id, cuenta_id, detalle)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
              RETURNING ${CAMPOS_LINEA}`,
           [
             ctx.empresaId,
             documento.id,
             i + 1,
-            dto.lineas[i].productoId,
+            dto.lineas[i].productoId ?? null,
             l.cantidad,
             l.precioUnitario,
             l.ivaTarifa,
             l.subtotal,
             l.ivaValor,
             l.total,
-            costeos[i].costoUnitario,
+            costeos[i]?.costoUnitario ?? null,
             autorizoBajoCosto[i],
+            conceptoDe[i]?.conceptoId ?? null,
+            conceptoDe[i]?.cuentaId ?? null,
+            conceptoDe[i] === null ? null : dto.lineas[i].detalle!.trim(),
           ],
         ),
       );
@@ -585,9 +763,12 @@ export class FacturaService {
     // Recién ahora se escribe el kardex — el asiento y la factura ya
     // existen, así que `descontarPorVenta` los enlaza, no los adivina.
     for (let i = 0; i < lineas.length; i++) {
+      const costeo = costeos[i];
+      const productoId = dto.lineas[i].productoId;
+      if (costeo === null || productoId === undefined) continue;
       await this.inventario.descontarPorVenta(
         ctx,
-        dto.lineas[i].productoId,
+        productoId,
         lineas[i].cantidad,
         dto.fecha,
         `Factura de venta ${numero.numero}`,
@@ -600,7 +781,7 @@ export class FacturaService {
       // la lista de qué hay que comprar, y el rastro de por qué el kardex de
       // ese producto quedó en rojo. `costeos[i].faltante` lo calculó el
       // kardex cuando costeó, dentro del mismo candado.
-      const faltante = costeos[i].faltante;
+      const faltante = costeo.faltante;
       if (faltante > 0) {
         await t.query(
           `INSERT INTO venta_faltante
@@ -610,9 +791,9 @@ export class FacturaService {
           [
             ctx.empresaId,
             documento.id,
-            dto.lineas[i].productoId,
+            productoId,
             faltante,
-            costeos[i].costoUnitario,
+            costeo.costoUnitario,
             ctx.usuarioId,
           ],
         );

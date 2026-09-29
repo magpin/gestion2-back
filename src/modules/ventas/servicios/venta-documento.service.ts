@@ -110,9 +110,19 @@ export interface VentaDocumentoLineaResumen {
   id: string;
   venta_documento_id: string;
   orden: number;
-  producto_id: string;
-  producto_codigo: string;
-  producto_nombre: string;
+  /** `null` en una línea de servicio u otro ingreso (Fase 8). */
+  producto_id: string | null;
+  producto_codigo: string | null;
+  producto_nombre: string | null;
+  /** La línea de concepto: qué concepto, a qué cuenta entró y qué fue. */
+  concepto_id?: string | null;
+  concepto_nombre?: string | null;
+  /** `true` si el concepto es operacional (41, servicio); `false` si es otro ingreso (42). */
+  concepto_operacional?: boolean | null;
+  cuenta_id?: string | null;
+  cuenta_codigo?: string | null;
+  cuenta_nombre?: string | null;
+  detalle?: string | null;
   cantidad: string;
   precio_unitario: string;
   iva_tarifa: string;
@@ -215,7 +225,12 @@ export const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, vence, estado, pre
 const CAMPOS_LINEA = `id, venta_documento_id, orden, producto_id, cantidad, precio_unitario,
                        iva_tarifa, subtotal, iva_valor, total, costo_unitario,
                        (SELECT x.codigo FROM producto x WHERE x.id = producto_id) AS producto_codigo,
-                       (SELECT x.nombre FROM producto x WHERE x.id = producto_id) AS producto_nombre`;
+                       (SELECT x.nombre FROM producto x WHERE x.id = producto_id) AS producto_nombre,
+                       concepto_id, cuenta_id, detalle,
+                       (SELECT x.nombre FROM concepto_movimiento x WHERE x.id = concepto_id) AS concepto_nombre,
+                       (SELECT x.codigo LIKE '41%' FROM empresa_cuenta x WHERE x.id = cuenta_id AND concepto_id IS NOT NULL) AS concepto_operacional,
+                       (SELECT x.codigo FROM empresa_cuenta x WHERE x.id = cuenta_id) AS cuenta_codigo,
+                       (SELECT x.nombre FROM empresa_cuenta x WHERE x.id = cuenta_id) AS cuenta_nombre`;
 
 /** Fijo en código: una cotización no es un dato fiscal que alguien elija. */
 const PREFIJO_COTIZACION = 'COT';

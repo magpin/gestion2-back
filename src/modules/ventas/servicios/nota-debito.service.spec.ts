@@ -187,7 +187,8 @@ describe('NotaDebitoService.crear', () => {
     const insercionLinea = (tx.query as jest.Mock).mock.calls.find(
       ([sql]: [string]) => sql.includes('INSERT INTO venta_documento_linea'),
     ) as [string, unknown[]];
-    expect(insercionLinea[1]).toHaveLength(10);
+    // Diez de la línea y tres de la de concepto (vacíos en una de producto).
+    expect(insercionLinea[1]).toHaveLength(13);
 
     const [, dtoAsiento] = asentar.mock.calls[0] as unknown as [
       unknown,

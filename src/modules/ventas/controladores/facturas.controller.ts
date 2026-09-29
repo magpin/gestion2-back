@@ -46,6 +46,13 @@ export class FacturasController {
     return this.ventas.listar(ctx, 'FACTURA', q);
   }
 
+  /** El número que sale si se emite ahora. Antes de `:id`, que lo tomaría por un id. */
+  @Roles('VENTAS', 'DIRECTOR')
+  @Get('numeracion')
+  numeracion(@ActorEmpresa() ctx: CtxEmpresa) {
+    return this.facturas.numeracion(ctx);
+  }
+
   @Roles('DIRECTOR', 'CONTADOR', 'VENTAS', 'CONSULTA')
   @Get(':id')
   porId(
@@ -59,6 +66,14 @@ export class FacturasController {
   @Post()
   crear(@ActorEmpresa() ctx: CtxEmpresa, @Body() dto: CrearFacturaDto) {
     return this.facturas.crear(ctx, dto);
+  }
+
+  /** Cómo quedaría la factura, sin emitirla: totales, retenciones y asiento. */
+  @Roles('VENTAS', 'DIRECTOR')
+  @Post('previo')
+  @HttpCode(HttpStatus.OK)
+  previo(@ActorEmpresa() ctx: CtxEmpresa, @Body() dto: CrearFacturaDto) {
+    return this.facturas.previo(ctx, dto);
   }
 
   /**

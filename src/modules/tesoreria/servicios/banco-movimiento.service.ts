@@ -18,6 +18,19 @@ import type {
   TIPOS_MOVIMIENTO_BANCO_MANUAL,
 } from '../dto/banco-movimiento.dto';
 import { calcularEgresoBanco, calcularIngresoBanco } from './banco.reglas';
+import { exigirContraCuenta } from './caja-movimiento.service';
+import type { Contrapartida } from './contrapartida';
+
+/** El tipo que deshace a otro: lo que entró sale por el mismo camino, y al revés. */
+const CONTRARIO: Record<TipoMovimientoManual, TipoMovimientoManual> = {
+  CONSIGNACION: 'RETIRO',
+  RETIRO: 'CONSIGNACION',
+  TRANSFERENCIA_ENTRANTE: 'TRANSFERENCIA_SALIENTE',
+  TRANSFERENCIA_SALIENTE: 'TRANSFERENCIA_ENTRANTE',
+  NOTA_DEBITO: 'NOTA_CREDITO',
+  NOTA_CREDITO: 'NOTA_DEBITO',
+  CHEQUE: 'CONSIGNACION',
+};
 
 export interface MovimientoBancoResumen {
   id: string;
@@ -236,6 +249,125 @@ export class BancoMovimientoService {
     );
   }
 
+  /**
+   * Un movimiento por concepto, con las contrapartidas ya armadas —la llama
+   * `MovimientoConceptoService`—. Espejo del de caja.
+   */
+  async registrarConContrapartidas(
+    ctx: CtxEmpresa,
+    cuentaBancariaId: string,
+    datos: {
+      tipo: TipoMovimientoManual;
+      fecha: string;
+      valor: number;
+      concepto: string;
+      terceroId: string | null;
+      contrapartidas: Contrapartida[];
+    },
+    t?: Tx,
+  ): Promise<MovimientoBancoResumen> {
+    return this.moverBanco(
+      ctx,
+      cuentaBancariaId,
+      {
+        tipo: datos.tipo,
+        fecha: datos.fecha,
+        valor: datos.valor,
+        concepto: datos.concepto,
+        contraCuentaId: null,
+        contrapartidas: datos.contrapartidas,
+        origenTipo: null,
+        origenId: null,
+        terceroId: datos.terceroId,
+        referencia: null,
+      },
+      t,
+    );
+  }
+
+  /**
+   * Deshace un movimiento con su contrario: mismo valor, tipo opuesto, y el
+   * asiento con las líneas del original invertidas. El libro de banco no se
+   * edita —el saldo corrido de lo posterior ya lo contó—, como el de caja.
+   */
+  async registrarContrario(
+    ctx: CtxEmpresa,
+    cuentaBancariaId: string,
+    movimientoId: string,
+    datos: { fecha: string; motivo: string },
+    t: Tx,
+  ): Promise<MovimientoBancoResumen> {
+    await this.exigirCuentaBloqueada(cuentaBancariaId, t);
+    const original = fila<MovimientoBancoResumen>(
+      await t.query(
+        `SELECT ${CAMPOS} FROM banco_movimiento WHERE id = $1 AND cuenta_bancaria_id = $2`,
+        [movimientoId, cuentaBancariaId],
+      ),
+    );
+    if (original === undefined || original.asiento_id === null) {
+      throw new NotFoundException('Movimiento no encontrado en esta cuenta.');
+    }
+    const lineas = await this.contabilidad.lineasInvertidasDe(
+      ctx,
+      original.asiento_id,
+      t,
+    );
+    if (lineas === null) {
+      throw new BadRequestException(
+        'El asiento de este movimiento está anulado: no hay nada que deshacer en la contabilidad.',
+      );
+    }
+    const tipo = CONTRARIO[original.tipo as TipoMovimientoManual];
+    const valor = Number(original.valor);
+    const actual =
+      (await this.ultimoMovimiento(cuentaBancariaId, t))?.saldo ?? 0;
+    const direccion = DIRECCION_MOVIMIENTO_BANCO[tipo];
+    const nuevoSaldo =
+      direccion === 'ENTRADA'
+        ? calcularIngresoBanco(actual, valor)
+        : calcularEgresoBanco(actual, valor);
+
+    const comprobante = await this.contabilidad.tipoComprobantePorCodigo(
+      ctx,
+      CODIGO_COMPROBANTE[direccion],
+      t,
+    );
+    if (comprobante === null) {
+      throw new BadRequestException(
+        'La empresa no tiene el comprobante sembrado.',
+      );
+    }
+    const id = randomUUID();
+    const concepto = `Anulación de: ${original.concepto}`;
+    const asiento = await this.contabilidad.asentar(
+      ctx,
+      {
+        comprobanteTipoId: comprobante.id,
+        fecha: datos.fecha,
+        glosa: `${concepto} — ${datos.motivo}`,
+        lineas,
+      },
+      { origenTipo: 'MOVIMIENTO_BANCO', origenId: id },
+      t,
+    );
+    return this.insertarMovimiento(
+      t,
+      ctx,
+      id,
+      cuentaBancariaId,
+      tipo,
+      datos.fecha,
+      valor,
+      concepto,
+      null,
+      null,
+      original.tercero_id,
+      nuevoSaldo,
+      asiento.id,
+      null,
+    );
+  }
+
   /** El libro de una cuenta bancaria. Orden de digitación, el más reciente primero. */
   async listar(
     ctx: CtxEmpresa,
@@ -352,7 +484,8 @@ export class BancoMovimientoService {
       fecha: string;
       valor: number;
       concepto: string;
-      contraCuentaId: string;
+      contraCuentaId: string | null;
+      contrapartidas?: Contrapartida[];
       origenTipo: 'FACTURA_VENTA' | 'COMPRA' | null;
       origenId: string | null;
       terceroId: string | null;
@@ -417,7 +550,8 @@ export class BancoMovimientoService {
       fecha: string;
       concepto: string;
       valor: number;
-      contraCuentaId: string;
+      contraCuentaId: string | null;
+      contrapartidas?: Contrapartida[];
       terceroId?: string | null;
     },
     direccion: 'ENTRADA' | 'SALIDA',
@@ -447,15 +581,17 @@ export class BancoMovimientoService {
             debito: direccion === 'ENTRADA' ? dto.valor : 0,
             credito: direccion === 'SALIDA' ? dto.valor : 0,
           },
-          {
-            cuentaId: dto.contraCuentaId,
-            debito: direccion === 'SALIDA' ? dto.valor : 0,
-            credito: direccion === 'ENTRADA' ? dto.valor : 0,
-            // Un cobro o pago va contra Clientes/Proveedores, y esas cuentas
-            // exigen tercero: sin él el libro no sabe quién pagó ni a quién.
-            // Un movimiento manual no lo trae y su contracuenta no lo pide.
-            terceroId: dto.terceroId ?? undefined,
-          },
+          ...(dto.contrapartidas ?? [
+            {
+              cuentaId: exigirContraCuenta(dto.contraCuentaId),
+              debito: direccion === 'SALIDA' ? dto.valor : 0,
+              credito: direccion === 'ENTRADA' ? dto.valor : 0,
+              // Un cobro o pago va contra Clientes/Proveedores, y esas cuentas
+              // exigen tercero: sin él el libro no sabe quién pagó ni a quién.
+              // Un movimiento manual no lo trae y su contracuenta no lo pide.
+              terceroId: dto.terceroId ?? undefined,
+            },
+          ]),
         ],
       },
       { origenTipo: 'MOVIMIENTO_BANCO', origenId: movimientoId },

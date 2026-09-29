@@ -10,6 +10,7 @@ import {
   IsUUID,
   Length,
   Matches,
+  Max,
   Min,
   ValidateIf,
   ValidateNested,
@@ -291,6 +292,28 @@ export class CrearCompraDto {
   @ValidateNested({ each: true })
   @Type(() => MedioPagoAlRegistrarDto)
   pagos?: MedioPagoAlRegistrarDto[];
+
+  /**
+   * Cuándo vence, si es a crédito. Sin ella, «Por pagar» cuenta 30 días desde
+   * la fecha de la factura.
+   */
+  @IsOptional()
+  @EsFechaCalendario()
+  vence?: string;
+
+  /**
+   * La condición de pronto pago que trae la factura: «2 % pagando antes del
+   * 30». Van juntos o ninguno; el comprobante de egreso la propone sola.
+   */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(99.99)
+  descuentoProntoPagoPct?: number;
+
+  @IsOptional()
+  @EsFechaCalendario()
+  descuentoProntoPagoHasta?: string;
 }
 
 /**

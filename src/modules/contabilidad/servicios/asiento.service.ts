@@ -279,8 +279,8 @@ export class AsientoService {
           await t.query(
             `INSERT INTO asiento_linea
                (asiento_id, empresa_id, orden, cuenta_id, tercero_id,
-                centro_costo_id, base_gravable, detalle, debito, credito)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+                centro_costo_id, base_gravable, detalle, debito, credito, concepto_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
             [
               cabecera.id,
               ctx.empresaId,
@@ -292,6 +292,7 @@ export class AsientoService {
               l.detalle ?? null,
               l.debito ?? 0,
               l.credito ?? 0,
+              l.conceptoId ?? null,
             ],
           );
         }
@@ -388,6 +389,7 @@ export class AsientoService {
     cuentaId: string;
     terceroId: string | null;
     centroCostoId: string | null;
+    conceptoId: string | null;
     baseGravable: number | null;
     debito: number;
     credito: number;
@@ -405,12 +407,14 @@ export class AsientoService {
           cuenta_id: string;
           tercero_id: string | null;
           centro_costo_id: string | null;
+          concepto_id: string | null;
           base_gravable: string | null;
           debito: string;
           credito: string;
         }>(
           await t.query(
-            `SELECT cuenta_id, tercero_id, centro_costo_id, base_gravable, debito, credito
+            `SELECT cuenta_id, tercero_id, centro_costo_id, concepto_id, base_gravable,
+                    debito, credito
                FROM asiento_linea
               WHERE asiento_id = $1
               ORDER BY orden`,
@@ -421,6 +425,7 @@ export class AsientoService {
           cuentaId: l.cuenta_id,
           terceroId: l.tercero_id,
           centroCostoId: l.centro_costo_id,
+          conceptoId: l.concepto_id,
           baseGravable:
             l.base_gravable === null ? null : Number(l.base_gravable),
           debito: Number(l.debito),

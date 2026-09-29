@@ -13,6 +13,7 @@ import { ParametrosService } from './servicios/parametros.service';
 import { PerfilTerceroService } from './servicios/perfil-tercero.service';
 import { RecalculoService } from './servicios/recalculo.service';
 import { RetencionService } from './servicios/retencion.service';
+import { AnticipoRetencionService } from './servicios/anticipo-retencion.service';
 
 /**
  * Global porque tanto Compras como Ventas necesitan la misma fachada, y el
@@ -32,6 +33,7 @@ import { RetencionService } from './servicios/retencion.service';
     RecalculoService,
     ClasificadorIaService,
     { provide: CLASIFICADOR_PUERTO, useClass: ClaudeClasificador },
+    AnticipoRetencionService,
     RetencionesApi,
   ],
   exports: [RetencionesApi],

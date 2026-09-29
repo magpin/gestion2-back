@@ -266,6 +266,10 @@ function txCobrarFalso(
           },
         ];
       }
+      // Lo descontado por pronto pago en recibos: en estos casos, nada.
+      if (sql.includes('recibo_caja_aplicacion')) {
+        return [{ total: '0' }];
+      }
       throw new Error(`Query inesperada en el test: ${sql}`);
     }),
   } as unknown as Tx;

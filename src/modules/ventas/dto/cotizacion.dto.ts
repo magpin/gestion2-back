@@ -91,6 +91,11 @@ export class ConvertirCotizacionDto {
   @IsIn(FORMAS_PAGO)
   formaPago!: FormaPago;
 
+  /** Ver `CrearFacturaDto.vence`. */
+  @IsOptional()
+  @EsFechaCalendario()
+  vence?: string;
+
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => MedioPagoAlFacturarDto)

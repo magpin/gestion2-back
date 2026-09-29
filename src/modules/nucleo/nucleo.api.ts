@@ -68,6 +68,11 @@ export class NucleoApi {
     return this.conceptos.obtener(ctx, id, tx);
   }
 
+  /** Un concepto del sistema por su código (`GTO-GMF`). Ver `ConceptosService.porCodigo`. */
+  async conceptoPorCodigo(ctx: CtxEmpresa, codigo: string, tx?: Tx) {
+    return this.conceptos.porCodigo(ctx, codigo, tx);
+  }
+
   /** Los conceptos activos, para elegir uno. */
   async conceptosActivos(ctx: CtxEmpresa) {
     return this.conceptos.listar(ctx);

@@ -573,7 +573,7 @@ describe('CompraService.crear', () => {
     const insert = (tx.query as jest.Mock).mock.calls.find(([sql]) =>
       String(sql).includes('INSERT INTO compra_documento\n'),
     ) as [string, unknown[]];
-    expect(insert[1].slice(13)).toEqual([
+    expect(insert[1].slice(13, 16)).toEqual([
       'DECIDIDO_SIN',
       'El proveedor nos mostró su resolución de autorretenedor.',
       // La retención impresa: no hubo lectura de María (§8.6).

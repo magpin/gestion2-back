@@ -98,6 +98,14 @@ export class CrearFacturaDto {
   @IsIn(FORMAS_PAGO)
   formaPago!: FormaPago;
 
+  /**
+   * Cuándo vence, si es a crédito. Sin ella la cartera cuenta 30 días desde
+   * la emisión, como los reportes. En una de contado no aplica: se cobra ya.
+   */
+  @IsOptional()
+  @EsFechaCalendario()
+  vence?: string;
+
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => MedioPagoAlFacturarDto)

@@ -22,6 +22,8 @@ import { CuentaBancariaService } from './servicios/cuenta-bancaria.service';
 import { ExtractoReglaService } from './servicios/extracto-regla.service';
 import { ExtractoService } from './servicios/extracto.service';
 import { TesoreriaApi } from './tesoreria.api';
+import { MovimientosConceptoController } from './controladores/movimientos-concepto.controller';
+import { MovimientoConceptoService } from './servicios/movimiento-concepto.service';
 
 /**
  * Tesorería (módulo 7 de la secuencia): Caja y Bancos. Bancos se suma
@@ -55,6 +57,7 @@ import { TesoreriaApi } from './tesoreria.api';
     ExtractosController,
     ExtractoController,
     ExtractoReglasController,
+    MovimientosConceptoController,
   ],
   providers: [
     CajaService,
@@ -66,6 +69,7 @@ import { TesoreriaApi } from './tesoreria.api';
     BancoCorteService,
     ExtractoService,
     ExtractoReglaService,
+    MovimientoConceptoService,
     TesoreriaApi,
   ],
   exports: [TesoreriaApi],

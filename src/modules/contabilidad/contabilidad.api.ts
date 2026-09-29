@@ -285,6 +285,7 @@ export class ContabilidadApi {
       cuentaId: l.cuentaId,
       terceroId: l.terceroId ?? undefined,
       centroCostoId: l.centroCostoId ?? undefined,
+      conceptoId: l.conceptoId ?? undefined,
       baseGravable: l.baseGravable ?? undefined,
       debito: l.credito,
       credito: l.debito,

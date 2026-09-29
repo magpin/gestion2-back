@@ -19,6 +19,7 @@ import type {
   ReversarMovimientoCajaDto,
 } from '../dto/caja-movimiento.dto';
 import { calcularEgreso, calcularIngreso } from './caja.reglas';
+import type { Contrapartida } from './contrapartida';
 
 export interface MovimientoCajaResumen {
   id: string;
@@ -195,6 +196,42 @@ export class CajaMovimientoService {
   }
 
   /**
+   * Un ingreso o egreso por concepto, con las contrapartidas ya armadas —la
+   * llama `MovimientoConceptoService`—. Es un movimiento manual para el libro
+   * (sin documento): se corrige con `reversar`, como los demás manuales.
+   */
+  async registrarConContrapartidas(
+    ctx: CtxEmpresa,
+    cajaId: string,
+    datos: {
+      tipo: 'INGRESO' | 'EGRESO';
+      fecha: string;
+      valor: number;
+      concepto: string;
+      terceroId: string | null;
+      contrapartidas: Contrapartida[];
+    },
+    t?: Tx,
+  ): Promise<MovimientoCajaResumen> {
+    return this.moverCaja(
+      ctx,
+      cajaId,
+      {
+        tipo: datos.tipo,
+        fecha: datos.fecha,
+        valor: datos.valor,
+        concepto: datos.concepto,
+        contraCuentaId: null,
+        contrapartidas: datos.contrapartidas,
+        origenTipo: null,
+        origenId: null,
+        terceroId: datos.terceroId,
+      },
+      t,
+    );
+  }
+
+  /**
    * El `caja_movimiento` correctivo de un arqueo cerrado con diferencia.
    * Solo la llama `CajaArqueoService`, dentro de la MISMA transacción del
    * cierre (`t` no es opcional, a propósito: quien la llama ya abrió la
@@ -256,116 +293,122 @@ export class CajaMovimientoService {
     cajaId: string,
     movimientoId: string,
     dto: ReversarMovimientoCajaDto,
+    /** La de quien anula un documento que movió la caja: todo o nada. */
+    tExterna?: Tx,
   ): Promise<MovimientoCajaResumen> {
-    return this.tx.enContexto(ctx, async (t) => {
-      // El asiento invertido ya trae la cuenta de la caja desde el original:
-      // acá la caja solo se bloquea, para que el saldo corrido no se pise.
-      await this.exigirCajaBloqueada(cajaId, t);
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        // El asiento invertido ya trae la cuenta de la caja desde el original:
+        // acá la caja solo se bloquea, para que el saldo corrido no se pise.
+        await this.exigirCajaBloqueada(cajaId, t);
 
-      const original = fila<MovimientoCajaResumen>(
-        await t.query(
-          `SELECT ${CAMPOS} FROM caja_movimiento WHERE id = $1 AND caja_id = $2`,
-          [movimientoId, cajaId],
-        ),
-      );
-      if (original === undefined) {
-        throw new NotFoundException('Movimiento no encontrado en esta caja.');
-      }
-      if (original.tipo === 'SALDO_INICIAL') {
-        throw new BadRequestException(
-          'El saldo inicial no se reversa: no tiene asiento. Si quedó mal, lo corrige un contador con un ingreso o egreso contra la cuenta que corresponda.',
+        const original = fila<MovimientoCajaResumen>(
+          await t.query(
+            `SELECT ${CAMPOS} FROM caja_movimiento WHERE id = $1 AND caja_id = $2`,
+            [movimientoId, cajaId],
+          ),
         );
-      }
-      if (original.reversa_de !== null) {
-        throw new BadRequestException(
-          'Este movimiento ya es una reversa. Si la reversa estuvo mal, registrá el movimiento de nuevo.',
-        );
-      }
-      if (original.reversado_por !== null) {
-        throw new BadRequestException('Este movimiento ya se reversó.');
-      }
-      if (original.origen_tipo !== null) {
-        throw new BadRequestException(
-          original.origen_tipo === 'FACTURA_VENTA'
-            ? 'Es el cobro de una factura: se corrige devolviendo el cobro desde la factura.'
-            : 'Es el pago de una compra: se corrige con la devolución del pago desde la compra.',
-        );
-      }
-      if (original.es_ajuste_arqueo) {
-        throw new BadRequestException(
-          'Es el ajuste de un arqueo: se corrige con otro arqueo, no borrando la diferencia.',
-        );
-      }
-
-      const lineas = await this.contabilidad.lineasInvertidasDe(
-        ctx,
-        original.asiento_id!,
-        t,
-      );
-      if (lineas === null) {
-        throw new BadRequestException(
-          'El asiento de este movimiento está anulado: no hay nada que reversar en la contabilidad.',
-        );
-      }
-
-      const tipo = original.tipo === 'INGRESO' ? 'EGRESO' : 'INGRESO';
-      const valor = Number(original.valor);
-      const actual = (await this.ultimoMovimiento(cajaId, t))?.saldo ?? 0;
-      let nuevoSaldo: number;
-      if (tipo === 'INGRESO') {
-        nuevoSaldo = calcularIngreso(actual, valor);
-      } else {
-        // Reversar un ingreso saca plata: si ya no está en el cajón, no se
-        // puede sacar, y eso es un faltante que se ve en el arqueo.
-        const resultado = calcularEgreso(actual, valor);
-        if (!resultado.ok) {
-          throw new BadRequestException(resultado.motivo);
+        if (original === undefined) {
+          throw new NotFoundException('Movimiento no encontrado en esta caja.');
         }
-        nuevoSaldo = resultado.saldo;
-      }
+        if (original.tipo === 'SALDO_INICIAL') {
+          throw new BadRequestException(
+            'El saldo inicial no se reversa: no tiene asiento. Si quedó mal, lo corrige un contador con un ingreso o egreso contra la cuenta que corresponda.',
+          );
+        }
+        if (original.reversa_de !== null) {
+          throw new BadRequestException(
+            'Este movimiento ya es una reversa. Si la reversa estuvo mal, registrá el movimiento de nuevo.',
+          );
+        }
+        if (original.reversado_por !== null) {
+          throw new BadRequestException('Este movimiento ya se reversó.');
+        }
+        if (original.origen_tipo !== null) {
+          throw new BadRequestException(
+            original.origen_tipo === 'FACTURA_VENTA'
+              ? 'Es el cobro de una factura: se corrige devolviendo el cobro desde la factura.'
+              : 'Es el pago de una compra: se corrige con la devolución del pago desde la compra.',
+          );
+        }
+        if (original.es_ajuste_arqueo) {
+          throw new BadRequestException(
+            'Es el ajuste de un arqueo: se corrige con otro arqueo, no borrando la diferencia.',
+          );
+        }
 
-      const comprobante = await this.contabilidad.tipoComprobantePorCodigo(
-        ctx,
-        CODIGO_COMPROBANTE[tipo],
-        t,
-      );
-      if (comprobante === null) {
-        throw new BadRequestException(
-          `La empresa no tiene el comprobante de ${tipo === 'INGRESO' ? 'ingreso' : 'egreso'} sembrado.`,
+        const lineas = await this.contabilidad.lineasInvertidasDe(
+          ctx,
+          original.asiento_id!,
+          t,
         );
-      }
+        if (lineas === null) {
+          throw new BadRequestException(
+            'El asiento de este movimiento está anulado: no hay nada que reversar en la contabilidad.',
+          );
+        }
 
-      const id = randomUUID();
-      const concepto = `Reversa de: ${original.concepto}`;
-      const asiento = await this.contabilidad.asentar(
-        ctx,
-        {
-          comprobanteTipoId: comprobante.id,
-          fecha: dto.fecha,
-          glosa: `${concepto} — ${dto.motivo}`,
-          lineas,
-        },
-        { origenTipo: 'MOVIMIENTO_CAJA', origenId: id },
-        t,
-      );
+        const tipo = original.tipo === 'INGRESO' ? 'EGRESO' : 'INGRESO';
+        const valor = Number(original.valor);
+        const actual = (await this.ultimoMovimiento(cajaId, t))?.saldo ?? 0;
+        let nuevoSaldo: number;
+        if (tipo === 'INGRESO') {
+          nuevoSaldo = calcularIngreso(actual, valor);
+        } else {
+          // Reversar un ingreso saca plata: si ya no está en el cajón, no se
+          // puede sacar, y eso es un faltante que se ve en el arqueo.
+          const resultado = calcularEgreso(actual, valor);
+          if (!resultado.ok) {
+            throw new BadRequestException(resultado.motivo);
+          }
+          nuevoSaldo = resultado.saldo;
+        }
 
-      return this.insertarMovimiento(
-        t,
-        ctx,
-        id,
-        cajaId,
-        tipo,
-        dto.fecha,
-        valor,
-        concepto,
-        null,
-        null,
-        original.tercero_id,
-        nuevoSaldo,
-        asiento.id,
-        { de: original.id, motivo: dto.motivo },
-      );
-    });
+        const comprobante = await this.contabilidad.tipoComprobantePorCodigo(
+          ctx,
+          CODIGO_COMPROBANTE[tipo],
+          t,
+        );
+        if (comprobante === null) {
+          throw new BadRequestException(
+            `La empresa no tiene el comprobante de ${tipo === 'INGRESO' ? 'ingreso' : 'egreso'} sembrado.`,
+          );
+        }
+
+        const id = randomUUID();
+        const concepto = `Reversa de: ${original.concepto}`;
+        const asiento = await this.contabilidad.asentar(
+          ctx,
+          {
+            comprobanteTipoId: comprobante.id,
+            fecha: dto.fecha,
+            glosa: `${concepto} — ${dto.motivo}`,
+            lineas,
+          },
+          { origenTipo: 'MOVIMIENTO_CAJA', origenId: id },
+          t,
+        );
+
+        return this.insertarMovimiento(
+          t,
+          ctx,
+          id,
+          cajaId,
+          tipo,
+          dto.fecha,
+          valor,
+          concepto,
+          null,
+          null,
+          original.tercero_id,
+          nuevoSaldo,
+          asiento.id,
+          { de: original.id, motivo: dto.motivo },
+        );
+      },
+      tExterna,
+    );
   }
 
   /** El libro de una caja. Orden de digitación, el más reciente primero. */
@@ -485,7 +528,10 @@ export class CajaMovimientoService {
       fecha: string;
       valor: number;
       concepto: string;
-      contraCuentaId: string;
+      /** La cuenta contraria de un movimiento de dos líneas. */
+      contraCuentaId: string | null;
+      /** O, en su lugar, las líneas contrarias ya armadas. */
+      contrapartidas?: Contrapartida[];
       origenTipo: 'FACTURA_VENTA' | 'COMPRA' | null;
       origenId: string | null;
       terceroId: string | null;
@@ -554,7 +600,8 @@ export class CajaMovimientoService {
       fecha: string;
       concepto: string;
       valor: number;
-      contraCuentaId: string;
+      contraCuentaId: string | null;
+      contrapartidas?: Contrapartida[];
       terceroId?: string | null;
     },
     tipo: 'INGRESO' | 'EGRESO',
@@ -584,15 +631,17 @@ export class CajaMovimientoService {
             debito: tipo === 'INGRESO' ? dto.valor : 0,
             credito: tipo === 'EGRESO' ? dto.valor : 0,
           },
-          {
-            cuentaId: dto.contraCuentaId,
-            debito: tipo === 'EGRESO' ? dto.valor : 0,
-            credito: tipo === 'INGRESO' ? dto.valor : 0,
-            // Un cobro o pago va contra Clientes/Proveedores, y esas cuentas
-            // exigen tercero: sin él el libro no sabe quién pagó ni a quién.
-            // Un movimiento manual no lo trae y su contracuenta no lo pide.
-            terceroId: dto.terceroId ?? undefined,
-          },
+          ...(dto.contrapartidas ?? [
+            {
+              cuentaId: exigirContraCuenta(dto.contraCuentaId),
+              debito: tipo === 'EGRESO' ? dto.valor : 0,
+              credito: tipo === 'INGRESO' ? dto.valor : 0,
+              // Un cobro o pago va contra Clientes/Proveedores, y esas cuentas
+              // exigen tercero: sin él el libro no sabe quién pagó ni a quién.
+              // Un movimiento manual no lo trae y su contracuenta no lo pide.
+              terceroId: dto.terceroId ?? undefined,
+            },
+          ]),
         ],
       },
       { origenTipo: 'MOVIMIENTO_CAJA', origenId: movimientoId },
@@ -668,4 +717,14 @@ export class CajaMovimientoService {
     }
     return creado;
   }
+}
+
+/** Un movimiento de dos líneas sin contracuenta es un error de quien llama. */
+export function exigirContraCuenta(id: string | null): string {
+  if (id === null) {
+    throw new Error(
+      'Inconsistencia: un movimiento sin contrapartidas necesita la cuenta contraria.',
+    );
+  }
+  return id;
 }

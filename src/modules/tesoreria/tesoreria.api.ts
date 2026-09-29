@@ -6,6 +6,15 @@ import { BancoMovimientoService } from './servicios/banco-movimiento.service';
 import { CajaMovimientoService } from './servicios/caja-movimiento.service';
 import { CajaService } from './servicios/caja.service';
 import { CuentaBancariaService } from './servicios/cuenta-bancaria.service';
+import {
+  MovimientoConceptoService,
+  type DatosMovimientoConcepto,
+} from './servicios/movimiento-concepto.service';
+
+export type {
+  DatosMovimientoConcepto,
+  MovimientoConcepto,
+} from './servicios/movimiento-concepto.service';
 
 /** La plata de un medio, hoy. Lo que el asistente contesta a «¿cuánto hay en el banco?». */
 export interface SaldoDeMedio {
@@ -87,6 +96,7 @@ export class TesoreriaApi {
     private readonly bancoMovimientos: BancoMovimientoService,
     private readonly cajas: CajaService,
     private readonly cuentas: CuentaBancariaService,
+    private readonly porConcepto: MovimientoConceptoService,
   ) {}
 
   /**
@@ -216,6 +226,43 @@ export class TesoreriaApi {
       t,
     );
     return this.exigirAsiento(movimiento);
+  }
+
+  /**
+   * Plata que entra o sale por un concepto —un anticipo, la comisión del
+   * datáfono—. Ver `MovimientoConceptoService.registrar`.
+   */
+  registrarPorConcepto(ctx: CtxEmpresa, datos: DatosMovimientoConcepto, t: Tx) {
+    return this.porConcepto.registrar(ctx, datos, t);
+  }
+
+  /** Lo anula con su contrario en el mismo libro. */
+  anularPorConcepto(ctx: CtxEmpresa, id: string, motivo: string, t: Tx) {
+    return this.porConcepto.anular(ctx, id, motivo, t);
+  }
+
+  /** El 4×1000 de una salida de banco; `null` si la cuenta es exenta. */
+  cobrarGmf(
+    ctx: CtxEmpresa,
+    datos: {
+      cuentaBancariaId: string;
+      base: number;
+      fecha: string;
+      detalle: string;
+      origenId?: string;
+    },
+    t: Tx,
+  ) {
+    return this.porConcepto.cobrarGmf(ctx, datos, t);
+  }
+
+  /** Los movimientos por concepto, filtrados. */
+  movimientosPorConcepto(
+    ctx: CtxEmpresa,
+    filtro: Parameters<MovimientoConceptoService['listar']>[1],
+    t?: Tx,
+  ) {
+    return this.porConcepto.listar(ctx, filtro, t);
   }
 
   /**

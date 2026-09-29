@@ -48,6 +48,11 @@ export interface CompraDocumentoResumen {
   /** Ya formateada para mostrar: `NIT 900123456-7`, `CC 19400748`. */
   tercero_identificacion: string;
   fecha: string;
+  /** Cuándo vence lo pactado. `null`: «Por pagar» cuenta 30 días desde la fecha. */
+  vence: string | null;
+  /** La condición de pronto pago de la factura, si la trae. */
+  descuento_pp_pct: string | null;
+  descuento_pp_hasta: string | null;
   numero_factura_proveedor: string;
   estado: string;
   subtotal: string;
@@ -164,7 +169,8 @@ const IDENTIFICACION_TERCERO = `(SELECT concat_ws(' ', x.tipo_documento,
 // Se exporta por lo mismo que en ventas: `CompraNotaService` devuelve este
 // mismo resumen desde su `RETURNING` y tenía su propia copia de la lista.
 export const CAMPOS_DOCUMENTO = `id, tipo, documento_origen_id,
-                           tercero_id, fecha, numero_factura_proveedor, estado,
+                           tercero_id, fecha, vence, descuento_pp_pct, descuento_pp_hasta,
+                           numero_factura_proveedor, estado,
                            subtotal, total_iva, total, total_retenciones, neto_a_pagar,
                            monto_pagado, asiento_id, retencion_decision, retencion_motivo,
                            (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
@@ -441,6 +447,29 @@ export class CompraService {
         if (!formaPago.ok) {
           throw new BadRequestException(formaPago.motivo);
         }
+        // La base lo sostiene (`ck_compra_vence`, `ck_compra_descuento_pp`);
+        // acá se dice en palabras.
+        if (dto.vence !== undefined && dto.vence < dto.fecha) {
+          throw new BadRequestException(
+            'La compra no puede vencer antes de la fecha de la factura.',
+          );
+        }
+        if (
+          (dto.descuentoProntoPagoPct === undefined) !==
+          (dto.descuentoProntoPagoHasta === undefined)
+        ) {
+          throw new BadRequestException(
+            'El pronto pago lleva el porcentaje y hasta cuándo aplica: los dos o ninguno.',
+          );
+        }
+        if (
+          dto.descuentoProntoPagoHasta !== undefined &&
+          dto.descuentoProntoPagoHasta < dto.fecha
+        ) {
+          throw new BadRequestException(
+            'El pronto pago no puede terminar antes de la fecha de la factura.',
+          );
+        }
         const pagos = (dto.pagos ?? []).map((p, i) => ({
           ...p,
           valor: formaPago.valores[i],
@@ -539,8 +568,9 @@ export class CompraService {
              (id, empresa_id, tercero_id, fecha, numero_factura_proveedor,
               subtotal, total_iva, total, total_retenciones, neto_a_pagar,
               asiento_id, creado_por, documento_leido_id,
-              retencion_decision, retencion_motivo, retencion_impresa)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+              retencion_decision, retencion_motivo, retencion_impresa, vence,
+              descuento_pp_pct, descuento_pp_hasta)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
            RETURNING ${CAMPOS_DOCUMENTO}`,
             [
               documentoId,
@@ -559,6 +589,11 @@ export class CompraService {
               retencionDecision,
               retencionMotivo,
               impresa,
+              dto.formaPago === 'CREDITO' ? (dto.vence ?? null) : null,
+              dto.descuentoProntoPagoPct ?? null,
+              dto.descuentoProntoPagoPct === undefined
+                ? null
+                : (dto.descuentoProntoPagoHasta ?? null),
             ],
           ),
         );
@@ -1126,6 +1161,8 @@ export class CompraService {
     id: string,
     dto: PagarDto,
     t: Tx,
+    /** El documento que agrupa este pago —«CE-000077»—, para el libro. */
+    referencia?: string,
   ): Promise<CompraDocumentoResumen> {
     const documento = fila<{
       tercero_id: string;
@@ -1195,7 +1232,7 @@ export class CompraService {
           ...medio,
           fecha: dto.fecha,
           valor: pago.valor,
-          concepto: `Pago de la compra ${documento.numero_factura_proveedor}${reparto}`,
+          concepto: `${referencia === undefined ? '' : `${referencia} · `}Pago de la compra ${documento.numero_factura_proveedor}${reparto}`,
           cuentaProveedoresId: cuentaProveedores.id,
           terceroId: documento.tercero_id,
           compraId: id,
@@ -1231,7 +1268,23 @@ export class CompraService {
     id: string,
     dto: DevolverPagoDto,
   ): Promise<CompraDocumentoResumen> {
-    return this.tx.enContexto(ctx, async (t) => {
+    return this.tx.enContexto(ctx, (t) =>
+      this.devolverPagoEnTx(ctx, id, dto, t),
+    );
+  }
+
+  /**
+   * El cuerpo de `devolverPago`, sobre una transacción ya abierta: lo usa la
+   * anulación de un comprobante de egreso.
+   */
+  async devolverPagoEnTx(
+    ctx: CtxEmpresa,
+    id: string,
+    dto: DevolverPagoDto,
+    t: Tx,
+    referencia?: string,
+  ): Promise<CompraDocumentoResumen> {
+    {
       const documento = fila<{
         tercero_id: string;
         estado: string;
@@ -1254,13 +1307,29 @@ export class CompraService {
       }
 
       const valorTotal = sumarPagos(dto.pagos.map((p) => p.valor));
-      const resultado = calcularDevolucionPago(
-        Number(documento.monto_pagado),
+      // Lo que saldó un descuento por pronto pago o un anticipo no salió en
+      // este pago: no vuelve como plata. Se mide sin eso y se suma al guardar.
+      const noEnPlata = Number(
+        fila<{ total: string }>(
+          await t.query(
+            `SELECT coalesce((SELECT sum(a.descuento) FROM comprobante_egreso_aplicacion a
+                                JOIN comprobante_egreso c ON c.id = a.comprobante_id
+                               WHERE c.estado = 'VIGENTE' AND a.compra_documento_id = $1), 0)
+                  + coalesce((SELECT sum(x.valor - x.retencion_reversada) FROM cruce_pago x
+                               WHERE x.estado = 'VIGENTE' AND x.destino_compra_id = $1), 0)
+                    AS total`,
+            [id],
+          ),
+        )?.total ?? 0,
+      );
+      const medido = calcularDevolucionPago(
+        Number(documento.monto_pagado) - noEnPlata,
         valorTotal,
       );
-      if (!resultado.ok) {
-        throw new BadRequestException(resultado.motivo);
+      if (!medido.ok) {
+        throw new BadRequestException(medido.motivo);
       }
+      const resultado = { montoPagado: medido.montoPagado + noEnPlata };
 
       const cuentaProveedores = await this.nucleo.cuenta(
         ctx,
@@ -1289,7 +1358,7 @@ export class CompraService {
             ...medio,
             fecha: dto.fecha,
             valor: pago.valor,
-            concepto: `Devolución de pago de la compra ${documento.numero_factura_proveedor}${reparto}`,
+            concepto: `${referencia === undefined ? '' : `${referencia} · `}Devolución de pago de la compra ${documento.numero_factura_proveedor}${reparto}`,
             cuentaProveedoresId: cuentaProveedores.id,
             terceroId: documento.tercero_id,
             compraId: id,
@@ -1310,7 +1379,63 @@ export class CompraService {
         throw new BadRequestException('No se pudo registrar la devolución.');
       }
       return actualizado;
-    });
+    }
+  }
+
+  /**
+   * Mueve lo pagado de una compra sin que salga plata: un descuento por
+   * pronto pago, un anticipo que se le aplica. Espejo de
+   * `VentaDocumentoService.ajustarPagadoEnTx`.
+   */
+  async ajustarPagadoEnTx(
+    ctx: CtxEmpresa,
+    id: string,
+    delta: number,
+    t: Tx,
+  ): Promise<CompraDocumentoResumen> {
+    const documento = fila<{
+      estado: string;
+      tipo: string;
+      monto_pagado: string;
+      neto_efectivo: string;
+      numero_factura_proveedor: string;
+    }>(
+      await t.query(
+        `SELECT estado, tipo, monto_pagado, ${NETO_EFECTIVO} AS neto_efectivo, numero_factura_proveedor
+           FROM compra_documento WHERE id = $1 FOR UPDATE`,
+        [id],
+      ),
+    );
+    if (documento === undefined)
+      throw new NotFoundException('Compra no encontrada');
+    if (documento.tipo !== 'FACTURA' || documento.estado !== 'EMITIDA') {
+      throw new BadRequestException(
+        'Solo se ajusta lo pagado de una compra vigente.',
+      );
+    }
+    const pagado = Math.round(Number(documento.monto_pagado) * 100);
+    const cambio = Math.round(delta * 100);
+    const pendiente =
+      Math.round(Number(documento.neto_efectivo) * 100) - pagado;
+    if (cambio > 0 && cambio > pendiente) {
+      throw new BadRequestException(
+        `A la compra ${documento.numero_factura_proveedor} solo le faltan ${Math.max(pendiente, 0) / 100}: no se le puede aplicar ${delta}.`,
+      );
+    }
+    if (cambio < 0 && -cambio > pagado) {
+      throw new BadRequestException(
+        `De la compra ${documento.numero_factura_proveedor} no hay tanto pagado para devolver.`,
+      );
+    }
+    const actualizado = fila<CompraDocumentoResumen>(
+      await t.query(
+        `UPDATE compra_documento SET monto_pagado = $2 WHERE id = $1 RETURNING ${CAMPOS_DOCUMENTO}`,
+        [id, (pagado + cambio) / 100],
+      ),
+    );
+    if (actualizado === undefined)
+      throw new BadRequestException('No se pudo ajustar la compra.');
+    return actualizado;
   }
 
   /** El producto de una línea, activo. Lo reusan las notas. */

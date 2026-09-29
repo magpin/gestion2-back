@@ -153,6 +153,7 @@ export class FacturaService {
         confirmaPrecioBajoCosto: opciones.confirmaPrecioBajoCosto ?? false,
         formaPago: opciones.formaPago,
         pagos: opciones.pagos,
+        vence: opciones.vence,
       };
 
       const factura = await this.crearInterno(ctx, dto, cotizacionId, t);
@@ -414,6 +415,12 @@ export class FacturaService {
     if (!formaPago.ok) {
       throw new BadRequestException(formaPago.motivo);
     }
+    // La base lo sostiene con `ck_venta_vence`; acá se dice en palabras.
+    if (dto.vence !== undefined && dto.vence < dto.fecha) {
+      throw new BadRequestException(
+        'La factura no puede vencer antes de la fecha en que se emite.',
+      );
+    }
     const pagos = (dto.pagos ?? []).map((p, i) => ({
       ...p,
       valor: formaPago.valores[i],
@@ -491,8 +498,8 @@ export class FacturaService {
         `INSERT INTO venta_documento
              (id, empresa_id, tipo, tercero_id, fecha, prefijo, consecutivo,
               resolucion_id, documento_origen_id, subtotal, total_iva, total,
-              asiento_id, creado_por, documento_leido_id, retencion_aviso)
-           VALUES ($1, $2, 'FACTURA', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+              asiento_id, creado_por, documento_leido_id, retencion_aviso, vence)
+           VALUES ($1, $2, 'FACTURA', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
            RETURNING ${CAMPOS_DOCUMENTO}`,
         [
           documentoId,
@@ -510,6 +517,7 @@ export class FacturaService {
           ctx.usuarioId,
           origen?.documentoLeidoId ?? null,
           motor.aviso,
+          dto.formaPago === 'CREDITO' ? (dto.vence ?? null) : null,
         ],
       ),
     );

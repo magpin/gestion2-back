@@ -35,6 +35,14 @@ export class LineaAsientoDto {
   @IsUUID()
   centroCostoId?: string;
 
+  /**
+   * El concepto de ingreso o egreso del que salió la línea. Es lo que deja
+   * armar el flujo de caja por actividad sin volver a clasificar nada.
+   */
+  @IsOptional()
+  @IsUUID()
+  conceptoId?: string;
+
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)

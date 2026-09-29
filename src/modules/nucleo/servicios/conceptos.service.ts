@@ -104,6 +104,35 @@ export class ConceptosService {
     );
   }
 
+  /**
+   * Un concepto del sistema por su código —`GTO-GMF`, `NG-ANTICIPO-CLIENTE`—,
+   * para los módulos que lo usan por su cuenta. Si la empresa todavía no tiene
+   * el catálogo (nadie abrió Conceptos), se siembra en la misma transacción.
+   */
+  async porCodigo(ctx: CtxEmpresa, codigo: string, tx?: Tx): Promise<Concepto> {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const buscar = async () =>
+          fila<Record<string, unknown>>(
+            await t.query(`${SELECT} WHERE c.codigo = $1`, [codigo]),
+          );
+        let f = await buscar();
+        if (f === undefined) {
+          await this.preparar(ctx, t);
+          f = await buscar();
+        }
+        if (f === undefined) {
+          throw new BadRequestException(
+            `Falta el concepto ${codigo} en el catálogo de la empresa.`,
+          );
+        }
+        return aConcepto(f);
+      },
+      tx,
+    );
+  }
+
   async obtener(ctx: CtxEmpresa, id: string, tx?: Tx): Promise<Concepto> {
     return this.tx.enContexto(
       ctx,

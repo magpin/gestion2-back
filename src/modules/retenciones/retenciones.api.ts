@@ -24,6 +24,7 @@ import {
 import type { CondicionLeida } from './reglas/propuesta-perfil.reglas';
 import { PerfilTerceroService } from './servicios/perfil-tercero.service';
 import { RetencionService } from './servicios/retencion.service';
+import { AnticipoRetencionService } from './servicios/anticipo-retencion.service';
 
 export interface RetencionCalculada {
   conceptoId: string;
@@ -62,7 +63,52 @@ export class RetencionesApi {
     private readonly clasificadorIa: ClasificadorIaService,
     private readonly recalculo: RecalculoService,
     private readonly perfiles: PerfilTerceroService,
+    private readonly anticipos: AnticipoRetencionService,
   ) {}
+
+  /**
+   * La retención de un anticipo a proveedor, sin guardar nada: el concepto
+   * con su certeza y lo que se retendría (D11b). Ver `AnticipoRetencionService`.
+   */
+  proponerAnticipo(
+    ctx: CtxEmpresa,
+    datos: Parameters<AnticipoRetencionService['proponer']>[1],
+    tx?: Tx,
+  ) {
+    return this.anticipos.proponer(ctx, datos, tx);
+  }
+
+  /** Retiene el anticipo y lo guarda para la 350. Devuelve lo retenido por cuenta. */
+  confirmarAnticipo(
+    ctx: CtxEmpresa,
+    datos: Parameters<AnticipoRetencionService['confirmar']>[1],
+    tx: Tx,
+  ) {
+    return this.anticipos.confirmar(ctx, datos, tx);
+  }
+
+  /** Reversa una proporción de la retención del anticipo (el cruce o la anulación). */
+  reversarAnticipo(
+    ctx: CtxEmpresa,
+    datos: Parameters<AnticipoRetencionService['reversar']>[1],
+    tx: Tx,
+  ) {
+    return this.anticipos.reversar(ctx, datos, tx);
+  }
+
+  /** Vuelve a poner lo que un cruce reversó, al anular el cruce. */
+  restablecerAnticipo(
+    ctx: CtxEmpresa,
+    datos: Parameters<AnticipoRetencionService['restablecer']>[1],
+    tx: Tx,
+  ) {
+    return this.anticipos.restablecer(ctx, datos, tx);
+  }
+
+  /** Lo que retuvo el anticipo y sigue vivo. */
+  retencionVivaDeAnticipo(anticipoId: string, tx: Tx) {
+    return this.anticipos.vivo(tx, anticipoId);
+  }
 
   /**
    * La fuente 5 (Fase 5): le pregunta a la IA por los renglones que ninguna

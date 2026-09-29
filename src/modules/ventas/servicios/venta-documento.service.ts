@@ -45,6 +45,8 @@ export interface VentaDocumentoResumen {
   /** Ya formateada para mostrar: `NIT 900123456-7`, `CC 19400748`. */
   tercero_identificacion: string;
   fecha: string;
+  /** Cuándo vence lo pactado. `null` en las anteriores al 28-09-2026: vencen a los 30 días. */
+  vence: string | null;
   estado: string;
   prefijo: string | null;
   consecutivo: number;
@@ -198,7 +200,7 @@ const IDENTIFICACION_TERCERO = `(SELECT concat_ws(' ', x.tipo_documento,
 // quedaron atrás —el `POST /facturas` respondía sin el nombre ni el NIT del
 // cliente, y habría respondido sin el saldo—. Una sola lista, un solo lugar
 // donde agregarle una columna.
-export const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, estado, prefijo, consecutivo,
+export const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, vence, estado, prefijo, consecutivo,
                            resolucion_id, documento_origen_id, subtotal, total_iva, total,
                            monto_pagado, asiento_id, historica, retencion_aviso,
                            (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
@@ -831,6 +833,8 @@ export class VentaDocumentoService {
     id: string,
     dto: CobrarDto,
     t: Tx,
+    /** El documento que agrupa este cobro —«RC-000128»—, para el libro de caja. */
+    referencia?: string,
   ): Promise<VentaDocumentoResumen> {
     const documento = fila<{
       tipo: string;
@@ -916,7 +920,7 @@ export class VentaDocumentoService {
           ...medio,
           fecha: dto.fecha,
           valor: pago.valor,
-          concepto: `Cobro de la factura ${numero}${reparto}`,
+          concepto: `${referencia === undefined ? '' : `${referencia} · `}Cobro de la factura ${numero}${reparto}`,
           cuentaClientesId: cuentaCartera.id,
           terceroId: documento.tercero_id,
           facturaVentaId: id,
@@ -962,96 +966,191 @@ export class VentaDocumentoService {
     id: string,
     dto: DevolverCobroDto,
   ): Promise<VentaDocumentoResumen> {
-    return this.tx.enContexto(ctx, async (t) => {
-      const documento = fila<{
-        tipo: string;
-        tercero_id: string;
-        estado: string;
-        prefijo: string | null;
-        consecutivo: number;
-        monto_pagado: string;
-      }>(
-        await t.query(
-          `SELECT tipo, tercero_id, estado, prefijo, consecutivo, monto_pagado
+    return this.tx.enContexto(ctx, (t) =>
+      this.devolverCobroEnTx(ctx, id, dto, t),
+    );
+  }
+
+  /**
+   * El cuerpo de `devolverCobro`, sobre una transacción ya abierta. Lo usa
+   * también la anulación de un recibo de caja: devolver cada cobro que el
+   * recibo hizo y marcarlo anulado son un solo acto.
+   */
+  async devolverCobroEnTx(
+    ctx: CtxEmpresa,
+    id: string,
+    dto: DevolverCobroDto,
+    t: Tx,
+    /** El documento que se anula —«RC-000128»—, para el libro de caja. */
+    referencia?: string,
+  ): Promise<VentaDocumentoResumen> {
+    const documento = fila<{
+      tipo: string;
+      tercero_id: string;
+      estado: string;
+      prefijo: string | null;
+      consecutivo: number;
+      monto_pagado: string;
+    }>(
+      await t.query(
+        `SELECT tipo, tercero_id, estado, prefijo, consecutivo, monto_pagado
              FROM venta_documento
             WHERE id = $1
             FOR UPDATE`,
+        [id],
+      ),
+    );
+    if (documento === undefined) {
+      throw new NotFoundException('Documento no encontrado');
+    }
+    if (documento.tipo !== 'FACTURA') {
+      throw new BadRequestException(
+        'Solo se puede devolver el cobro de una factura.',
+      );
+    }
+    if (documento.estado !== 'EMITIDA') {
+      throw new BadRequestException('Esta factura no está vigente.');
+    }
+
+    // Contra lo cobrado, no contra el saldo: lo que se devuelve es plata
+    // que entró, y cuánto vale hoy la factura no cambia esa cuenta.
+    const valorTotal = sumarPagos(dto.pagos.map((p) => p.valor));
+    // Lo que se saldó con un descuento por pronto pago no entró como plata:
+    // no se puede devolver en efectivo. Se descuenta de lo cobrado para medir
+    // y se vuelve a sumar al guardar.
+    const descontado = Number(
+      fila<{ total: string }>(
+        await t.query(
+          `SELECT coalesce(sum(a.descuento), 0) AS total
+             FROM recibo_caja_aplicacion a
+             JOIN recibo_caja r ON r.id = a.recibo_id AND r.estado = 'VIGENTE'
+            WHERE a.venta_documento_id = $1`,
           [id],
         ),
-      );
-      if (documento === undefined) {
-        throw new NotFoundException('Documento no encontrado');
-      }
-      if (documento.tipo !== 'FACTURA') {
-        throw new BadRequestException(
-          'Solo se puede devolver el cobro de una factura.',
-        );
-      }
-      if (documento.estado !== 'EMITIDA') {
-        throw new BadRequestException('Esta factura no está vigente.');
-      }
+      )?.total ?? 0,
+    );
+    const medido = calcularDevolucionCobro(
+      Number(documento.monto_pagado) - descontado,
+      valorTotal,
+    );
+    if (!medido.ok) {
+      throw new BadRequestException(medido.motivo);
+    }
+    const resultado = { montoPagado: medido.montoPagado + descontado };
 
-      // Contra lo cobrado, no contra el saldo: lo que se devuelve es plata
-      // que entró, y cuánto vale hoy la factura no cambia esa cuenta.
-      const valorTotal = sumarPagos(dto.pagos.map((p) => p.valor));
-      const resultado = calcularDevolucionCobro(
-        Number(documento.monto_pagado),
-        valorTotal,
+    const cuentaCartera = await this.nucleo.cuenta(
+      ctx,
+      CODIGO_CUENTA_CARTERA,
+      t,
+    );
+    if (cuentaCartera === null) {
+      throw new BadRequestException(
+        `No existe o está inactiva la cuenta de cartera (${CODIGO_CUENTA_CARTERA}). Actívala en el plan de cuentas.`,
       );
-      if (!resultado.ok) {
-        throw new BadRequestException(resultado.motivo);
-      }
+    }
 
-      const cuentaCartera = await this.nucleo.cuenta(
+    const numero = `${documento.prefijo}-${String(documento.consecutivo).padStart(6, '0')}`;
+    for (const [i, pago] of dto.pagos.entries()) {
+      const medio =
+        pago.medio === 'CAJA'
+          ? ({ medio: 'CAJA', cajaId: pago.cajaId! } as const)
+          : ({
+              medio: 'BANCO',
+              cuentaBancariaId: pago.cuentaBancariaId!,
+            } as const);
+      const reparto =
+        dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
+      await this.tesoreria.registrarDevolucionCobro(
         ctx,
-        CODIGO_CUENTA_CARTERA,
+        {
+          ...medio,
+          fecha: dto.fecha,
+          valor: pago.valor,
+          concepto: `${referencia === undefined ? '' : `${referencia} · `}Devolución de cobro de la factura ${numero}${reparto}`,
+          cuentaClientesId: cuentaCartera.id,
+          terceroId: documento.tercero_id,
+          facturaVentaId: id,
+        },
         t,
       );
-      if (cuentaCartera === null) {
-        throw new BadRequestException(
-          `No existe o está inactiva la cuenta de cartera (${CODIGO_CUENTA_CARTERA}). Actívala en el plan de cuentas.`,
-        );
-      }
+    }
 
-      const numero = `${documento.prefijo}-${String(documento.consecutivo).padStart(6, '0')}`;
-      for (const [i, pago] of dto.pagos.entries()) {
-        const medio =
-          pago.medio === 'CAJA'
-            ? ({ medio: 'CAJA', cajaId: pago.cajaId! } as const)
-            : ({
-                medio: 'BANCO',
-                cuentaBancariaId: pago.cuentaBancariaId!,
-              } as const);
-        const reparto =
-          dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
-        await this.tesoreria.registrarDevolucionCobro(
-          ctx,
-          {
-            ...medio,
-            fecha: dto.fecha,
-            valor: pago.valor,
-            concepto: `Devolución de cobro de la factura ${numero}${reparto}`,
-            cuentaClientesId: cuentaCartera.id,
-            terceroId: documento.tercero_id,
-            facturaVentaId: id,
-          },
-          t,
-        );
-      }
-
-      const actualizado = fila<VentaDocumentoResumen>(
-        await t.query(
-          `UPDATE venta_documento SET monto_pagado = $2
+    const actualizado = fila<VentaDocumentoResumen>(
+      await t.query(
+        `UPDATE venta_documento SET monto_pagado = $2
             WHERE id = $1
           RETURNING ${CAMPOS_DOCUMENTO}`,
-          [id, resultado.montoPagado],
-        ),
+        [id, resultado.montoPagado],
+      ),
+    );
+    if (actualizado === undefined) {
+      throw new BadRequestException('No se pudo registrar la devolución.');
+    }
+    return actualizado;
+  }
+
+  /**
+   * Mueve lo pagado de una factura sin que entre ni salga plata: un
+   * descuento por pronto pago la salda, un anticipo del cliente se le
+   * aplica, un saldo a favor pasa de una factura a otra. Quien llama asienta
+   * lo que corresponda; esto solo mantiene `monto_pagado` en su verdad.
+   *
+   * Positivo baja lo que se debe y no puede pasar del pendiente. Negativo lo
+   * sube de vuelta y no puede dejar lo pagado bajo cero. `restituir` deja
+   * que un positivo pase del pendiente: es devolverle a una factura el saldo
+   * a favor que ya tenía, al anular el cruce que se lo llevó.
+   */
+  async ajustarPagadoEnTx(
+    ctx: CtxEmpresa,
+    id: string,
+    delta: number,
+    t: Tx,
+    opciones: { restituir?: boolean } = {},
+  ): Promise<VentaDocumentoResumen> {
+    const documento = fila<{
+      tipo: string;
+      estado: string;
+      monto_pagado: string;
+      por_cobrar: string;
+      prefijo: string | null;
+      consecutivo: number;
+    }>(
+      await t.query(
+        `SELECT tipo, estado, monto_pagado, ${POR_COBRAR} AS por_cobrar, prefijo, consecutivo
+           FROM venta_documento WHERE id = $1 FOR UPDATE`,
+        [id],
+      ),
+    );
+    if (documento === undefined)
+      throw new NotFoundException('Documento no encontrado');
+    if (documento.tipo !== 'FACTURA' || documento.estado !== 'EMITIDA') {
+      throw new BadRequestException(
+        'Solo se ajusta lo pagado de una factura vigente.',
       );
-      if (actualizado === undefined) {
-        throw new BadRequestException('No se pudo registrar la devolución.');
-      }
-      return actualizado;
-    });
+    }
+    const numero = `${documento.prefijo}-${String(documento.consecutivo).padStart(6, '0')}`;
+    const pagado = Math.round(Number(documento.monto_pagado) * 100);
+    const cambio = Math.round(delta * 100);
+    const pendiente = Math.round(Number(documento.por_cobrar) * 100) - pagado;
+    if (cambio > 0 && !opciones.restituir && cambio > pendiente) {
+      throw new BadRequestException(
+        `A ${numero} solo le faltan ${Math.max(pendiente, 0) / 100}: no se le puede aplicar ${delta}.`,
+      );
+    }
+    if (cambio < 0 && -cambio > pagado) {
+      throw new BadRequestException(
+        `De ${numero} no hay tanto pagado para devolver.`,
+      );
+    }
+    const actualizado = fila<VentaDocumentoResumen>(
+      await t.query(
+        `UPDATE venta_documento SET monto_pagado = $2 WHERE id = $1 RETURNING ${CAMPOS_DOCUMENTO}`,
+        [id, (pagado + cambio) / 100],
+      ),
+    );
+    if (actualizado === undefined)
+      throw new BadRequestException('No se pudo ajustar la factura.');
+    return actualizado;
   }
 
   // ---------------------------------------------------------------------------

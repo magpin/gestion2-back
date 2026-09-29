@@ -4,6 +4,7 @@ import { ContabilidadModule } from '../contabilidad/contabilidad.module';
 import { InventarioModule } from '../inventario/inventario.module';
 import { NucleoModule } from '../nucleo/nucleo.module';
 import { TesoreriaModule } from '../tesoreria/tesoreria.module';
+import { CobrosController } from './controladores/cobros.controller';
 import { CotizacionesController } from './controladores/cotizaciones.controller';
 import { FacturasController } from './controladores/facturas.controller';
 import { FaltantesController } from './controladores/faltantes.controller';
@@ -15,6 +16,8 @@ import { FacturaService } from './servicios/factura.service';
 import { FaltanteService } from './servicios/faltante.service';
 import { NotaCreditoService } from './servicios/nota-credito.service';
 import { NotaDebitoService } from './servicios/nota-debito.service';
+import { ReciboCajaService } from './servicios/recibo-caja.service';
+import { CruceCarteraService } from './servicios/cruce-cartera.service';
 import { VentaDocumentoService } from './servicios/venta-documento.service';
 import { VentasApi } from './ventas.api';
 
@@ -45,6 +48,7 @@ import { VentasApi } from './ventas.api';
     NotasCreditoController,
     NotasDebitoController,
     FacturasHistoricasController,
+    CobrosController,
   ],
   providers: [
     VentaDocumentoService,
@@ -53,6 +57,8 @@ import { VentasApi } from './ventas.api';
     NotaCreditoService,
     NotaDebitoService,
     HistoricoService,
+    ReciboCajaService,
+    CruceCarteraService,
     VentasApi,
   ],
   exports: [VentasApi],

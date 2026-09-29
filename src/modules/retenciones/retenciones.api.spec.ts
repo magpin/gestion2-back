@@ -65,6 +65,7 @@ function armar(
     {} as never,
     {} as never, // RecalculoService: no lo usa esta prueba.
     {} as never, // PerfilTerceroService: tampoco.
+    {} as never, // AnticipoRetencionService: tampoco.
   );
 }
 

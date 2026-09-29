@@ -24,6 +24,8 @@ import { ExtractoService } from './servicios/extracto.service';
 import { TesoreriaApi } from './tesoreria.api';
 import { MovimientosConceptoController } from './controladores/movimientos-concepto.controller';
 import { MovimientoConceptoService } from './servicios/movimiento-concepto.service';
+import { TrasladosController } from './controladores/traslados.controller';
+import { TrasladoService } from './servicios/traslado.service';
 
 /**
  * Tesorería (módulo 7 de la secuencia): Caja y Bancos. Bancos se suma
@@ -58,6 +60,7 @@ import { MovimientoConceptoService } from './servicios/movimiento-concepto.servi
     ExtractoController,
     ExtractoReglasController,
     MovimientosConceptoController,
+    TrasladosController,
   ],
   providers: [
     CajaService,
@@ -70,6 +73,7 @@ import { MovimientoConceptoService } from './servicios/movimiento-concepto.servi
     ExtractoService,
     ExtractoReglaService,
     MovimientoConceptoService,
+    TrasladoService,
     TesoreriaApi,
   ],
   exports: [TesoreriaApi],

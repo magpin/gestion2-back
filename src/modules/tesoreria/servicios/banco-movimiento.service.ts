@@ -286,6 +286,81 @@ export class BancoMovimientoService {
   }
 
   /**
+   * Un lado de un traslado —la llama `TrasladoService`—. Espejo del de caja:
+   * el asiento ya está hecho, acá solo se corre el saldo y se inserta.
+   */
+  async registrarDeTraslado(
+    ctx: CtxEmpresa,
+    cuentaBancariaId: string,
+    datos: {
+      id: string;
+      tipo: TipoMovimientoManual;
+      fecha: string;
+      valor: number;
+      concepto: string;
+      trasladoId: string;
+      asientoId: string;
+    },
+    t: Tx,
+  ): Promise<MovimientoBancoResumen> {
+    await this.exigirCuentaBloqueada(cuentaBancariaId, t);
+    const actual =
+      (await this.ultimoMovimiento(cuentaBancariaId, t))?.saldo ?? 0;
+    const nuevoSaldo =
+      DIRECCION_MOVIMIENTO_BANCO[datos.tipo] === 'ENTRADA'
+        ? calcularIngresoBanco(actual, datos.valor)
+        : calcularEgresoBanco(actual, datos.valor);
+    return this.insertarMovimiento(
+      t,
+      ctx,
+      datos.id,
+      cuentaBancariaId,
+      datos.tipo,
+      datos.fecha,
+      datos.valor,
+      datos.concepto,
+      'TRASLADO',
+      datos.trasladoId,
+      null,
+      nuevoSaldo,
+      datos.asientoId,
+      null,
+    );
+  }
+
+  /** La cuenta contable de la cuenta bancaria, su banco y si es exenta del 4×1000. */
+  async cuentaDe(
+    ctx: CtxEmpresa,
+    cuentaBancariaId: string,
+    t: Tx,
+  ): Promise<{
+    cuentaId: string;
+    nombre: string;
+    banco: string;
+    exentaGmf: boolean;
+  }> {
+    const c = fila<{
+      cuenta_id: string;
+      banco: string;
+      numero_cuenta: string;
+      exenta_gmf: boolean;
+    }>(
+      await t.query(
+        'SELECT cuenta_id, banco, numero_cuenta, exenta_gmf FROM cuenta_bancaria WHERE id = $1 AND activa',
+        [cuentaBancariaId],
+      ),
+    );
+    if (c === undefined)
+      throw new NotFoundException('Cuenta bancaria no encontrada o inactiva');
+    return {
+      cuentaId: c.cuenta_id,
+      nombre: `${c.banco} ${c.numero_cuenta}`,
+      banco: c.banco,
+      exentaGmf: c.exenta_gmf,
+    };
+  }
+
+  /**
    * Deshace un movimiento con su contrario: mismo valor, tipo opuesto, y el
    * asiento con las líneas del original invertidas. El libro de banco no se
    * edita —el saldo corrido de lo posterior ya lo contó—, como el de caja.
@@ -628,7 +703,7 @@ export class BancoMovimientoService {
     fecha: string,
     valor: number,
     concepto: string,
-    origenTipo: 'FACTURA_VENTA' | 'COMPRA' | null,
+    origenTipo: 'FACTURA_VENTA' | 'COMPRA' | 'TRASLADO' | null,
     origenId: string | null,
     terceroId: string | null,
     saldoValor: number,

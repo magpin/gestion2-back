@@ -232,6 +232,70 @@ export class CajaMovimientoService {
   }
 
   /**
+   * Un lado de un traslado —la llama `TrasladoService`—. El asiento ya está
+   * hecho (uno solo para los dos lados), así que acá solo se bloquea la
+   * caja, se corre el saldo y se inserta el movimiento que apunta a él. No se
+   * reversa suelto: se anula el traslado entero.
+   */
+  async registrarDeTraslado(
+    ctx: CtxEmpresa,
+    cajaId: string,
+    datos: {
+      id: string;
+      tipo: 'INGRESO' | 'EGRESO';
+      fecha: string;
+      valor: number;
+      concepto: string;
+      trasladoId: string;
+      asientoId: string;
+    },
+    t: Tx,
+  ): Promise<MovimientoCajaResumen> {
+    await this.exigirCajaBloqueada(cajaId, t);
+    const actual = (await this.ultimoMovimiento(cajaId, t))?.saldo ?? 0;
+    let nuevoSaldo: number;
+    if (datos.tipo === 'INGRESO') {
+      nuevoSaldo = calcularIngreso(actual, datos.valor);
+    } else {
+      const resultado = calcularEgreso(actual, datos.valor);
+      if (!resultado.ok) throw new BadRequestException(resultado.motivo);
+      nuevoSaldo = resultado.saldo;
+    }
+    return this.insertarMovimiento(
+      t,
+      ctx,
+      datos.id,
+      cajaId,
+      datos.tipo,
+      datos.fecha,
+      datos.valor,
+      datos.concepto,
+      'TRASLADO',
+      datos.trasladoId,
+      null,
+      nuevoSaldo,
+      datos.asientoId,
+    );
+  }
+
+  /** La cuenta contable de la caja: el traslado la necesita para su asiento. */
+  async cuentaDe(
+    ctx: CtxEmpresa,
+    cajaId: string,
+    t: Tx,
+  ): Promise<{ cuentaId: string; nombre: string }> {
+    const caja = fila<{ cuenta_id: string; nombre: string }>(
+      await t.query(
+        'SELECT cuenta_id, nombre FROM caja WHERE id = $1 AND activa',
+        [cajaId],
+      ),
+    );
+    if (caja === undefined)
+      throw new NotFoundException('Caja no encontrada o inactiva');
+    return { cuentaId: caja.cuenta_id, nombre: caja.nombre };
+  }
+
+  /**
    * El `caja_movimiento` correctivo de un arqueo cerrado con diferencia.
    * Solo la llama `CajaArqueoService`, dentro de la MISMA transacción del
    * cierre (`t` no es opcional, a propósito: quien la llama ya abrió la
@@ -329,7 +393,9 @@ export class CajaMovimientoService {
           throw new BadRequestException(
             original.origen_tipo === 'FACTURA_VENTA'
               ? 'Es el cobro de una factura: se corrige devolviendo el cobro desde la factura.'
-              : 'Es el pago de una compra: se corrige con la devolución del pago desde la compra.',
+              : original.origen_tipo === 'TRASLADO'
+                ? 'Es un lado de un traslado: se anula el traslado entero, desde Caja y bancos → Traslados.'
+                : 'Es el pago de una compra: se corrige con la devolución del pago desde la compra.',
           );
         }
         if (original.es_ajuste_arqueo) {
@@ -678,7 +744,7 @@ export class CajaMovimientoService {
     fecha: string,
     valor: number,
     concepto: string,
-    origenTipo: 'FACTURA_VENTA' | 'COMPRA' | null,
+    origenTipo: 'FACTURA_VENTA' | 'COMPRA' | 'TRASLADO' | null,
     origenId: string | null,
     terceroId: string | null,
     saldoValor: number,

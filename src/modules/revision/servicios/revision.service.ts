@@ -354,7 +354,7 @@ export class RevisionService {
                  CASE WHEN cm.tipo = 'INGRESO' THEN 'ENTRA' ELSE 'SALE' END AS direccion
             FROM caja_movimiento cm
             JOIN caja j ON j.id = cm.caja_id
-           WHERE cm.origen_id IS NOT NULL
+           WHERE cm.origen_tipo IN ('FACTURA_VENTA', 'COMPRA')
              AND cm.reversa_de IS NULL
              AND NOT EXISTS (SELECT 1 FROM caja_movimiento r WHERE r.reversa_de = cm.id)
           UNION ALL
@@ -364,7 +364,8 @@ export class RevisionService {
                       THEN 'ENTRA' ELSE 'SALE' END
             FROM banco_movimiento bm
             JOIN cuenta_bancaria b ON b.id = bm.cuenta_bancaria_id
-           WHERE bm.origen_id IS NOT NULL
+           -- Un traslado y su anulación mueven lo mismo en los dos sentidos: no son repetidos.
+           WHERE bm.origen_tipo IN ('FACTURA_VENTA', 'COMPRA')
         ),
         repetidos AS (
           SELECT origen_tipo, origen_id, fecha, valor,

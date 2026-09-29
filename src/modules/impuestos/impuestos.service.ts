@@ -407,6 +407,13 @@ export class ImpuestosService {
           ).map((r) => Number(r.codigo)),
         );
         const anio = Number(hoyEnColombia().slice(0, 4));
+        // Responsable de IVA: lo dice la casilla 53 (48) o el régimen vigente.
+        // La facturación decide con el régimen (`esResponsableDeIva`), y el 300
+        // declara el IVA de esas facturas: una empresa con el régimen cargado
+        // y sin la casilla 53 no puede quedar sin su 300.
+        const ivaPorRegimen = await this.nucleo
+          .esResponsableDeIva(ctx, hoyEnColombia(), t)
+          .catch(() => false);
         const reteica = filas<{
           codigo: string;
           nombre: string;
@@ -450,7 +457,7 @@ export class ImpuestosService {
           digito: ultimoDigito(empresa.nit),
           periodicidadIva: config?.periodicidad_iva ?? null,
           declaraRetencion: rut.has(RUT_RETENCION),
-          responsableIva: rut.has(RUT_IVA),
+          responsableIva: rut.has(RUT_IVA) || ivaPorRegimen,
           declaraRenta:
             rut.has(RUT_RENTA) &&
             !rut.has(RUT_SIMPLE) &&

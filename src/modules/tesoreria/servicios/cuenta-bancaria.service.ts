@@ -13,9 +13,13 @@ export interface CuentaBancaria {
   id: string;
   banco: string;
   numero_cuenta: string;
-  tipo_cuenta: 'AHORROS' | 'CORRIENTE';
+  tipo_cuenta: 'AHORROS' | 'CORRIENTE' | 'BILLETERA';
   cuenta_id: string;
   activa: boolean;
+  /** Exenta del 4×1000 (art. 879 num. 1 ET): una sola cuenta por titular. */
+  exenta_gmf: boolean;
+  /** Hasta qué día está conciliada con el extracto; `null` si nunca se concilió. */
+  conciliada_hasta: string | null;
   /** Cuánta plata hay hoy. Puede ser negativo: el banco admite sobregiro. */
   saldo: string;
   /** El día del último movimiento, o `null` si no hubo ninguno. */
@@ -35,10 +39,13 @@ const ultimo = (columna: string, porDefecto: string) =>
         ORDER BY m.secuencia DESC
         LIMIT 1), ${porDefecto}))`;
 
-const CAMPOS = `id, banco, numero_cuenta, tipo_cuenta, cuenta_id, activa,
+const CAMPOS = `id, banco, numero_cuenta, tipo_cuenta, cuenta_id, activa, exenta_gmf,
                 formato_extracto,
                 ${ultimo('saldo_valor', '0')} AS saldo,
-                ${ultimo('fecha', 'NULL')} AS ultimo_movimiento`;
+                ${ultimo('fecha', 'NULL')} AS ultimo_movimiento,
+                (SELECT max(e.fecha_hasta)::text FROM extracto_bancario e
+                  WHERE e.cuenta_bancaria_id = cuenta_bancaria.id AND e.estado = 'CONCILIADO')
+                  AS conciliada_hasta`;
 
 /**
  * El maestro de cuentas bancarias. Sin movimientos todavía —eso es

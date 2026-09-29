@@ -25,6 +25,8 @@ import { TesoreriaApi } from './tesoreria.api';
 import { MovimientosConceptoController } from './controladores/movimientos-concepto.controller';
 import { MovimientoConceptoService } from './servicios/movimiento-concepto.service';
 import { TrasladosController } from './controladores/traslados.controller';
+import { CajaBancosController } from './controladores/caja-bancos.controller';
+import { CajaBancosService } from './servicios/caja-bancos.service';
 import { TrasladoService } from './servicios/traslado.service';
 
 /**
@@ -61,6 +63,7 @@ import { TrasladoService } from './servicios/traslado.service';
     ExtractoReglasController,
     MovimientosConceptoController,
     TrasladosController,
+    CajaBancosController,
   ],
   providers: [
     CajaService,
@@ -74,6 +77,7 @@ import { TrasladoService } from './servicios/traslado.service';
     ExtractoReglaService,
     MovimientoConceptoService,
     TrasladoService,
+    CajaBancosService,
     TesoreriaApi,
   ],
   exports: [TesoreriaApi],

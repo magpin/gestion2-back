@@ -1,6 +1,10 @@
 import { IsIn, IsString, IsUUID, Length } from 'class-validator';
 
-export const TIPOS_CUENTA_BANCARIA = ['AHORROS', 'CORRIENTE'] as const;
+export const TIPOS_CUENTA_BANCARIA = [
+  'AHORROS',
+  'CORRIENTE',
+  'BILLETERA',
+] as const;
 
 export class CrearCuentaBancariaDto {
   @IsString()

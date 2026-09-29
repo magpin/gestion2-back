@@ -74,8 +74,8 @@ export class NucleoApi {
   }
 
   /** Los conceptos activos, para elegir uno. */
-  async conceptosActivos(ctx: CtxEmpresa) {
-    return this.conceptos.listar(ctx);
+  async conceptosActivos(ctx: CtxEmpresa, tx?: Tx) {
+    return this.conceptos.listar(ctx, {}, tx);
   }
 
   /** Roles del usuario en una empresa, leídos de la base y no del token. */

@@ -24,7 +24,7 @@ import {
   type CompraDocumentoResumen,
 } from './compra.service';
 
-const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cuenta_id, detalle, cantidad,
+const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cuenta_id, detalle, concepto_id, cantidad,
                        costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable, iva_base,
                        (SELECT x.codigo FROM producto x WHERE x.id = producto_id) AS producto_codigo,
                        (SELECT x.nombre FROM producto x WHERE x.id = producto_id) AS producto_nombre,
@@ -72,176 +72,195 @@ export class CompraNotaService {
   async crearNotaCredito(
     ctx: CtxEmpresa,
     dto: CrearNotaCreditoCompraDto,
+    tx?: Tx,
   ): Promise<CompraDocumentoDetalle> {
-    return this.tx.enContexto(ctx, async (t) => {
-      const compra = await this.exigirCompraVigente(ctx, dto, t);
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const compra = await this.exigirCompraVigente(ctx, dto, t);
 
-      // Qué se devuelve, y a qué costo: el de la compra, no uno nuevo.
-      const yaDevuelto = await this.devueltoPorLinea(
-        compra.lineas.map((l) => l.id),
-        t,
-      );
-      const pedido =
-        dto.lineas ??
-        compra.lineas
-          .map((l) => ({
-            lineaOrigenId: l.id,
-            cantidad: Number(l.cantidad) - (yaDevuelto.get(l.id) ?? 0),
-          }))
-          .filter((l) => l.cantidad > 0);
-
-      const porId = new Map(compra.lineas.map((l) => [l.id, l]));
-      const origenes: CompraDocumentoLineaResumen[] = [];
-      const entradas = [];
-      for (const p of pedido) {
-        const original = porId.get(p.lineaOrigenId);
-        if (original === undefined) {
-          throw new BadRequestException(
-            'Una de las líneas que querés devolver no es de esta compra.',
-          );
-        }
-        const pendiente =
-          Number(original.cantidad) - (yaDevuelto.get(p.lineaOrigenId) ?? 0);
-        if (p.cantidad > pendiente) {
-          throw new BadRequestException(
-            `De esa línea quedan ${pendiente} por devolver de las ${Number(original.cantidad)} compradas; no se pueden devolver ${p.cantidad}.`,
-          );
-        }
-        origenes.push(original);
-        entradas.push({
-          cantidad: p.cantidad,
-          costoUnitario: Number(original.costo_unitario),
-          ivaTarifa: Number(original.iva_tarifa),
-          ivaDescontable: original.iva_descontable,
-          // Con IVA sobre el AIU (0102), la devolución lleva la parte del AIU
-          // que le toca: el IVA que se reversa es el que se cobró.
-          aiu:
-            original.iva_base === null || original.iva_base === undefined
-              ? undefined
-              : (Number(original.iva_base) * p.cantidad) /
-                Number(original.cantidad),
-        });
-      }
-      if (entradas.length === 0) {
-        throw new BadRequestException(
-          'Esta compra ya se devolvió completa: no queda nada por acreditar.',
+        // Qué se devuelve, y a qué costo: el de la compra, no uno nuevo.
+        const yaDevuelto = await this.devueltoPorLinea(
+          compra.lineas.map((l) => l.id),
+          t,
         );
-      }
+        const pedido =
+          dto.lineas ??
+          compra.lineas
+            .map((l) => ({
+              lineaOrigenId: l.id,
+              cantidad: Number(l.cantidad) - (yaDevuelto.get(l.id) ?? 0),
+            }))
+            .filter((l) => l.cantidad > 0);
 
-      const { lineas, totales } = calcularLineasCompra(entradas);
-
-      // Las retenciones bajan en la misma proporción que el total: lo que se
-      // le retuvo al proveedor por una compra que se devolvió en parte ya no
-      // se le debe a la DIAN en esa parte.
-      const proporcion = totales.total / Number(compra.total);
-      // Lo que calculó el motor se reversa con la cifra del motor: la
-      // proporción de lo vivo de la compra —con los ajustes por cambio de
-      // norma— y al peso. Si el asiento iba en centavos sobre lo registrado
-      // al comprar, la 2365 y el 350 no cuadraban (bug 4). Lo registrado sin
-      // motor (antes de él) sigue en la proporción de lo registrado.
-      const previstas = await this.retenciones.reversaRentaPrevista(
-        { compraId: compra.id, proporcion },
-        t,
-      );
-      const retenciones = compra.retenciones.map((r) => {
-        const municipio = r.municipio_codigo ?? null;
-        const delMotor =
-          r.retencion_calculada_id != null
-            ? (previstas.get(r.retencion_calculada_id) ?? { base: 0, valor: 0 })
-            : previstas.get(`${r.concepto}|${municipio ?? ''}`);
-        return {
-          concepto: r.concepto,
-          cuentaId: r.cuenta_id,
-          tipo: r.tipo ?? null,
-          conceptoNacionalId: r.concepto_nacional_id ?? null,
-          tarifa:
-            r.tarifa === null || r.tarifa === undefined
-              ? null
-              : Number(r.tarifa),
-          asumida: r.asumida === true,
-          municipio,
-          base: delMotor?.base ?? redondear2(Number(r.base) * proporcion),
-          valor: delMotor?.valor ?? redondear2(Number(r.valor) * proporcion),
-        };
-      });
-      // El IVA asumido no bajó lo que se le debía al proveedor: su reversa
-      // tampoco lo toca.
-      const retenido = redondear2(
-        retenciones.filter((r) => !r.asumida).reduce((s, r) => s + r.valor, 0),
-      );
-      const neto = netoAPagar(totales.total, retenido);
-
-      const { cuentaProveedores, cuentaIvaId, totalIvaDescontable } =
-        await this.cuentas(ctx, lineas, totales.subtotal, t);
-
-      // Contra la misma cuenta que se debitó al comprar, y la línea original
-      // la guarda desde la 0060. Antes se le preguntaba al producto, y con
-      // una línea de gasto —que no tiene producto— se caía.
-      const cuentaDebitoDe = origenes.map((l) => l.cuenta_id);
-
-      // El asiento de la compra, al revés.
-      const lineasAsiento: LineaAsientoDto[] = [
-        {
-          cuentaId: cuentaProveedores.id,
-          terceroId: compra.tercero_id,
-          debito: neto,
-          credito: 0,
-        },
-      ];
-      for (const r of retenciones) {
-        if (r.valor <= 0) continue;
-        lineasAsiento.push({
-          cuentaId: r.cuentaId,
-          terceroId: compra.tercero_id,
-          baseGravable: r.base,
-          debito: r.valor,
-          credito: 0,
-        });
-        // La contrapartida del IVA asumido, al revés que en la compra.
-        if (r.asumida) {
-          const vigentes = await this.nucleo.regimenVigente(ctx, dto.fecha, t);
-          const descontable = vigentes.includes('RESPONSABLE_IVA')
-            ? await this.nucleo.cuenta(ctx, '240810', t)
-            : null;
-          lineasAsiento.push({
-            cuentaId: descontable?.id ?? cuentaDebitoDe[0],
-            debito: 0,
-            credito: r.valor,
+        const porId = new Map(compra.lineas.map((l) => [l.id, l]));
+        const origenes: CompraDocumentoLineaResumen[] = [];
+        const entradas = [];
+        for (const p of pedido) {
+          const original = porId.get(p.lineaOrigenId);
+          if (original === undefined) {
+            throw new BadRequestException(
+              'Una de las líneas que querés devolver no es de esta compra.',
+            );
+          }
+          const pendiente =
+            Number(original.cantidad) - (yaDevuelto.get(p.lineaOrigenId) ?? 0);
+          if (p.cantidad > pendiente) {
+            throw new BadRequestException(
+              `De esa línea quedan ${pendiente} por devolver de las ${Number(original.cantidad)} compradas; no se pueden devolver ${p.cantidad}.`,
+            );
+          }
+          origenes.push(original);
+          entradas.push({
+            cantidad: p.cantidad,
+            costoUnitario: Number(original.costo_unitario),
+            ivaTarifa: Number(original.iva_tarifa),
+            ivaDescontable: original.iva_descontable,
+            // Con IVA sobre el AIU (0102), la devolución lleva la parte del AIU
+            // que le toca: el IVA que se reversa es el que se cobró.
+            aiu:
+              original.iva_base === null || original.iva_base === undefined
+                ? undefined
+                : (Number(original.iva_base) * p.cantidad) /
+                  Number(original.cantidad),
           });
         }
-      }
-      lineas.forEach((l, i) => {
-        lineasAsiento.push({
-          cuentaId: cuentaDebitoDe[i],
-          debito: 0,
-          credito: l.valorKardex,
-        });
-      });
-      if (cuentaIvaId !== null) {
-        lineasAsiento.push({
-          cuentaId: cuentaIvaId,
-          baseGravable: totales.subtotal,
-          debito: 0,
-          credito: totalIvaDescontable,
-        });
-      }
+        if (entradas.length === 0) {
+          throw new BadRequestException(
+            'Esta compra ya se devolvió completa: no queda nada por acreditar.',
+          );
+        }
 
-      return this.guardar(
-        ctx,
-        'NOTA_CREDITO',
-        dto,
-        compra,
-        { lineas, totales, retenido, neto, retenciones, proporcion },
-        origenes.map((l) => ({
-          productoId: l.producto_id,
-          cuentaId: l.cuenta_id,
-          detalle: l.detalle,
-        })),
-        origenes.map((l) => l.id),
-        lineasAsiento,
-        t,
-      );
-    });
+        const { lineas, totales } = calcularLineasCompra(entradas);
+
+        // Las retenciones bajan en la misma proporción que el total: lo que se
+        // le retuvo al proveedor por una compra que se devolvió en parte ya no
+        // se le debe a la DIAN en esa parte.
+        const proporcion = totales.total / Number(compra.total);
+        // Lo que calculó el motor se reversa con la cifra del motor: la
+        // proporción de lo vivo de la compra —con los ajustes por cambio de
+        // norma— y al peso. Si el asiento iba en centavos sobre lo registrado
+        // al comprar, la 2365 y el 350 no cuadraban (bug 4). Lo registrado sin
+        // motor (antes de él) sigue en la proporción de lo registrado.
+        const previstas = await this.retenciones.reversaRentaPrevista(
+          { compraId: compra.id, proporcion },
+          t,
+        );
+        const retenciones = compra.retenciones.map((r) => {
+          const municipio = r.municipio_codigo ?? null;
+          const delMotor =
+            r.retencion_calculada_id != null
+              ? (previstas.get(r.retencion_calculada_id) ?? {
+                  base: 0,
+                  valor: 0,
+                })
+              : previstas.get(`${r.concepto}|${municipio ?? ''}`);
+          return {
+            concepto: r.concepto,
+            cuentaId: r.cuenta_id,
+            tipo: r.tipo ?? null,
+            conceptoNacionalId: r.concepto_nacional_id ?? null,
+            tarifa:
+              r.tarifa === null || r.tarifa === undefined
+                ? null
+                : Number(r.tarifa),
+            asumida: r.asumida === true,
+            municipio,
+            base: delMotor?.base ?? redondear2(Number(r.base) * proporcion),
+            valor: delMotor?.valor ?? redondear2(Number(r.valor) * proporcion),
+          };
+        });
+        // El IVA asumido no bajó lo que se le debía al proveedor: su reversa
+        // tampoco lo toca.
+        const retenido = redondear2(
+          retenciones
+            .filter((r) => !r.asumida)
+            .reduce((s, r) => s + r.valor, 0),
+        );
+        const neto = netoAPagar(totales.total, retenido);
+
+        const { cuentaProveedores, cuentaIvaId, totalIvaDescontable } =
+          await this.cuentas(ctx, lineas, totales.subtotal, t);
+
+        // Contra la misma cuenta que se debitó al comprar, y la línea original
+        // la guarda desde la 0060. Antes se le preguntaba al producto, y con
+        // una línea de gasto —que no tiene producto— se caía.
+        const cuentaDebitoDe = origenes.map((l) => l.cuenta_id);
+
+        // El asiento de la compra, al revés.
+        const lineasAsiento: LineaAsientoDto[] = [
+          {
+            cuentaId: cuentaProveedores.id,
+            terceroId: compra.tercero_id,
+            debito: neto,
+            credito: 0,
+          },
+        ];
+        for (const r of retenciones) {
+          if (r.valor <= 0) continue;
+          lineasAsiento.push({
+            cuentaId: r.cuentaId,
+            terceroId: compra.tercero_id,
+            baseGravable: r.base,
+            debito: r.valor,
+            credito: 0,
+          });
+          // La contrapartida del IVA asumido, al revés que en la compra.
+          if (r.asumida) {
+            const vigentes = await this.nucleo.regimenVigente(
+              ctx,
+              dto.fecha,
+              t,
+            );
+            const descontable = vigentes.includes('RESPONSABLE_IVA')
+              ? await this.nucleo.cuenta(ctx, '240810', t)
+              : null;
+            lineasAsiento.push({
+              cuentaId: descontable?.id ?? cuentaDebitoDe[0],
+              debito: 0,
+              credito: r.valor,
+            });
+          }
+        }
+        lineas.forEach((l, i) => {
+          lineasAsiento.push({
+            cuentaId: cuentaDebitoDe[i],
+            debito: 0,
+            credito: l.valorKardex,
+            // El mismo concepto que la compra: la vista de Gastos resta la nota.
+            ...(origenes[i].concepto_id
+              ? { conceptoId: origenes[i].concepto_id }
+              : {}),
+          });
+        });
+        if (cuentaIvaId !== null) {
+          lineasAsiento.push({
+            cuentaId: cuentaIvaId,
+            baseGravable: totales.subtotal,
+            debito: 0,
+            credito: totalIvaDescontable,
+          });
+        }
+
+        return this.guardar(
+          ctx,
+          'NOTA_CREDITO',
+          dto,
+          compra,
+          { lineas, totales, retenido, neto, retenciones, proporcion },
+          origenes.map((l) => ({
+            productoId: l.producto_id,
+            cuentaId: l.cuenta_id,
+            detalle: l.detalle,
+            conceptoId: l.concepto_id ?? null,
+          })),
+          origenes.map((l) => l.id),
+          lineasAsiento,
+          t,
+        );
+      },
+      tx,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -272,6 +291,7 @@ export class CompraNotaService {
       const entradas = [];
       /** Contra qué cuenta va cada línea: la del producto o la del gasto. */
       const cuentaDebitoDe: string[] = [];
+      const conceptoDe: Array<string | null> = [];
       /** Lo que el motor de renta necesita para clasificar cada renglón. */
       const pistas: Array<{
         texto: string | null;
@@ -283,15 +303,10 @@ export class CompraNotaService {
             ? null
             : await this.compras.productoDeLinea(ctx, l.productoId, t);
         const gasto =
-          producto === null
-            ? await this.compras.cuentaDeGastoConCodigo(
-                ctx,
-                l.cuentaId ?? '',
-                t,
-              )
-            : null;
+          producto === null ? await this.compras.gastoDeLinea(ctx, l, t) : null;
 
         cuentaDebitoDe.push(gasto?.id ?? producto!.cuenta_inventario_id);
+        conceptoDe.push(gasto?.conceptoId ?? null);
         pistas.push({
           texto: producto?.nombre ?? l.detalle ?? null,
           cuentaCodigo: gasto?.codigo ?? null,
@@ -375,6 +390,7 @@ export class CompraNotaService {
           cuentaId: cuentaDebitoDe[i],
           debito: l.valorKardex,
           credito: 0,
+          ...(conceptoDe[i] !== null && { conceptoId: conceptoDe[i] }),
         });
       });
       if (cuentaIvaId !== null) {
@@ -431,6 +447,7 @@ export class CompraNotaService {
           productoId: l.productoId ?? null,
           cuentaId: cuentaDebitoDe[i],
           detalle: l.detalle ?? null,
+          conceptoId: conceptoDe[i],
         })),
         dto.lineas.map(() => null),
         lineasAsiento,
@@ -602,6 +619,7 @@ export class CompraNotaService {
       productoId: string | null;
       cuentaId: string;
       detalle: string | null;
+      conceptoId?: string | null;
     }>,
     lineaOrigenIds: Array<string | null>,
     lineasAsiento: LineaAsientoDto[],
@@ -670,8 +688,8 @@ export class CompraNotaService {
           `INSERT INTO compra_documento_linea
              (empresa_id, compra_documento_id, orden, producto_id, cuenta_id, detalle,
               cantidad, costo_unitario, iva_tarifa, subtotal, iva_valor, total,
-              iva_descontable, linea_origen_id, iva_base)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+              iva_descontable, linea_origen_id, iva_base, concepto_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
            RETURNING ${CAMPOS_LINEA}`,
           [
             ctx.empresaId,
@@ -689,6 +707,7 @@ export class CompraNotaService {
             l.ivaDescontable,
             lineaOrigenIds[i],
             l.ivaBase,
+            renglones[i].conceptoId ?? null,
           ],
         ),
       );

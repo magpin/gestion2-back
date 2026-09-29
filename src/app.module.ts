@@ -19,6 +19,7 @@ import { ConversacionModule } from './modules/conversacion/conversacion.module';
 import { NucleoModule } from './modules/nucleo/nucleo.module';
 import { PlataformaModule } from './modules/plataforma/plataforma.module';
 import { ReportesModule } from './modules/reportes/reportes.module';
+import { GastosModule } from './modules/gastos/gastos.module';
 import { RevisionModule } from './modules/revision/revision.module';
 import { TesoreriaModule } from './modules/tesoreria/tesoreria.module';
 import { TrazabilidadModule } from './modules/trazabilidad/trazabilidad.module';
@@ -58,6 +59,7 @@ import { VentasModule } from './modules/ventas/ventas.module';
     ConversacionModule,
     ConsumoIaModule,
     ReportesModule,
+    GastosModule,
     RevisionModule,
     TrazabilidadModule,
   ],

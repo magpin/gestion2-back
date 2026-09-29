@@ -95,6 +95,9 @@ export interface CompraDocumentoLineaResumen {
   cuenta_nombre: string;
   /** Qué se compró, cuando no es un producto del catálogo. */
   detalle: string | null;
+  /** El concepto de una línea de gasto, si se eligió por concepto (0108). */
+  concepto_id?: string | null;
+  concepto_nombre?: string | null;
   cantidad: string;
   costo_unitario: string;
   iva_tarifa: string;
@@ -183,6 +186,8 @@ export const CAMPOS_DOCUMENTO = `id, tipo, documento_origen_id,
 
 const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cuenta_id, detalle, cantidad,
                        costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable, iva_base,
+                       concepto_id,
+                       (SELECT x.nombre FROM concepto_movimiento x WHERE x.id = concepto_id) AS concepto_nombre,
                        (SELECT x.codigo FROM producto x WHERE x.id = producto_id) AS producto_codigo,
                        (SELECT x.nombre FROM producto x WHERE x.id = producto_id) AS producto_nombre,
                        (SELECT x.codigo FROM empresa_cuenta x WHERE x.id = cuenta_id) AS cuenta_codigo,
@@ -329,7 +334,7 @@ export class CompraService {
           );
         }
 
-        const { lineas, totales, cuentaDebitoDe, renglonesRenta } =
+        const { lineas, totales, cuentaDebitoDe, conceptoDe, renglonesRenta } =
           await this.prepararLineas(
             ctx,
             dto.lineas,
@@ -496,6 +501,8 @@ export class CompraService {
             cuentaId: cuentaDebitoDe[i],
             debito: l.valorKardex,
             credito: 0,
+            // El concepto va en su línea: la vista de Gastos suma por él.
+            ...(conceptoDe[i] !== null && { conceptoId: conceptoDe[i] }),
           });
         });
         if (cuentaIvaId !== null) {
@@ -609,8 +616,8 @@ export class CompraService {
               `INSERT INTO compra_documento_linea
                (empresa_id, compra_documento_id, orden, producto_id, cuenta_id, detalle,
                 cantidad, costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable,
-                iva_base)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+                iva_base, concepto_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
              RETURNING ${CAMPOS_LINEA}`,
               [
                 ctx.empresaId,
@@ -629,6 +636,7 @@ export class CompraService {
                 l.total,
                 l.ivaDescontable,
                 l.ivaBase,
+                conceptoDe[i],
               ],
             ),
           );
@@ -818,6 +826,8 @@ export class CompraService {
     const entradas: LineaCompraEntrada[] = [];
     /** Contra qué cuenta se debita cada línea: la del producto o la del gasto. */
     const cuentaDebitoDe: string[] = [];
+    /** El concepto de cada línea de gasto elegida por concepto; `null` en las demás. */
+    const conceptoDe: Array<string | null> = [];
     /** Lo que el motor de renta necesita de cada renglón para clasificarlo. */
     const pistas: Array<{ texto: string | null; cuentaCodigo: string | null }> =
       [];
@@ -832,10 +842,9 @@ export class CompraService {
           : await this.productoDeLinea(ctx, l.productoId, t);
 
       const gasto =
-        producto === null
-          ? await this.cuentaDeGastoConCodigo(ctx, l.cuentaId ?? '', t)
-          : null;
+        producto === null ? await this.gastoDeLinea(ctx, l, t) : null;
       cuentaDebitoDe.push(gasto?.id ?? producto!.cuenta_inventario_id);
+      conceptoDe.push(gasto?.conceptoId ?? null);
       pistas.push({
         texto: producto?.nombre ?? l.detalle ?? null,
         cuentaCodigo: gasto?.codigo ?? null,
@@ -871,7 +880,7 @@ export class CompraService {
       texto: pistas[i].texto,
       cuentaCodigo: pistas[i].cuentaCodigo,
     }));
-    return { lineas, totales, cuentaDebitoDe, renglonesRenta };
+    return { lineas, totales, cuentaDebitoDe, conceptoDe, renglonesRenta };
   }
 
   /** Las compras, sin sus líneas ni retenciones — para el listado. */
@@ -1467,6 +1476,43 @@ export class CompraService {
   }
 
   /** Igual que `cuentaDeGasto`, con el código: le dice al motor qué se compró. */
+  /**
+   * La cuenta de una línea de gasto: la del concepto si se eligió concepto
+   * —lo normal desde la Fase 6: la persona elige qué es, no la cuenta—, o la
+   * que eligió un contador. Las dos pasan la misma validación.
+   */
+  async gastoDeLinea(
+    ctx: CtxEmpresa,
+    l: { conceptoId?: string; cuentaId?: string },
+    t: Tx,
+  ): Promise<{ id: string; codigo: string; conceptoId: string | null }> {
+    if (l.conceptoId === undefined) {
+      return {
+        ...(await this.cuentaDeGastoConCodigo(ctx, l.cuentaId ?? '', t)),
+        conceptoId: null,
+      };
+    }
+    const concepto = await this.nucleo.concepto(ctx, l.conceptoId, t);
+    if (
+      !concepto.activo ||
+      concepto.automatico ||
+      concepto.tipo === 'INGRESO'
+    ) {
+      throw new BadRequestException(
+        `«${concepto.nombre}» no sirve para una línea de compra: elegí un concepto de gasto, costo o compra.`,
+      );
+    }
+    if (concepto.cuenta === null) {
+      throw new BadRequestException(
+        `«${concepto.nombre}» todavía no tiene cuenta. Elegila en Contabilidad → Conceptos.`,
+      );
+    }
+    return {
+      ...(await this.cuentaDeGastoConCodigo(ctx, concepto.cuenta.id, t)),
+      conceptoId: concepto.id,
+    };
+  }
+
   async cuentaDeGastoConCodigo(
     ctx: CtxEmpresa,
     id: string,

@@ -41,16 +41,34 @@ export type ConceptoRetencion = (typeof CONCEPTOS_RETENCION)[number];
  * Los dos a la vez no: una línea se debita contra una sola cuenta.
  */
 export class LineaCompraDto {
-  @ValidateIf((o: LineaCompraDto) => o.cuentaId === undefined)
+  @ValidateIf(
+    (o: LineaCompraDto) =>
+      o.cuentaId === undefined && o.conceptoId === undefined,
+  )
   @IsUUID()
   productoId?: string;
+
+  /**
+   * Qué es el gasto: «Arriendo», «Transporte, fletes y acarreos». La cuenta
+   * la pone el concepto. Es lo normal desde la Fase 6 del menú nuevo; la
+   * cuenta suelta queda para el contador.
+   */
+  @ValidateIf(
+    (o: LineaCompraDto) =>
+      o.productoId === undefined && o.cuentaId === undefined,
+  )
+  @IsUUID()
+  conceptoId?: string;
 
   /**
    * La cuenta contra la que se debita el gasto. Una auxiliar activa del plan
    * de la empresa; el servicio verifica que reciba movimientos y que sea de
    * una clase donde un gasto tenga sentido.
    */
-  @ValidateIf((o: LineaCompraDto) => o.productoId === undefined)
+  @ValidateIf(
+    (o: LineaCompraDto) =>
+      o.productoId === undefined && o.conceptoId === undefined,
+  )
   @IsUUID()
   cuentaId?: string;
 

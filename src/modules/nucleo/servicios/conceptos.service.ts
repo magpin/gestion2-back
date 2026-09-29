@@ -92,6 +92,14 @@ export class ConceptosService {
         if (q.incluirInactivos !== 'true') condiciones.push('c.activo');
         const donde =
           condiciones.length > 0 ? `WHERE ${condiciones.join(' AND ')}` : '';
+        // Si la empresa todavía no tiene el catálogo, se siembra acá, como en
+        // `porCodigo`: quien registra una compra con gasto no tiene por qué
+        // haber abierto Conceptos antes (y COMPRAS no puede).
+        const ninguno =
+          fila<{ n: number }>(
+            await t.query('SELECT count(*)::int AS n FROM concepto_movimiento'),
+          )?.n === 0;
+        if (ninguno) await this.preparar(ctx, t);
         const f = filas<Record<string, unknown>>(
           await t.query(
             `${SELECT} ${donde} ORDER BY c.tipo, c.grupo, c.orden, c.nombre`,

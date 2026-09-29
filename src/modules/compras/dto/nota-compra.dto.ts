@@ -69,12 +69,26 @@ export class CrearNotaCreditoCompraDto {
  * interés, que no son productos de nadie.
  */
 export class LineaNotaDebitoCompraDto {
-  @ValidateIf((o: LineaNotaDebitoCompraDto) => o.cuentaId === undefined)
+  @ValidateIf(
+    (o: LineaNotaDebitoCompraDto) =>
+      o.cuentaId === undefined && o.conceptoId === undefined,
+  )
   @IsUUID()
   productoId?: string;
 
+  /** Qué es lo que cobra de más: la cuenta la pone el concepto. */
+  @ValidateIf(
+    (o: LineaNotaDebitoCompraDto) =>
+      o.productoId === undefined && o.cuentaId === undefined,
+  )
+  @IsUUID()
+  conceptoId?: string;
+
   /** La cuenta del gasto. Auxiliar, activa y de una clase donde un gasto va. */
-  @ValidateIf((o: LineaNotaDebitoCompraDto) => o.productoId === undefined)
+  @ValidateIf(
+    (o: LineaNotaDebitoCompraDto) =>
+      o.productoId === undefined && o.conceptoId === undefined,
+  )
   @IsUUID()
   cuentaId?: string;
 

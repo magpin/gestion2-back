@@ -53,6 +53,9 @@ export interface TerceroResumen {
   esCliente: boolean;
   esProveedor: boolean;
   esEmpleado: boolean;
+  /** Plazo habitual como cliente y como proveedor, en días (PC25); `null` si no se dijo. */
+  diasPlazoCliente: number | null;
+  diasPlazoProveedor: number | null;
   responsableIva: boolean;
   /** Si declara renta. Decide la tarifa de retefuente en los conceptos que tienen dos. */
   declaranteRenta: boolean;
@@ -78,8 +81,8 @@ export class TerceroService {
            (empresa_id, tipo_persona, tipo_documento, numero_documento, dv,
             razon_social, primer_nombre, segundo_nombre, primer_apellido, segundo_apellido,
             nombre_comercial, email, telefono, direccion, municipio_codigo,
-            es_cliente, es_proveedor, es_empleado)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+            es_cliente, es_proveedor, es_empleado, dias_plazo_cliente, dias_plazo_proveedor)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
          RETURNING id`,
         [
           ctx.empresaId,
@@ -100,6 +103,8 @@ export class TerceroService {
           dto.esCliente ?? false,
           dto.esProveedor ?? false,
           dto.esEmpleado ?? false,
+          dto.diasPlazoCliente ?? null,
+          dto.diasPlazoProveedor ?? null,
         ],
       );
 
@@ -190,7 +195,7 @@ export class TerceroService {
       const filas = await t.query<Array<Record<string, unknown>>>(
         `SELECT id, tipo_documento, numero_documento, dv, razon_social,
                 primer_nombre, segundo_nombre, primer_apellido, segundo_apellido,
-                es_cliente, es_proveedor, es_empleado, responsable_iva, declarante_renta, activo
+                es_cliente, es_proveedor, es_empleado, dias_plazo_cliente, dias_plazo_proveedor, responsable_iva, declarante_renta, activo
            FROM tercero t ${PERFIL_VIGENTE} ${where}
           ORDER BY coalesce(razon_social, primer_apellido || ' ' || primer_nombre)
           LIMIT $${params.length - 1} OFFSET $${params.length}`,
@@ -253,7 +258,9 @@ export class TerceroService {
             municipio_codigo      = COALESCE($11, municipio_codigo),
             es_cliente            = COALESCE($12, es_cliente),
             es_proveedor          = COALESCE($13, es_proveedor),
-            es_empleado           = COALESCE($14, es_empleado)
+            es_empleado           = COALESCE($14, es_empleado),
+            dias_plazo_cliente    = COALESCE($15, dias_plazo_cliente),
+            dias_plazo_proveedor  = COALESCE($16, dias_plazo_proveedor)
           WHERE id = $1
           RETURNING id`,
           [
@@ -271,6 +278,8 @@ export class TerceroService {
             dto.esCliente ?? null,
             dto.esProveedor ?? null,
             dto.esEmpleado ?? null,
+            dto.diasPlazoCliente ?? null,
+            dto.diasPlazoProveedor ?? null,
           ],
         ),
       );
@@ -435,7 +444,7 @@ export class TerceroService {
       const filas = await t.query<Array<Record<string, unknown>>>(
         `SELECT id, tipo_documento, numero_documento, dv, razon_social,
                 primer_nombre, segundo_nombre, primer_apellido, segundo_apellido,
-                es_cliente, es_proveedor, es_empleado, responsable_iva, declarante_renta, activo
+                es_cliente, es_proveedor, es_empleado, dias_plazo_cliente, dias_plazo_proveedor, responsable_iva, declarante_renta, activo
            FROM tercero t ${PERFIL_VIGENTE}
           WHERE activo AND numero_documento LIKE $1
           ORDER BY numero_documento
@@ -457,7 +466,7 @@ export class TerceroService {
         const [fila] = await t.query<Array<Record<string, unknown>>>(
           `SELECT id, tipo_documento, numero_documento, dv, razon_social,
                   primer_nombre, segundo_nombre, primer_apellido, segundo_apellido,
-                  es_cliente, es_proveedor, es_empleado, responsable_iva, declarante_renta,
+                  es_cliente, es_proveedor, es_empleado, dias_plazo_cliente, dias_plazo_proveedor, responsable_iva, declarante_renta,
                   activo, tipo_persona
              FROM tercero t ${PERFIL_VIGENTE} WHERE id = $1`,
           [id],
@@ -515,6 +524,10 @@ export class TerceroService {
       esCliente: f.es_cliente as boolean,
       esProveedor: f.es_proveedor as boolean,
       esEmpleado: (f.es_empleado as boolean | undefined) ?? false,
+      diasPlazoCliente:
+        (f.dias_plazo_cliente as number | null | undefined) ?? null,
+      diasPlazoProveedor:
+        (f.dias_plazo_proveedor as number | null | undefined) ?? null,
       responsableIva: f.responsable_iva as boolean,
       // `true` cuando la consulta no lo trae: los listados no lo piden, y
       // asumir "declarante" retiene de menos —que se corrige— en vez de

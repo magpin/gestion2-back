@@ -42,6 +42,20 @@ export class ComprasController {
     return this.compras.listar(ctx, q);
   }
 
+  /** El siguiente número del documento soporte, su resolución y cuántos quedan. */
+  @Roles('DIRECTOR', 'CONTADOR', 'COMPRAS', 'CAJA')
+  @Get('soporte/numeracion')
+  numeracionSoporte(@ActorEmpresa() ctx: CtxEmpresa) {
+    return this.compras.numeracionSoporte(ctx);
+  }
+
+  /** Cómo quedaría la compra en el libro, sin guardarla. */
+  @Roles('DIRECTOR', 'CONTADOR', 'COMPRAS', 'CAJA')
+  @Post('previo')
+  previo(@ActorEmpresa() ctx: CtxEmpresa, @Body() dto: CrearCompraDto) {
+    return this.compras.previo(ctx, dto);
+  }
+
   @Roles('DIRECTOR', 'CONTADOR', 'COMPRAS', 'CONSULTA')
   @Get(':id')
   porId(

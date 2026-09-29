@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import { numeracionDe, type Numeracion } from '../../../common/numeracion';
+import { diasDePlazo, venceDesdePlazo } from '../../../common/plazo';
 import {
   BadRequestException,
   ConflictException,
@@ -41,6 +43,11 @@ export interface CompraDocumentoResumen {
   id: string;
   /** FACTURA, o una de las dos notas — ver migración `0039`. */
   tipo: 'FACTURA' | 'NOTA_CREDITO' | 'NOTA_DEBITO';
+  /** Quién emitió el documento: el proveedor (factura electrónica) o la empresa (soporte). */
+  clase_documento: 'FACTURA_ELECTRONICA' | 'DOCUMENTO_SOPORTE';
+  /** El soporte nace sin transmitir: no hay módulo DIAN (PC2). `null` en una factura. */
+  transmision: 'SIN_TRANSMITIR' | 'TRANSMITIDO' | 'ACEPTADO' | null;
+  cufe: string | null;
   /** La factura que la nota corrige. `null` en una factura. */
   documento_origen_id: string | null;
   tercero_id: string;
@@ -173,7 +180,7 @@ const IDENTIFICACION_TERCERO = `(SELECT concat_ws(' ', x.tipo_documento,
 // mismo resumen desde su `RETURNING` y tenía su propia copia de la lista.
 export const CAMPOS_DOCUMENTO = `id, tipo, documento_origen_id,
                            tercero_id, fecha, vence, descuento_pp_pct, descuento_pp_hasta,
-                           numero_factura_proveedor, estado,
+                           numero_factura_proveedor, estado, clase_documento, transmision, cufe,
                            subtotal, total_iva, total, total_retenciones, neto_a_pagar,
                            monto_pagado, asiento_id, retencion_decision, retencion_motivo,
                            (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
@@ -264,6 +271,123 @@ export class CompraService {
     private readonly tesoreria: TesoreriaApi,
     private readonly retenciones: RetencionesApi,
   ) {}
+
+  /**
+   * Cómo quedaría la compra en el libro, sin guardarla (lienzo «Nueva
+   * compra»: «Así queda en el libro»). Corre la creación de siempre dentro de
+   * un punto de guardado y la deshace: el asiento que se muestra es el mismo
+   * que se va a registrar, no una copia que se pueda separar.
+   */
+  async previo(
+    ctx: CtxEmpresa,
+    dto: CrearCompraDto,
+    tx?: Tx,
+  ): Promise<{
+    numero: string;
+    subtotal: number;
+    iva: number;
+    total: number;
+    retenciones: number;
+    /** Cada retención del motor, con la cuenta a la que va. */
+    detalleRetenciones: Array<{
+      tipo: string | null;
+      nombre: string;
+      tarifa: number | null;
+      base: number;
+      valor: number;
+    }>;
+    neto: number;
+    vence: string | null;
+    asiento: Array<{
+      codigo: string;
+      nombre: string;
+      debito: number;
+      credito: number;
+    }>;
+  }> {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        await t.query('SAVEPOINT compra_previa');
+        try {
+          const compra = await this.crear(
+            ctx,
+            {
+              ...dto,
+              numeroFacturaProveedor: dto.numeroFacturaProveedor || 'PREVIO',
+            },
+            undefined,
+            t,
+          );
+          const asiento = filas<{
+            codigo: string;
+            nombre: string;
+            debito: string;
+            credito: string;
+          }>(
+            await t.query(
+              `SELECT c.codigo, c.nombre, l.debito, l.credito
+               FROM asiento_linea l JOIN empresa_cuenta c ON c.id = l.cuenta_id
+              WHERE l.asiento_id = $1 ORDER BY l.orden`,
+              [compra.asiento_id],
+            ),
+          );
+          const retenciones = filas<{
+            tipo: string | null;
+            nombre: string;
+            tarifa: string | null;
+            base: string;
+            valor: string;
+          }>(
+            await t.query(
+              `SELECT r.tipo, c.nombre, r.tarifa, r.base, r.valor
+               FROM compra_retencion r JOIN empresa_cuenta c ON c.id = r.cuenta_id
+              WHERE r.compra_documento_id = $1 AND NOT coalesce(r.asumida, false)
+              ORDER BY r.valor DESC`,
+              [compra.id],
+            ),
+          );
+          return {
+            numero: compra.numero_factura_proveedor,
+            subtotal: Number(compra.subtotal),
+            iva: Number(compra.total_iva),
+            total: Number(compra.total),
+            detalleRetenciones: retenciones.map((x) => ({
+              tipo: x.tipo,
+              nombre: x.nombre,
+              tarifa: x.tarifa === null ? null : Number(x.tarifa),
+              base: Number(x.base),
+              valor: Number(x.valor),
+            })),
+            retenciones: Number(compra.total_retenciones),
+            neto: Number(compra.neto_a_pagar),
+            vence: compra.vence,
+            asiento: asiento.map((l) => ({
+              codigo: l.codigo,
+              nombre: l.nombre,
+              debito: Number(l.debito),
+              credito: Number(l.credito),
+            })),
+          };
+        } finally {
+          await t.query('ROLLBACK TO SAVEPOINT compra_previa');
+        }
+      },
+      tx,
+    );
+  }
+
+  /** La numeración del documento soporte: el siguiente número y cuántos quedan. */
+  async numeracionSoporte(
+    ctx: CtxEmpresa,
+    tx?: Tx,
+  ): Promise<Numeracion | null> {
+    return this.tx.enContexto(
+      ctx,
+      (t) => numeracionDe(t, 'DOCUMENTO_SOPORTE'),
+      tx,
+    );
+  }
 
   async crear(
     ctx: CtxEmpresa,
@@ -480,6 +604,20 @@ export class CompraService {
           valor: formaPago.valores[i],
         }));
 
+        // El documento soporte lo numera la empresa con su resolución, en la
+        // misma transacción: si la compra falla, el número vuelve atrás.
+        const soporte = dto.claseDocumento === 'DOCUMENTO_SOPORTE';
+        const numeroDocumento = soporte
+          ? (
+              await this.nucleo.tomarConsecutivo(
+                ctx,
+                'DOCUMENTO_SOPORTE',
+                t,
+                dto.fecha,
+              )
+            ).numero
+          : dto.numeroFacturaProveedor;
+
         const comprobante = await this.contabilidad.tipoComprobantePorCodigo(
           ctx,
           CODIGO_COMPROBANTE_COMPRA,
@@ -562,13 +700,20 @@ export class CompraService {
           {
             comprobanteTipoId: comprobante.id,
             fecha: dto.fecha,
-            glosa: `Factura de compra ${dto.numeroFacturaProveedor}`,
+            glosa: soporte
+              ? `Documento soporte ${numeroDocumento}`
+              : `Factura de compra ${numeroDocumento}`,
             lineas: lineasAsiento,
           },
           { origenTipo: 'COMPRA', origenId: documentoId },
           t,
         );
 
+        // A crédito sin vence: el plazo del proveedor (PC25).
+        const plazo =
+          dto.formaPago === 'CREDITO' && !dto.vence
+            ? await diasDePlazo(t, dto.terceroId, 'proveedor')
+            : null;
         const documento = fila<CompraDocumentoResumen>(
           await t.query(
             `INSERT INTO compra_documento
@@ -576,15 +721,15 @@ export class CompraService {
               subtotal, total_iva, total, total_retenciones, neto_a_pagar,
               asiento_id, creado_por, documento_leido_id,
               retencion_decision, retencion_motivo, retencion_impresa, vence,
-              descuento_pp_pct, descuento_pp_hasta)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+              descuento_pp_pct, descuento_pp_hasta, clase_documento, transmision, cufe)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
            RETURNING ${CAMPOS_DOCUMENTO}`,
             [
               documentoId,
               ctx.empresaId,
               dto.terceroId,
               dto.fecha,
-              dto.numeroFacturaProveedor,
+              numeroDocumento,
               totales.subtotal,
               totales.totalIva,
               totales.total,
@@ -596,11 +741,16 @@ export class CompraService {
               retencionDecision,
               retencionMotivo,
               impresa,
-              dto.formaPago === 'CREDITO' ? (dto.vence ?? null) : null,
+              dto.formaPago === 'CREDITO'
+                ? (dto.vence ?? venceDesdePlazo(dto.fecha, plazo))
+                : null,
               dto.descuentoProntoPagoPct ?? null,
               dto.descuentoProntoPagoPct === undefined
                 ? null
                 : (dto.descuentoProntoPagoHasta ?? null),
+              soporte ? 'DOCUMENTO_SOPORTE' : 'FACTURA_ELECTRONICA',
+              soporte ? 'SIN_TRANSMITIR' : null,
+              soporte ? null : (dto.cufe?.trim() ?? null),
             ],
           ),
         );

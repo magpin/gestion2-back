@@ -1,13 +1,16 @@
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
   IsEmail,
   IsIn,
+  IsInt,
   IsOptional,
   IsString,
   Length,
   Matches,
+  Max,
+  Min,
 } from 'class-validator';
 
 import { PaginacionDto } from '../../../common/dto/paginacion.dto';
@@ -86,6 +89,22 @@ export class CrearTerceroDto {
   @IsOptional()
   @IsBoolean()
   esProveedor?: boolean;
+
+  /** Plazo habitual como cliente, en días (PC25): la factura a crédito lo propone. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  diasPlazoCliente?: number;
+
+  /** Plazo habitual como proveedor, en días (PC25): la compra a crédito lo propone. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  diasPlazoProveedor?: number;
 
   /** Trabaja para la empresa: responde por una caja. */
   @IsOptional()
@@ -166,6 +185,22 @@ export class EditarTerceroDto {
   @IsOptional()
   @IsBoolean()
   esProveedor?: boolean;
+
+  /** Plazo habitual como cliente, en días (PC25): la factura a crédito lo propone. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  diasPlazoCliente?: number;
+
+  /** Plazo habitual como proveedor, en días (PC25): la compra a crédito lo propone. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(365)
+  diasPlazoProveedor?: number;
 
   /** Trabaja para la empresa: responde por una caja. */
   @IsOptional()

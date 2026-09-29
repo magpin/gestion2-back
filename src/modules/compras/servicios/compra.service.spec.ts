@@ -189,6 +189,8 @@ function retencionesFalso(
 function txFalso() {
   const tx = {
     query: jest.fn((sql: string, params?: unknown[]) => {
+      // El plazo del tercero (PC25): sin plazo, el vence queda como venga.
+      if (sql.includes('dias_plazo_')) return Promise.resolve([]);
       if (sql.includes('INSERT INTO compra_documento\n')) {
         const [
           id,

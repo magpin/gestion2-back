@@ -20,6 +20,9 @@ const ctx: CtxEmpresa = {
 const compraVigente: CompraDocumentoDetalle = {
   id: 'c-1',
   tipo: 'FACTURA',
+  clase_documento: 'FACTURA_ELECTRONICA',
+  transmision: null,
+  cufe: null,
   documento_origen_id: null,
   tercero_id: 'prov-1',
   tercero_nombre: 'Proveedor uno',

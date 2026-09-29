@@ -16,6 +16,13 @@ import {
   type TipoFlujo,
 } from '../servicios/conceptos.reglas';
 
+export const IVAS_COMPRA = [
+  'DESCONTABLE',
+  'NO_DESCONTABLE',
+  'SIN_IVA',
+] as const;
+export type IvaCompra = (typeof IVAS_COMPRA)[number];
+
 export class ListarConceptosDto {
   @IsOptional()
   @IsIn(TIPOS_CONCEPTO)
@@ -52,6 +59,27 @@ export class CrearConceptoDto {
   @IsString({ each: true })
   @Length(2, 40, { each: true })
   pistas?: string[];
+
+  /** Si el IVA de lo comprado con este concepto se descuenta (PC23: sugerencia). */
+  @IsOptional()
+  @IsIn([...IVAS_COMPRA, null])
+  ivaCompra?: IvaCompra | null;
+
+  /** El concepto de retención de renta que se propone (código de la ley). */
+  @IsOptional()
+  @IsString()
+  @Length(2, 40)
+  retencionSugerida?: string | null;
+
+  /** Si se le practica ReteICA; la tarifa la pone el motor por municipio (E20). */
+  @IsOptional()
+  @IsBoolean()
+  aplicaReteica?: boolean;
+
+  /** Si se puede restar en la renta, con factura o documento soporte. */
+  @IsOptional()
+  @IsBoolean()
+  deducible?: boolean;
 }
 
 /**
@@ -87,4 +115,25 @@ export class EditarConceptoDto {
   @IsString({ each: true })
   @Length(2, 40, { each: true })
   pistas?: string[];
+
+  /** Si el IVA de lo comprado con este concepto se descuenta (PC23: sugerencia). */
+  @IsOptional()
+  @IsIn([...IVAS_COMPRA, null])
+  ivaCompra?: IvaCompra | null;
+
+  /** El concepto de retención de renta que se propone (código de la ley). */
+  @IsOptional()
+  @IsString()
+  @Length(2, 40)
+  retencionSugerida?: string | null;
+
+  /** Si se le practica ReteICA; la tarifa la pone el motor por municipio (E20). */
+  @IsOptional()
+  @IsBoolean()
+  aplicaReteica?: boolean;
+
+  /** Si se puede restar en la renta, con factura o documento soporte. */
+  @IsOptional()
+  @IsBoolean()
+  deducible?: boolean;
 }

@@ -220,10 +220,28 @@ export class CrearCompraDto {
   @EsFechaCalendario()
   fecha!: string;
 
-  /** El número que el proveedor le puso a SU factura — dato externo. */
+  /**
+   * El número que el proveedor le puso a SU factura — dato externo. En el
+   * documento soporte no se manda: lo pone la resolución de la empresa.
+   */
+  @ValidateIf((o: CrearCompraDto) => o.claseDocumento !== 'DOCUMENTO_SOPORTE')
   @IsString()
   @Length(1, 60)
   numeroFacturaProveedor!: string;
+
+  /**
+   * Factura electrónica del proveedor, o documento soporte que emite la
+   * empresa cuando el vendedor no está obligado a facturar (Fase 7).
+   */
+  @IsOptional()
+  @IsIn(['FACTURA_ELECTRONICA', 'DOCUMENTO_SOPORTE'])
+  claseDocumento?: 'FACTURA_ELECTRONICA' | 'DOCUMENTO_SOPORTE';
+
+  /** El CUFE de la factura electrónica, como dato: no se valida en la DIAN (PC2). */
+  @IsOptional()
+  @IsString()
+  @Length(20, 200)
+  cufe?: string;
 
   @ValidateNested({ each: true })
   @Type(() => LineaCompraDto)

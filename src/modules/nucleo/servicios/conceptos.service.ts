@@ -11,6 +11,7 @@ import { TxService, type Tx } from '../../../common/db/tx.service';
 import type {
   CrearConceptoDto,
   EditarConceptoDto,
+  IvaCompra,
   ListarConceptosDto,
 } from '../dto/conceptos.dto';
 import {
@@ -43,6 +44,13 @@ export interface Concepto {
   activo: boolean;
   /** Líneas de asiento que lo llevan. */
   usos: number;
+  /** Las del mes en curso (lienzo «Conceptos»: usos del mes). */
+  usosMes: number;
+  /** Sugerencias para el motor (PC23): el motor sigue decidiendo por renglón. */
+  ivaCompra: IvaCompra | null;
+  retencionSugerida: string | null;
+  aplicaReteica: boolean;
+  deducible: boolean;
 }
 
 /** Lo que dejó `preparar`: para avisar qué se hizo y qué falta decidir. */
@@ -55,9 +63,13 @@ export interface ResultadoPreparar {
 
 const SELECT = `
   SELECT c.id, c.codigo, c.nombre, c.grupo, c.tipo, c.tipo_flujo, c.automatico,
-         c.es_sistema, c.pistas, c.activo,
+         c.es_sistema, c.pistas, c.activo, c.iva_compra, c.retencion_sugerida,
+         c.aplica_reteica, c.deducible,
          ec.id AS cuenta_id, ec.codigo AS cuenta_codigo, ec.nombre AS cuenta_nombre,
-         (SELECT count(*)::int FROM asiento_linea al WHERE al.concepto_id = c.id) AS usos
+         (SELECT count(*)::int FROM asiento_linea al WHERE al.concepto_id = c.id) AS usos,
+         (SELECT count(*)::int FROM asiento_linea al JOIN asiento a ON a.id = al.asiento_id
+           WHERE al.concepto_id = c.id AND a.estado = 'REGISTRADO'
+             AND a.fecha >= date_trunc('month', (now() AT TIME ZONE 'America/Bogota')::date)) AS usos_mes
     FROM concepto_movimiento c
     LEFT JOIN empresa_cuenta ec ON ec.id = c.cuenta_id`;
 
@@ -95,11 +107,18 @@ export class ConceptosService {
         // Si la empresa todavía no tiene el catálogo, se siembra acá, como en
         // `porCodigo`: quien registra una compra con gasto no tiene por qué
         // haber abierto Conceptos antes (y COMPRAS no puede).
-        const ninguno =
-          fila<{ n: number }>(
-            await t.query('SELECT count(*)::int AS n FROM concepto_movimiento'),
-          )?.n === 0;
-        if (ninguno) await this.preparar(ctx, t);
+        // También cuando falta alguno de los del sistema: un concepto nuevo
+        // del catálogo llega así a las empresas que ya tenían el suyo.
+        const tiene = new Set(
+          filas<{ codigo: string }>(
+            await t.query(
+              'SELECT codigo FROM concepto_movimiento WHERE es_sistema',
+            ),
+          ).map((c) => c.codigo),
+        );
+        if (CONCEPTOS_INICIALES.some((c) => !tiene.has(c.codigo))) {
+          await this.preparar(ctx, t);
+        }
         const f = filas<Record<string, unknown>>(
           await t.query(
             `${SELECT} ${donde} ORDER BY c.tipo, c.grupo, c.orden, c.nombre`,
@@ -270,6 +289,7 @@ export class ConceptosService {
       ctx,
       async (t) => {
         await this.validarCuenta(ctx, dto.tipo, dto.cuentaId, t);
+        await this.validarRetencion(dto.retencionSugerida ?? null, t);
         const codigos = new Set(
           filas<{ codigo: string }>(
             await t.query(
@@ -280,8 +300,9 @@ export class ConceptosService {
         const nuevo = fila<{ id: string }>(
           await t.query(
             `INSERT INTO concepto_movimiento
-             (empresa_id, codigo, nombre, grupo, tipo, tipo_flujo, cuenta_id, pistas)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             (empresa_id, codigo, nombre, grupo, tipo, tipo_flujo, cuenta_id, pistas,
+              iva_compra, retencion_sugerida, aplica_reteica, deducible)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
            ON CONFLICT DO NOTHING
            RETURNING id`,
             [
@@ -293,6 +314,10 @@ export class ConceptosService {
               dto.tipoFlujo ?? 'OPERACION',
               dto.cuentaId,
               dto.pistas ?? [],
+              dto.ivaCompra ?? null,
+              dto.retencionSugerida ?? null,
+              dto.aplicaReteica ?? false,
+              dto.deducible ?? true,
             ],
           ),
         );
@@ -329,6 +354,14 @@ export class ConceptosService {
       if (dto.tipoFlujo !== undefined) poner('tipo_flujo', dto.tipoFlujo);
       if (dto.activo !== undefined) poner('activo', dto.activo);
       if (dto.pistas !== undefined) poner('pistas', dto.pistas);
+      if (dto.ivaCompra !== undefined) poner('iva_compra', dto.ivaCompra);
+      if (dto.retencionSugerida !== undefined) {
+        await this.validarRetencion(dto.retencionSugerida, t);
+        poner('retencion_sugerida', dto.retencionSugerida);
+      }
+      if (dto.aplicaReteica !== undefined)
+        poner('aplica_reteica', dto.aplicaReteica);
+      if (dto.deducible !== undefined) poner('deducible', dto.deducible);
       if (cambios.length === 0) return actual;
 
       try {
@@ -346,6 +379,23 @@ export class ConceptosService {
       }
       return this.obtener(ctx, id, t);
     });
+  }
+
+  /** La retención sugerida es un concepto de renta de la ley cargada. */
+  private async validarRetencion(codigo: string | null, t: Tx): Promise<void> {
+    if (codigo === null) return;
+    const ok = fila<{ n: number }>(
+      await t.query(
+        `SELECT count(*)::int AS n FROM retencion_concepto_nacional
+          WHERE codigo = $1 AND impuesto = 'RENTA'`,
+        [codigo],
+      ),
+    );
+    if ((ok?.n ?? 0) === 0) {
+      throw new BadRequestException(
+        `«${codigo}» no es un concepto de retención en la fuente de la ley cargada.`,
+      );
+    }
   }
 
   /** La cuenta existe, está activa, recibe asientos y es de la clase del tipo. */
@@ -401,5 +451,10 @@ function aConcepto(f: Record<string, unknown>): Concepto {
     pistas: (f.pistas as string[] | null) ?? [],
     activo: f.activo === true,
     usos: Number(f.usos ?? 0),
+    usosMes: Number(f.usos_mes ?? 0),
+    ivaCompra: (f.iva_compra as IvaCompra | null) ?? null,
+    retencionSugerida: (f.retencion_sugerida as string | null) ?? null,
+    aplicaReteica: f.aplica_reteica === true,
+    deducible: f.deducible !== false,
   };
 }

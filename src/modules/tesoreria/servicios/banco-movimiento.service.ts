@@ -122,35 +122,42 @@ export class BancoMovimientoService {
     ctx: CtxEmpresa,
     cuentaBancariaId: string,
     dto: CargaInicialBancoDto,
+    /** Desde el arranque (`SaldosInicialesService`): el id y el asiento de apertura ya están armados. */
+    apertura?: { id: string; asientoId: string },
+    tx?: Tx,
   ): Promise<MovimientoBancoResumen> {
-    return this.tx.enContexto(ctx, async (t) => {
-      await this.exigirCuentaBloqueada(cuentaBancariaId, t);
-      const ultimo = await this.ultimoMovimiento(cuentaBancariaId, t);
-      if (ultimo !== null) {
-        throw new BadRequestException(
-          'Esta cuenta bancaria ya tiene movimientos; el saldo inicial ya se cargó.',
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        await this.exigirCuentaBloqueada(cuentaBancariaId, t);
+        const ultimo = await this.ultimoMovimiento(cuentaBancariaId, t);
+        if (ultimo !== null) {
+          throw new BadRequestException(
+            'Esta cuenta bancaria ya tiene movimientos; el saldo inicial ya se cargó.',
+          );
+        }
+
+        const saldo = calcularIngresoBanco(0, dto.valor);
+
+        return this.insertarMovimiento(
+          t,
+          ctx,
+          apertura?.id ?? randomUUID(),
+          cuentaBancariaId,
+          'SALDO_INICIAL',
+          dto.fecha,
+          dto.valor,
+          dto.concepto,
+          null,
+          null,
+          null,
+          saldo,
+          apertura?.asientoId ?? null,
+          null,
         );
-      }
-
-      const saldo = calcularIngresoBanco(0, dto.valor);
-
-      return this.insertarMovimiento(
-        t,
-        ctx,
-        randomUUID(),
-        cuentaBancariaId,
-        'SALDO_INICIAL',
-        dto.fecha,
-        dto.valor,
-        dto.concepto,
-        null,
-        null,
-        null,
-        saldo,
-        null,
-        null,
-      );
-    });
+      },
+      tx,
+    );
   }
 
   /**

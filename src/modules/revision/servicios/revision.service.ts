@@ -254,7 +254,7 @@ export class RevisionService {
         inicial AS (
           SELECT caja_id, sum(valor) AS valor
             FROM caja_movimiento
-           WHERE tipo = 'SALDO_INICIAL'
+           WHERE tipo = 'SALDO_INICIAL' AND asiento_id IS NULL
            GROUP BY caja_id
         ),
         contable AS (${SALDO_CONTABLE})
@@ -285,7 +285,7 @@ export class RevisionService {
         inicial AS (
           SELECT cuenta_bancaria_id, sum(valor) AS valor
             FROM banco_movimiento
-           WHERE tipo = 'SALDO_INICIAL'
+           WHERE tipo = 'SALDO_INICIAL' AND asiento_id IS NULL
            GROUP BY cuenta_bancaria_id
         ),
         contable AS (${SALDO_CONTABLE})

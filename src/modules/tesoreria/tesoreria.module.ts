@@ -26,7 +26,9 @@ import { MovimientosConceptoController } from './controladores/movimientos-conce
 import { MovimientoConceptoService } from './servicios/movimiento-concepto.service';
 import { TrasladosController } from './controladores/traslados.controller';
 import { CajaBancosController } from './controladores/caja-bancos.controller';
+import { SaldosInicialesController } from './controladores/saldos-iniciales.controller';
 import { CajaBancosService } from './servicios/caja-bancos.service';
+import { SaldosInicialesService } from './servicios/saldos-iniciales.service';
 import { TrasladoService } from './servicios/traslado.service';
 
 /**
@@ -64,6 +66,7 @@ import { TrasladoService } from './servicios/traslado.service';
     MovimientosConceptoController,
     TrasladosController,
     CajaBancosController,
+    SaldosInicialesController,
   ],
   providers: [
     CajaService,
@@ -78,6 +81,7 @@ import { TrasladoService } from './servicios/traslado.service';
     MovimientoConceptoService,
     TrasladoService,
     CajaBancosService,
+    SaldosInicialesService,
     TesoreriaApi,
   ],
   exports: [TesoreriaApi],

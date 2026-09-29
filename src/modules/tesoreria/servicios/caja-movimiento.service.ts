@@ -79,34 +79,41 @@ export class CajaMovimientoService {
     ctx: CtxEmpresa,
     cajaId: string,
     dto: CargaInicialCajaDto,
+    /** Desde el arranque (`SaldosInicialesService`): el id y el asiento de apertura ya están armados. */
+    apertura?: { id: string; asientoId: string },
+    tx?: Tx,
   ): Promise<MovimientoCajaResumen> {
-    return this.tx.enContexto(ctx, async (t) => {
-      await this.exigirCajaBloqueada(cajaId, t);
-      const ultimo = await this.ultimoMovimiento(cajaId, t);
-      if (ultimo !== null) {
-        throw new BadRequestException(
-          'Esta caja ya tiene movimientos; el saldo inicial ya se cargó.',
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        await this.exigirCajaBloqueada(cajaId, t);
+        const ultimo = await this.ultimoMovimiento(cajaId, t);
+        if (ultimo !== null) {
+          throw new BadRequestException(
+            'Esta caja ya tiene movimientos; el saldo inicial ya se cargó.',
+          );
+        }
+
+        const saldo = calcularIngreso(0, dto.valor);
+
+        return this.insertarMovimiento(
+          t,
+          ctx,
+          apertura?.id ?? randomUUID(),
+          cajaId,
+          'SALDO_INICIAL',
+          dto.fecha,
+          dto.valor,
+          dto.concepto,
+          null,
+          null,
+          null,
+          saldo,
+          apertura?.asientoId ?? null,
         );
-      }
-
-      const saldo = calcularIngreso(0, dto.valor);
-
-      return this.insertarMovimiento(
-        t,
-        ctx,
-        randomUUID(),
-        cajaId,
-        'SALDO_INICIAL',
-        dto.fecha,
-        dto.valor,
-        dto.concepto,
-        null,
-        null,
-        null,
-        saldo,
-        null,
-      );
-    });
+      },
+      tx,
+    );
   }
 
   /**

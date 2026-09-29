@@ -1,5 +1,8 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsIn,
   IsNumber,
   IsOptional,
@@ -8,9 +11,35 @@ import {
   Length,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 
 import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
+
+/** Una línea de un movimiento con varios conceptos (PC14): la cuota de un préstamo, capital e intereses. */
+export class LineaConceptoDto {
+  @IsUUID()
+  conceptoId!: string;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  valor!: number;
+}
+
+/**
+ * Lo que nos retuvo quien nos pagó (PC17): el banco sobre los intereses, un
+ * cliente sobre un ingreso. Solo en una entrada; va a 135515, 135517 o 135518.
+ */
+export class RetencionSufridaDto {
+  @IsIn(['RENTA', 'IVA', 'ICA'])
+  tipo!: 'RENTA' | 'IVA' | 'ICA';
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  valor!: number;
+}
 
 /**
  * Un ingreso o un egreso sin factura, a mano: se elige un concepto, nunca
@@ -35,8 +64,10 @@ export class CrearMovimientoConceptoDto {
   @EsFechaCalendario()
   fecha!: string;
 
+  /** Con una sola línea. Con varias, van en `lineas`. */
+  @ValidateIf((o: CrearMovimientoConceptoDto) => o.lineas === undefined)
   @IsUUID()
-  conceptoId!: string;
+  conceptoId?: string;
 
   @IsOptional()
   @IsUUID()
@@ -46,9 +77,23 @@ export class CrearMovimientoConceptoDto {
   @Length(3, 300)
   detalle!: string;
 
+  @ValidateIf((o: CrearMovimientoConceptoDto) => o.lineas === undefined)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
-  valor!: number;
+  valor?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => LineaConceptoDto)
+  lineas?: LineaConceptoDto[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => RetencionSufridaDto)
+  retencion?: RetencionSufridaDto;
 }
 
 export class AnularMovimientoConceptoDto {

@@ -141,8 +141,13 @@ export class CrearPagoProgramadoDto {
   @EsFechaCalendario()
   fecha!: string;
 
-  @IsIn(['UNA_VEZ', 'MENSUAL'])
-  recurrencia!: 'UNA_VEZ' | 'MENSUAL';
+  @IsIn(['UNA_VEZ', 'QUINCENAL', 'MENSUAL'])
+  recurrencia!: 'UNA_VEZ' | 'QUINCENAL' | 'MENSUAL';
+
+  /** De qué banco va a salir: para proyectar cómo queda cada cuenta. */
+  @IsOptional()
+  @IsUUID()
+  cuentaBancariaId?: string;
 }
 
 export class MarcarPagadoDto {

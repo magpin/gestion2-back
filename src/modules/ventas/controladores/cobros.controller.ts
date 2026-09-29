@@ -20,6 +20,9 @@ import {
   CrearReciboCajaDto,
   ListarRecibosCajaDto,
 } from '../dto/recibo-caja.dto';
+import { DevolverAnticipoDto } from '../../../common/dto/devolucion.dto';
+import { ResumenMesDto } from '../../../common/dto/mes.dto';
+import { AnticiposClienteService } from '../servicios/anticipos-cliente.service';
 import { CruceCarteraService } from '../servicios/cruce-cartera.service';
 import { ReciboCajaService } from '../servicios/recibo-caja.service';
 
@@ -36,7 +39,42 @@ export class CobrosController {
   constructor(
     private readonly recibos: ReciboCajaService,
     private readonly cruces: CruceCarteraService,
+    private readonly anticipos: AnticiposClienteService,
   ) {}
+
+  /** Los anticipos de todos los clientes que todavía tienen algo por aplicar (PC19). */
+  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'VENTAS', 'CONSULTA')
+  @Get('cartera/anticipos')
+  anticiposPendientes(@ActorEmpresa() ctx: CtxEmpresa) {
+    return this.anticipos.pendientes(ctx);
+  }
+
+  /** Lo que les quedó a favor a los clientes por notas crédito sobre facturas pagadas (E1). */
+  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'VENTAS', 'CONSULTA')
+  @Get('cartera/saldos-a-favor')
+  saldosAFavor(@ActorEmpresa() ctx: CtxEmpresa) {
+    return this.anticipos.saldosAFavor(ctx);
+  }
+
+  @Roles('CAJA', 'DIRECTOR')
+  @Post('cartera/anticipos/:id/devolver')
+  devolverAnticipo(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DevolverAnticipoDto,
+  ) {
+    return this.anticipos.devolver(ctx, id, dto);
+  }
+
+  @Roles('CAJA', 'DIRECTOR')
+  @Post('cartera/anticipos/devoluciones/:id/anular')
+  anularDevolucion(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AnularReciboCajaDto,
+  ) {
+    return this.anticipos.anularDevolucion(ctx, id, dto.motivo);
+  }
 
   @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'VENTAS', 'CONSULTA')
   @Get('cartera/por-cobrar')
@@ -57,6 +95,13 @@ export class CobrosController {
   @Get('recibos-caja')
   listar(@ActorEmpresa() ctx: CtxEmpresa, @Query() q: ListarRecibosCajaDto) {
     return this.recibos.listar(ctx, q);
+  }
+
+  /** Lo cobrado en el mes por cada caja y cuenta. Antes de `:id`, para que no la confunda. */
+  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'VENTAS', 'CONSULTA')
+  @Get('recibos-caja/resumen')
+  resumen(@ActorEmpresa() ctx: CtxEmpresa, @Query() q: ResumenMesDto) {
+    return this.recibos.resumen(ctx, q.mes);
   }
 
   @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'VENTAS', 'CONSULTA')

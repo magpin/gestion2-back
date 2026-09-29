@@ -4,6 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import {
+  armarResumen,
+  sqlNombreMedio,
+  type ResumenDelMes,
+} from '../../../common/resumen-medio';
 import type { CtxEmpresa } from '../../../common/ctx';
 import { fila, filas } from '../../../common/db/filas';
 import { TxService, type Tx } from '../../../common/db/tx.service';
@@ -70,6 +75,8 @@ export interface ReciboCaja {
   terceroId: string;
   terceroNombre: string;
   medio: 'CAJA' | 'BANCO';
+  cajaId: string | null;
+  cuentaBancariaId: string | null;
   /** El nombre de la caja o del banco. */
   destino: string;
   /** Lo que pagó el cliente en plata: abonos más anticipo. */
@@ -271,18 +278,51 @@ export class ReciboCajaService {
   ): Promise<ReciboCaja[]> {
     return this.tx.enContexto(ctx, async (t) => {
       const params: unknown[] = [];
-      let donde = '';
+      const condiciones: string[] = [];
       if (q.terceroId !== undefined) {
         params.push(q.terceroId);
-        donde = 'WHERE r.tercero_id = $1';
+        condiciones.push(`r.tercero_id = $${params.length}`);
       }
+      if (q.mes !== undefined) {
+        params.push(`${q.mes}-01`);
+        condiciones.push(
+          `r.fecha >= $${params.length}::date AND r.fecha < $${params.length}::date + interval '1 month'`,
+        );
+      }
+      const donde =
+        condiciones.length === 0 ? '' : `WHERE ${condiciones.join(' AND ')}`;
+      // Un mes entero se trae completo; sin mes, los últimos 200.
+      const limite = q.mes === undefined ? 'LIMIT 200' : '';
       const f = filas<Record<string, unknown>>(
         await t.query(
-          `SELECT ${CAMPOS_RECIBO} FROM recibo_caja r ${donde} ORDER BY r.numero DESC LIMIT 200`,
+          `SELECT ${CAMPOS_RECIBO} FROM recibo_caja r ${donde} ORDER BY r.numero DESC ${limite}`,
           params,
         ),
       );
       return f.map(aRecibo);
+    });
+  }
+
+  /**
+   * Lo cobrado en el mes por cada caja y cuenta (la cabecera de Recibos): lo
+   * que pagaron los clientes, sin los anulados.
+   */
+  async resumen(ctx: CtxEmpresa, mes: string): Promise<ResumenDelMes> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const f = filas<Parameters<typeof armarResumen>[1][number]>(
+        await t.query(
+          `SELECT r.medio, COALESCE(r.caja_id, r.cuenta_bancaria_id) AS id,
+                  ${sqlNombreMedio('r.caja_id', 'r.cuenta_bancaria_id')},
+                  sum(r.total) FILTER (WHERE r.estado = 'VIGENTE') AS total,
+                  count(*) FILTER (WHERE r.estado = 'VIGENTE') AS cantidad,
+                  count(*) FILTER (WHERE r.estado = 'ANULADO') AS anulados
+             FROM recibo_caja r
+            WHERE r.fecha >= $1::date AND r.fecha < $1::date + interval '1 month'
+            GROUP BY r.medio, r.caja_id, r.cuenta_bancaria_id`,
+          [`${mes}-01`],
+        ),
+      );
+      return armarResumen(mes, f);
     });
   }
 
@@ -599,14 +639,16 @@ export class ReciboCajaService {
         if (recibo.anticipo_movimiento_id !== null) {
           const cruces = fila<{ n: string }>(
             await t.query(
-              `SELECT count(*) AS n FROM cruce_cartera
-                WHERE origen_movimiento_id = $1 AND estado = 'VIGENTE'`,
+              `SELECT (SELECT count(*) FROM cruce_cartera
+                         WHERE origen_movimiento_id = $1 AND estado = 'VIGENTE')
+                    + (SELECT count(*) FROM movimiento_concepto
+                        WHERE devuelve_a = $1 AND estado = 'VIGENTE') AS n`,
               [recibo.anticipo_movimiento_id],
             ),
           );
           if (Number(cruces?.n ?? 0) > 0) {
             throw new BadRequestException(
-              'El anticipo de este recibo ya se aplicó a una factura: anulá primero ese cruce.',
+              'El anticipo de este recibo ya se aplicó a una factura o se devolvió: anulá primero ese cruce o esa devolución.',
             );
           }
           await this.tesoreria.anularPorConcepto(
@@ -765,6 +807,8 @@ function aRecibo(f: Record<string, unknown>): ReciboCaja {
     terceroId: f.tercero_id as string,
     terceroNombre: f.tercero_nombre as string,
     medio: f.medio as 'CAJA' | 'BANCO',
+    cajaId: (f.caja_id as string | null) ?? null,
+    cuentaBancariaId: (f.cuenta_bancaria_id as string | null) ?? null,
     destino: (f.destino as string | null) ?? '',
     total: Number(f.total),
     comision: Number(f.comision ?? 0),

@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Length,
   Min,
   ValidateIf,
@@ -13,6 +14,7 @@ import {
 } from 'class-validator';
 
 import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
+import { MES } from '../../../common/resumen-medio';
 import { MEDIOS_PAGO, type MedioPago } from './venta.dto';
 
 /** Lo que el recibo le abona a una factura. */
@@ -85,6 +87,11 @@ export class ListarRecibosCajaDto {
   @IsOptional()
   @IsUUID()
   terceroId?: string;
+
+  /** «2026-09»: los del mes. Sin mes, los últimos 200. */
+  @IsOptional()
+  @Matches(MES, { message: 'El mes va como 2026-09.' })
+  mes?: string;
 }
 
 /** Aplicar un anticipo o un saldo a favor del cliente a una factura suya. */

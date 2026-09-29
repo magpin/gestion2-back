@@ -616,6 +616,11 @@ body {
   grid-template-columns: 1fr 110px 110px 90px 100px;
 }
 
+/* Recibo de caja y comprobante de egreso: concepto, detalle y valor. */
+.detalle--comprobante .fila {
+  grid-template-columns: 170px 1fr 130px;
+}
+
 /* El cuadre con el libro: documento, motor, libro, diferencia y la razón. */
 .detalle--cuadre .fila {
   grid-template-columns: 110px 96px 96px 96px 1fr;

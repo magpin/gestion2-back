@@ -46,17 +46,18 @@ export class MovimientosConceptoController {
     @ActorEmpresa() ctx: CtxEmpresa,
     @Body() dto: CrearMovimientoConceptoDto,
   ) {
-    return this.movimientos.registrar(ctx, {
+    return this.movimientos.registrarManual(ctx, {
       direccion: dto.direccion,
       medio: dto.medio,
       cajaId: dto.cajaId,
       cuentaBancariaId: dto.cuentaBancariaId,
       fecha: dto.fecha,
-      conceptoId: dto.conceptoId,
       terceroId: dto.terceroId ?? null,
       detalle: dto.detalle,
-      valorConcepto: dto.valor,
-      origen: 'MANUAL',
+      lineas: dto.lineas ?? [
+        { conceptoId: dto.conceptoId!, valor: dto.valor! },
+      ],
+      retencion: dto.retencion ?? null,
     });
   }
 

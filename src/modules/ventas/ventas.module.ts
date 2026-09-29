@@ -17,6 +17,7 @@ import { FaltanteService } from './servicios/faltante.service';
 import { NotaCreditoService } from './servicios/nota-credito.service';
 import { NotaDebitoService } from './servicios/nota-debito.service';
 import { ReciboCajaService } from './servicios/recibo-caja.service';
+import { AnticiposClienteService } from './servicios/anticipos-cliente.service';
 import { CruceCarteraService } from './servicios/cruce-cartera.service';
 import { VentaDocumentoService } from './servicios/venta-documento.service';
 import { VentasApi } from './ventas.api';
@@ -59,6 +60,7 @@ import { VentasApi } from './ventas.api';
     HistoricoService,
     ReciboCajaService,
     CruceCarteraService,
+    AnticiposClienteService,
     VentasApi,
   ],
   exports: [VentasApi],

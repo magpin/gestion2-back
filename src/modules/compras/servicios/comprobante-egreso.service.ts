@@ -577,14 +577,16 @@ export class ComprobanteEgresoService {
         if (c.anticipo_movimiento_id !== null) {
           const cruces = fila<{ n: string }>(
             await t.query(
-              `SELECT count(*) AS n FROM cruce_pago
-                WHERE origen_movimiento_id = $1 AND estado = 'VIGENTE'`,
+              `SELECT (SELECT count(*) FROM cruce_pago
+                         WHERE origen_movimiento_id = $1 AND estado = 'VIGENTE')
+                    + (SELECT count(*) FROM movimiento_concepto
+                        WHERE devuelve_a = $1 AND estado = 'VIGENTE') AS n`,
               [c.anticipo_movimiento_id],
             ),
           );
           if (Number(cruces?.n ?? 0) > 0) {
             throw new BadRequestException(
-              'El anticipo de este comprobante ya se cruzó con una compra: anulá primero ese cruce.',
+              'El anticipo de este comprobante ya se cruzó con una compra o se devolvió: anulá primero ese cruce o esa devolución.',
             );
           }
           // La retención deja de existir para la 350; el movimiento contrario

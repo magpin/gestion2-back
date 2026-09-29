@@ -18,16 +18,35 @@ export interface PagoProgramado {
   conceptoNombre: string | null;
   valor: number;
   fecha: string;
-  recurrencia: 'UNA_VEZ' | 'MENSUAL';
+  recurrencia: Recurrencia;
   estado: 'PENDIENTE' | 'PAGADO' | 'CANCELADO';
+  /** De qué banco va a salir; `null` si no se dijo (o si es en efectivo). */
+  cuentaBancariaId: string | null;
+  cuentaBancaria: string | null;
 }
+
+export type Recurrencia = 'UNA_VEZ' | 'QUINCENAL' | 'MENSUAL';
 
 const CAMPOS = `
   p.id, p.descripcion, p.tercero_id, p.compra_id, p.concepto_id, p.valor, p.fecha,
-  p.recurrencia, p.estado,
+  p.recurrencia, p.estado, p.cuenta_bancaria_id,
+  (SELECT b.banco || ' ···' || right(b.numero_cuenta, 4) FROM cuenta_bancaria b
+    WHERE b.id = p.cuenta_bancaria_id) AS cuenta_bancaria,
   (SELECT COALESCE(t.razon_social, concat_ws(' ', t.primer_nombre, t.primer_apellido))
      FROM tercero t WHERE t.id = p.tercero_id) AS tercero_nombre,
   (SELECT c.nombre FROM concepto_movimiento c WHERE c.id = p.concepto_id) AS concepto_nombre`;
+
+/**
+ * La quincena siguiente (PC18): del 1 al 15 → el último día del mes; del 16
+ * en adelante → el 15 del mes siguiente. Así se paga la nómina.
+ */
+export function quincenaSiguiente(fecha: string): string {
+  const [a, m, d] = fecha.split('-').map(Number);
+  if (d <= 15) {
+    return new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10);
+  }
+  return new Date(Date.UTC(a, m, 15)).toISOString().slice(0, 10);
+}
 
 /** El mismo día del mes siguiente; si no existe (31 → febrero), el último del mes. */
 export function mesSiguiente(fecha: string): string {
@@ -71,7 +90,8 @@ export class PagoProgramadoService {
       conceptoId?: string;
       valor: number;
       fecha: string;
-      recurrencia: 'UNA_VEZ' | 'MENSUAL';
+      recurrencia: Recurrencia;
+      cuentaBancariaId?: string | null;
     },
     tx?: Tx,
   ): Promise<PagoProgramado> {
@@ -82,8 +102,8 @@ export class PagoProgramadoService {
           await t.query(
             `INSERT INTO pago_programado
                (empresa_id, descripcion, tercero_id, compra_id, concepto_id, valor, fecha,
-                recurrencia, creado_por)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+                recurrencia, creado_por, cuenta_bancaria_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
             [
               ctx.empresaId,
               datos.descripcion.trim(),
@@ -94,6 +114,7 @@ export class PagoProgramadoService {
               datos.fecha,
               datos.recurrencia,
               ctx.usuarioId,
+              datos.cuentaBancariaId ?? null,
             ],
           ),
         );
@@ -128,7 +149,7 @@ export class PagoProgramadoService {
             ctx.usuarioId,
           ],
         );
-        if (p.recurrencia === 'MENSUAL') {
+        if (p.recurrencia !== 'UNA_VEZ') {
           await this.crear(
             ctx,
             {
@@ -136,8 +157,12 @@ export class PagoProgramadoService {
               terceroId: p.tercero_id ?? undefined,
               conceptoId: p.concepto_id ?? undefined,
               valor: Number(p.valor),
-              fecha: mesSiguiente(p.fecha),
-              recurrencia: 'MENSUAL',
+              fecha:
+                p.recurrencia === 'QUINCENAL'
+                  ? quincenaSiguiente(p.fecha)
+                  : mesSiguiente(p.fecha),
+              recurrencia: p.recurrencia,
+              cuentaBancariaId: p.cuenta_bancaria_id,
             },
             t,
           );
@@ -170,10 +195,12 @@ export class PagoProgramadoService {
       concepto_id: string | null;
       valor: string;
       fecha: string;
-      recurrencia: 'UNA_VEZ' | 'MENSUAL';
+      recurrencia: Recurrencia;
+      cuenta_bancaria_id: string | null;
     }>(
       await t.query(
-        `SELECT estado, descripcion, tercero_id, concepto_id, valor, fecha, recurrencia
+        `SELECT estado, descripcion, tercero_id, concepto_id, valor, fecha::text AS fecha, recurrencia,
+                cuenta_bancaria_id
            FROM pago_programado WHERE id = $1 FOR UPDATE`,
         [id],
       ),
@@ -219,7 +246,9 @@ function aProgramado(f: Record<string, unknown>): PagoProgramado {
     conceptoNombre: f.concepto_nombre as string | null,
     valor: Number(f.valor),
     fecha: f.fecha as string,
-    recurrencia: f.recurrencia as 'UNA_VEZ' | 'MENSUAL',
+    recurrencia: f.recurrencia as Recurrencia,
     estado: f.estado as 'PENDIENTE' | 'PAGADO' | 'CANCELADO',
+    cuentaBancariaId: (f.cuenta_bancaria_id as string | null) ?? null,
+    cuentaBancaria: (f.cuenta_bancaria as string | null) ?? null,
   };
 }

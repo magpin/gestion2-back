@@ -6,6 +6,8 @@ import { EstadosReporteService } from './servicios/estados-reporte.service';
 
 import { ContabilidadModule } from '../contabilidad/contabilidad.module';
 import { ArmadorController } from './controladores/armador.controller';
+import { DocumentosController } from './controladores/documentos.controller';
+import { DocumentosPdfService } from './servicios/documentos-pdf.service';
 import { ReportesController } from './controladores/reportes.controller';
 import { CarteraReporteService } from './servicios/cartera-reporte.service';
 import { RetencionesReporteService } from './servicios/retenciones-reporte.service';
@@ -44,6 +46,7 @@ import { VentasReporteService } from './servicios/ventas-reporte.service';
     ReportesController,
     ArmadorController,
     EstadosReporteController,
+    DocumentosController,
   ],
   providers: [
     GotenbergService,
@@ -58,10 +61,16 @@ import { VentasReporteService } from './servicios/ventas-reporte.service';
     FechasReporteService,
     ArmadorService,
     EstadosReporteService,
+    DocumentosPdfService,
   ],
   // `ArmadorService` lo usa el asistente para consultar datos (paso 6 de
   // `asistente-conversacion.md`): con los mismos permisos que la pantalla, y
   // re-mirados adentro de `correr`.
-  exports: [VentasReporteService, CarteraReporteService, ArmadorService],
+  exports: [
+    VentasReporteService,
+    CarteraReporteService,
+    ArmadorService,
+    RetencionesReporteService,
+  ],
 })
 export class ReportesModule {}

@@ -94,6 +94,9 @@ export class CruceCarteraService {
             `SELECT m.id, m.fecha, m.detalle, m.valor_concepto AS valor,
                     coalesce((SELECT sum(x.valor) FROM cruce_cartera x
                                WHERE x.origen_movimiento_id = m.id AND x.estado = 'VIGENTE'), 0)
+                    -- Lo devuelto también baja el anticipo (PC19).
+                    + coalesce((SELECT sum(d.valor_concepto) FROM movimiento_concepto d
+                                 WHERE d.devuelve_a = m.id AND d.estado = 'VIGENTE'), 0)
                       AS aplicado
                FROM movimiento_concepto m
                JOIN concepto_movimiento c ON c.id = m.concepto_id

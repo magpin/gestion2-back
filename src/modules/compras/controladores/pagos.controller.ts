@@ -26,6 +26,10 @@ import {
 } from '../dto/pagos.dto';
 import { ComprobanteEgresoService } from '../servicios/comprobante-egreso.service';
 import { CrucePagoService } from '../servicios/cruce-pago.service';
+import { EgresosService } from '../servicios/egresos.service';
+import { DevolverAnticipoDto } from '../../../common/dto/devolucion.dto';
+import { ResumenMesDto } from '../../../common/dto/mes.dto';
+import { AnticiposProveedorService } from '../servicios/anticipos-proveedor.service';
 import { PagoProgramadoService } from '../servicios/pago-programado.service';
 
 const LEEN = ['DIRECTOR', 'CONTADOR', 'CAJA', 'COMPRAS', 'CONSULTA'] as const;
@@ -45,7 +49,43 @@ export class PagosController {
     private readonly comprobantes: ComprobanteEgresoService,
     private readonly cruces: CrucePagoService,
     private readonly programados: PagoProgramadoService,
+    private readonly egresos: EgresosService,
+    private readonly anticipos: AnticiposProveedorService,
   ) {}
+
+  /** Los anticipos a todos los proveedores que todavía no se legalizan (PC19). */
+  @Roles(...LEEN)
+  @Get('pagos/anticipos')
+  anticiposPendientes(@ActorEmpresa() ctx: CtxEmpresa) {
+    return this.anticipos.pendientes(ctx);
+  }
+
+  @Roles('CAJA', 'DIRECTOR')
+  @Post('pagos/anticipos/:id/devolver')
+  devolverAnticipo(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: DevolverAnticipoDto,
+  ) {
+    return this.anticipos.devolver(ctx, id, dto);
+  }
+
+  @Roles('CAJA', 'DIRECTOR')
+  @Post('pagos/anticipos/devoluciones/:id/anular')
+  anularDevolucion(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AnularPagoDto,
+  ) {
+    return this.anticipos.anularDevolucion(ctx, id, dto.motivo);
+  }
+
+  /** Todo lo que salió en el mes (PC12): proveedores, sin factura e impuestos, con el resumen por medio. */
+  @Roles(...LEEN)
+  @Get('pagos/egresos')
+  delMes(@ActorEmpresa() ctx: CtxEmpresa, @Query() q: ResumenMesDto) {
+    return this.egresos.delMes(ctx, q.mes);
+  }
 
   @Roles(...LEEN)
   @Get('pagos/por-pagar')

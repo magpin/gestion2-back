@@ -635,6 +635,8 @@ export const CONCEPTOS_INICIALES: ConceptoInicial[] = [
     nombre: 'Pago de IVA',
     cuenta: '240805',
     nombreCuenta: 'IVA por pagar',
+    // PC15: se paga desde Impuestos, contra su declaración; no a mano.
+    automatico: true,
     pistas: ['iva', 'formulario 300'],
   },
   {
@@ -644,6 +646,8 @@ export const CONCEPTOS_INICIALES: ConceptoInicial[] = [
     nombre: 'Pago de industria y comercio',
     cuenta: '241205',
     nombreCuenta: 'Industria y comercio - vigencia fiscal corriente',
+    // PC15: se paga desde Impuestos, contra su declaración; no a mano.
+    automatico: true,
     pistas: ['ica', 'industria y comercio'],
   },
   {
@@ -686,6 +690,19 @@ export const CONCEPTOS_INICIALES: ConceptoInicial[] = [
     exigeTercero: true,
     tipoFlujo: 'FINANCIACION',
     pistas: ['dividendos', 'utilidades a socios'],
+  },
+  // PC16: en una S.A.S. no hay «retiro de socios» (E11); la plata que un
+  // accionista se lleva sin ser dividendo es un préstamo que se le cobra.
+  {
+    codigo: 'NG-PRESTAMO-SOCIO',
+    tipo: 'NO_GASTO',
+    grupo: 'Socios',
+    nombre: 'Préstamo a socio',
+    cuenta: '132510',
+    nombreCuenta: 'A accionistas',
+    exigeTercero: true,
+    tipoFlujo: 'INVERSION',
+    pistas: ['préstamo a socio', 'préstamo a accionista', 'retiro de socio'],
   },
   // D11a: anticipos en 133005 y 280505.
   {

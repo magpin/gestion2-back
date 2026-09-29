@@ -21,7 +21,11 @@ import {
 } from './movimiento-concepto.reglas';
 
 export type OrigenMovimiento =
-  'MANUAL' | 'RECIBO_CAJA' | 'COMPROBANTE_EGRESO' | 'GMF';
+  | 'MANUAL'
+  | 'RECIBO_CAJA'
+  | 'COMPROBANTE_EGRESO'
+  | 'GMF'
+  | 'DEVOLUCION_ANTICIPO';
 
 /** Lo que se le retiene a quien se le paga, en un anticipo. Lo calcula el motor. */
 export interface RetencionDelMovimiento {
@@ -44,6 +48,13 @@ export interface DatosMovimientoConcepto {
   retenciones?: RetencionDelMovimiento[];
   origen: OrigenMovimiento;
   origenId?: string | null;
+  /** La devolución de un anticipo: a cuál descuenta. */
+  devuelveA?: string | null;
+  /**
+   * Varios conceptos en un solo movimiento (PC14). Si vienen, mandan sobre
+   * `conceptoId` y `valorConcepto`.
+   */
+  lineas?: Array<{ conceptoId: string; valor: number }>;
 }
 
 export interface MovimientoConcepto {
@@ -67,13 +78,43 @@ export interface MovimientoConcepto {
   asientoId: string | null;
   estado: 'VIGENTE' | 'ANULADO';
   motivoAnulacion: string | null;
+  /** Las líneas, cuando son varias (PC14); vacío si es una sola. */
+  lineas: Array<{ conceptoId: string; concepto: string; valor: number }>;
 }
+
+/** Lo que se registra a mano desde Cobros o Pagos (`POST /movimientos-concepto`). */
+export interface DatosManual {
+  direccion: Direccion;
+  medio: 'CAJA' | 'BANCO';
+  cajaId?: string;
+  cuentaBancariaId?: string;
+  fecha: string;
+  terceroId?: string | null;
+  detalle: string;
+  lineas: Array<{ conceptoId: string; valor: number }>;
+  /** Lo que nos retuvo quien nos pagó (PC17): solo en una entrada. */
+  retencion?: { tipo: 'RENTA' | 'IVA' | 'ICA'; valor: number } | null;
+}
+
+/** Dónde queda la retención que nos practican: anticipo de impuestos. */
+const CUENTA_SUFRIDA = {
+  RENTA: { codigo: '135515', nombre: 'Retención en la fuente' },
+  IVA: { codigo: '135517', nombre: 'Impuesto a las ventas retenido' },
+  ICA: {
+    codigo: '135518',
+    nombre: 'Impuesto de industria y comercio retenido',
+  },
+} as const;
 
 const CAMPOS = `
   m.id, m.direccion, m.medio, m.caja_id, m.cuenta_bancaria_id, m.fecha, m.concepto_id,
   m.tercero_id, m.valor_concepto, m.valor_movido, m.detalle, m.origen, m.origen_id,
   m.asiento_id, m.estado, m.motivo_anulacion, m.caja_movimiento_id, m.banco_movimiento_id,
   c.codigo AS concepto_codigo, c.nombre AS concepto_nombre,
+  (SELECT coalesce(json_agg(json_build_object('conceptoId', l.concepto_id, 'concepto', k.nombre,
+                                              'valor', l.valor) ORDER BY l.orden), '[]'::json)
+     FROM movimiento_concepto_linea l JOIN concepto_movimiento k ON k.id = l.concepto_id
+    WHERE l.movimiento_id = m.id) AS lineas,
   (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.primer_apellido))
      FROM tercero x WHERE x.id = m.tercero_id) AS tercero_nombre,
   COALESCE((SELECT k.nombre FROM caja k WHERE k.id = m.caja_id),
@@ -106,53 +147,76 @@ export class MovimientoConceptoService {
     return this.tx.enContexto(
       ctx,
       async (t) => {
-        const concepto = await this.nucleo.concepto(ctx, datos.conceptoId, t);
-        if (!concepto.activo) {
-          throw new BadRequestException(
-            `El concepto «${concepto.nombre}» está inactivo.`,
-          );
-        }
-        if (concepto.cuenta === null) {
-          throw new BadRequestException(
-            `El concepto «${concepto.nombre}» no tiene cuenta: elegila en Contabilidad → Conceptos.`,
-          );
-        }
-        const direccion = problemaDeDireccion(concepto.tipo, datos.direccion);
-        if (direccion !== null) throw new BadRequestException(direccion);
-        if (datos.origen === 'MANUAL') {
-          if (concepto.automatico) {
+        // Una línea o varias (PC14): cada concepto se valida igual.
+        const pedidas =
+          datos.lineas !== undefined && datos.lineas.length > 0
+            ? datos.lineas
+            : [{ conceptoId: datos.conceptoId, valor: datos.valorConcepto }];
+        const lineas: Array<{
+          concepto: Awaited<ReturnType<NucleoApi['concepto']>>;
+          cuentaId: string;
+          valor: number;
+        }> = [];
+        for (const l of pedidas) {
+          const concepto = await this.nucleo.concepto(ctx, l.conceptoId, t);
+          if (!concepto.activo) {
             throw new BadRequestException(
-              `«${concepto.nombre}» lo usa el sistema por su cuenta: no se registra a mano.`,
+              `El concepto «${concepto.nombre}» está inactivo.`,
             );
           }
-          if (
-            datos.direccion === 'SALIDA' &&
-            !admiteSinFactura(concepto.tipo, concepto.cuenta.codigo)
-          ) {
+          if (concepto.cuenta === null) {
             throw new BadRequestException(
-              `«${concepto.nombre}» se paga con factura o documento soporte, y lleva retención: registralo en Compras.`,
+              `El concepto «${concepto.nombre}» no tiene cuenta: elegila en Contabilidad → Conceptos.`,
             );
           }
+          const direccion = problemaDeDireccion(concepto.tipo, datos.direccion);
+          if (direccion !== null) throw new BadRequestException(direccion);
+          if (datos.origen === 'MANUAL') {
+            if (concepto.automatico) {
+              throw new BadRequestException(
+                `«${concepto.nombre}» lo usa el sistema por su cuenta: no se registra a mano.`,
+              );
+            }
+            if (
+              datos.direccion === 'SALIDA' &&
+              !admiteSinFactura(concepto.tipo, concepto.cuenta.codigo)
+            ) {
+              throw new BadRequestException(
+                `«${concepto.nombre}» se paga con factura o documento soporte, y lleva retención: registralo en Compras.`,
+              );
+            }
+          }
+          lineas.push({
+            concepto,
+            cuentaId: concepto.cuenta.id,
+            valor: l.valor,
+          });
         }
+        const concepto = lineas[0].concepto;
+        const valorConcepto =
+          Math.round(lineas.reduce((s2, l) => s2 + l.valor, 0) * 100) / 100;
 
         const retenciones = datos.retenciones ?? [];
-        const movido = valorMovido(datos.valorConcepto, retenciones);
+        const movido = valorMovido(valorConcepto, retenciones);
         if (!movido.ok) throw new BadRequestException(movido.motivo);
 
         const salida = datos.direccion === 'SALIDA';
         const tercero = datos.terceroId ?? undefined;
         const contrapartidas: Contrapartida[] = [
-          {
-            cuentaId: concepto.cuenta.id,
-            debito: salida ? datos.valorConcepto : 0,
-            credito: salida ? 0 : datos.valorConcepto,
+          ...lineas.map((l) => ({
+            cuentaId: l.cuentaId,
+            debito: salida ? l.valor : 0,
+            credito: salida ? 0 : l.valor,
             terceroId: tercero,
-            conceptoId: concepto.id,
-          },
+            conceptoId: l.concepto.id,
+          })),
+          // En una salida, la retención que se practica queda por pagar
+          // (crédito); en una entrada, la que nos practicaron es un anticipo
+          // de impuestos (débito). En los dos casos se mueve el neto.
           ...retenciones.map((r) => ({
             cuentaId: r.cuentaId,
-            debito: 0,
-            credito: r.valor,
+            debito: salida ? 0 : r.valor,
+            credito: salida ? r.valor : 0,
             terceroId: tercero,
             baseGravable: r.base,
           })),
@@ -206,8 +270,8 @@ export class MovimientoConceptoService {
             `INSERT INTO movimiento_concepto
                (empresa_id, direccion, medio, caja_id, cuenta_bancaria_id, caja_movimiento_id,
                 banco_movimiento_id, asiento_id, concepto_id, tercero_id, fecha, valor_concepto,
-                valor_movido, detalle, origen, origen_id, creado_por)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+                valor_movido, detalle, origen, origen_id, creado_por, devuelve_a)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
              RETURNING id`,
             [
               ctx.empresaId,
@@ -221,18 +285,106 @@ export class MovimientoConceptoService {
               concepto.id,
               datos.terceroId ?? null,
               datos.fecha,
-              datos.valorConcepto,
+              valorConcepto,
               movido.valor,
               datos.detalle.trim(),
               datos.origen,
               datos.origenId ?? null,
               ctx.usuarioId,
+              datos.devuelveA ?? null,
             ],
           ),
         );
         if (creado === undefined)
           throw new BadRequestException('No se pudo registrar el movimiento.');
+        if (lineas.length > 1) {
+          for (const [i, l] of lineas.entries()) {
+            await t.query(
+              `INSERT INTO movimiento_concepto_linea (movimiento_id, empresa_id, orden, concepto_id, valor)
+               VALUES ($1, $2, $3, $4, $5)`,
+              [creado.id, ctx.empresaId, i + 1, l.concepto.id, l.valor],
+            );
+          }
+        }
         return this.obtener(ctx, creado.id, t);
+      },
+      tx,
+    );
+  }
+
+  /**
+   * Lo que se registra a mano desde Cobros o Pagos: una línea o varias
+   * (PC14), con la retención que nos practicaron si es una entrada (PC17), y
+   * el 4×1000 si sale de un banco (E27).
+   */
+  async registrarManual(
+    ctx: CtxEmpresa,
+    datos: DatosManual,
+    tx?: Tx,
+  ): Promise<MovimientoConcepto> {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const retenciones: RetencionDelMovimiento[] = [];
+        if (datos.retencion != null) {
+          if (datos.direccion === 'SALIDA') {
+            throw new BadRequestException(
+              'La retención que te practican va en una entrada. En un pago, la practicás vos: eso va por Compras.',
+            );
+          }
+          if (!datos.terceroId) {
+            throw new BadRequestException(
+              'Decí quién te retuvo: la retención va a su nombre para el certificado.',
+            );
+          }
+          const c = CUENTA_SUFRIDA[datos.retencion.tipo];
+          await this.nucleo.asegurarCuenta(ctx, c, t);
+          const cuenta = await this.nucleo.cuenta(ctx, c.codigo, t);
+          if (cuenta === null) {
+            throw new BadRequestException(`Falta la cuenta ${c.codigo}.`);
+          }
+          retenciones.push({
+            cuentaId: cuenta.id,
+            valor: datos.retencion.valor,
+            base: datos.lineas.reduce((s2, l) => s2 + l.valor, 0),
+          });
+        }
+        const movimiento = await this.registrar(
+          ctx,
+          {
+            direccion: datos.direccion,
+            medio: datos.medio,
+            cajaId: datos.cajaId,
+            cuentaBancariaId: datos.cuentaBancariaId,
+            fecha: datos.fecha,
+            conceptoId: datos.lineas[0].conceptoId,
+            terceroId: datos.terceroId ?? null,
+            detalle: datos.detalle,
+            valorConcepto: datos.lineas[0].valor,
+            lineas: datos.lineas,
+            retenciones,
+            origen: 'MANUAL',
+          },
+          t,
+        );
+        if (
+          datos.direccion === 'SALIDA' &&
+          datos.medio === 'BANCO' &&
+          datos.cuentaBancariaId !== undefined
+        ) {
+          await this.cobrarGmf(
+            ctx,
+            {
+              cuentaBancariaId: datos.cuentaBancariaId,
+              base: movimiento.valorMovido,
+              fecha: datos.fecha,
+              detalle: `4×1000 · ${datos.detalle.trim()}`,
+              origenId: movimiento.id,
+            },
+            t,
+          );
+        }
+        return movimiento;
       },
       tx,
     );
@@ -376,7 +528,9 @@ export class MovimientoConceptoService {
         throw new BadRequestException(
           actual.origen === 'RECIBO_CAJA'
             ? 'Salió de un recibo de caja: se anula anulando el recibo.'
-            : 'Salió de un comprobante de egreso: se anula anulando el comprobante.',
+            : actual.origen === 'DEVOLUCION_ANTICIPO'
+              ? 'Es la devolución de un anticipo: se anula desde Anticipos.'
+              : 'Salió de un comprobante de egreso: se anula anulando el comprobante.',
         );
       }
       return this.anular(ctx, id, motivo, t);
@@ -477,5 +631,16 @@ function aMovimiento(f: Record<string, unknown>): MovimientoConcepto {
     asientoId: f.asiento_id as string | null,
     estado: f.estado as 'VIGENTE' | 'ANULADO',
     motivoAnulacion: f.motivo_anulacion as string | null,
+    lineas: (
+      (f.lineas ?? []) as Array<{
+        conceptoId: string;
+        concepto: string;
+        valor: string | number;
+      }>
+    ).map((l) => ({
+      conceptoId: l.conceptoId,
+      concepto: l.concepto,
+      valor: Number(l.valor),
+    })),
   };
 }

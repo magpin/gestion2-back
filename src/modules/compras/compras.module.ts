@@ -11,6 +11,8 @@ import { CompraService } from './servicios/compra.service';
 import { ComprasApi } from './compras.api';
 import { PagosController } from './controladores/pagos.controller';
 import { ComprobanteEgresoService } from './servicios/comprobante-egreso.service';
+import { AnticiposProveedorService } from './servicios/anticipos-proveedor.service';
+import { EgresosService } from './servicios/egresos.service';
 import { CrucePagoService } from './servicios/cruce-pago.service';
 import { PagoProgramadoService } from './servicios/pago-programado.service';
 
@@ -40,6 +42,8 @@ import { PagoProgramadoService } from './servicios/pago-programado.service';
     CompraNotaService,
     ComprobanteEgresoService,
     CrucePagoService,
+    EgresosService,
+    AnticiposProveedorService,
     PagoProgramadoService,
     ComprasApi,
   ],

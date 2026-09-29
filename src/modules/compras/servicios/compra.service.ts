@@ -979,8 +979,11 @@ export class CompraService {
     /** El concepto de cada línea de gasto elegida por concepto; `null` en las demás. */
     const conceptoDe: Array<string | null> = [];
     /** Lo que el motor de renta necesita de cada renglón para clasificarlo. */
-    const pistas: Array<{ texto: string | null; cuentaCodigo: string | null }> =
-      [];
+    const pistas: Array<{
+      texto: string | null;
+      cuentaCodigo: string | null;
+      sugerida: { concepto: string; nombreConcepto: string } | null;
+    }> = [];
 
     for (const l of lineasDto) {
       // Una línea es un producto o un gasto. Lo único que cambia entre las
@@ -998,6 +1001,7 @@ export class CompraService {
       pistas.push({
         texto: producto?.nombre ?? l.detalle ?? null,
         cuentaCodigo: gasto?.codigo ?? null,
+        sugerida: gasto?.retencionSugerida ?? null,
       });
 
       entradas.push({
@@ -1013,7 +1017,8 @@ export class CompraService {
               ? (l.ivaTarifa ?? 0)
               : Number(producto.iva_tarifa)
             : 0,
-        ivaDescontable: responsableIva,
+        // PC23: un concepto marcado «No descontable» manda su IVA al gasto.
+        ivaDescontable: responsableIva && gasto?.ivaCompra !== 'NO_DESCONTABLE',
         // Aseo, vigilancia, temporales y cooperativas: el IVA va sobre el AIU
         // (art. 462-1 ET, bug #16), el mismo que usa la retención de renta.
         aiu: aiuRenglones?.find((a) => a.orden === entradas.length + 1)?.aiu,
@@ -1029,6 +1034,7 @@ export class CompraService {
       productoId: lineasDto[i].productoId ?? null,
       texto: pistas[i].texto,
       cuentaCodigo: pistas[i].cuentaCodigo,
+      sugerida: pistas[i].sugerida,
     }));
     return { lineas, totales, cuentaDebitoDe, conceptoDe, renglonesRenta };
   }
@@ -1635,11 +1641,21 @@ export class CompraService {
     ctx: CtxEmpresa,
     l: { conceptoId?: string; cuentaId?: string },
     t: Tx,
-  ): Promise<{ id: string; codigo: string; conceptoId: string | null }> {
+  ): Promise<{
+    id: string;
+    codigo: string;
+    conceptoId: string | null;
+    /** La retención que sugiere el concepto (PC23), para el motor. */
+    retencionSugerida: { concepto: string; nombreConcepto: string } | null;
+    /** Si el IVA de lo comprado con este concepto se descuenta (PC23). */
+    ivaCompra: string | null;
+  }> {
     if (l.conceptoId === undefined) {
       return {
         ...(await this.cuentaDeGastoConCodigo(ctx, l.cuentaId ?? '', t)),
         conceptoId: null,
+        retencionSugerida: null,
+        ivaCompra: null,
       };
     }
     const concepto = await this.nucleo.concepto(ctx, l.conceptoId, t);
@@ -1660,6 +1676,14 @@ export class CompraService {
     return {
       ...(await this.cuentaDeGastoConCodigo(ctx, concepto.cuenta.id, t)),
       conceptoId: concepto.id,
+      retencionSugerida:
+        concepto.retencionSugerida === null
+          ? null
+          : {
+              concepto: concepto.retencionSugerida,
+              nombreConcepto: concepto.nombre,
+            },
+      ivaCompra: concepto.ivaCompra,
     };
   }
 

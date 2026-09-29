@@ -63,7 +63,14 @@ export interface RenglonRenta {
   /** El AIU del renglón, si la factura lo discrimina (§8.13). */
   aiu?: number;
   conceptoCodigo: string;
-  origen: 'CONFIRMADO' | 'PRODUCTO' | 'CIIU' | 'PALABRAS' | 'IA' | 'MANUAL';
+  origen:
+    | 'CONFIRMADO'
+    | 'PRODUCTO'
+    | 'CIIU'
+    | 'CONCEPTO'
+    | 'PALABRAS'
+    | 'IA'
+    | 'MANUAL';
 }
 
 export interface ContextoRenta {

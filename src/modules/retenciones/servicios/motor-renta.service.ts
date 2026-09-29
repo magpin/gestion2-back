@@ -65,6 +65,8 @@ export interface RenglonDocumento {
   texto: string | null;
   /** La cuenta de gasto, si es un gasto. */
   cuentaCodigo: string | null;
+  /** La retención que sugiere el concepto del gasto (PC23), si la trae. */
+  sugerida?: { concepto: string; nombreConcepto: string } | null;
   /** El IVA que factura el proveedor en el renglón (ReteIVA, Fase 2). */
   iva?: number;
   /** Si el renglón se causa en otro municipio que la compra (ReteICA). */
@@ -1125,6 +1127,7 @@ export class MotorRentaService {
             productoId: r.productoId,
             texto: r.texto,
             cuentaCodigo: r.cuentaCodigo,
+            sugerida: r.sugerida ?? null,
           },
           {
             aprendidos,

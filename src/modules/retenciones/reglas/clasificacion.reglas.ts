@@ -12,7 +12,7 @@
  * | 1 | Lo que una persona ya confirmó (`retencion_mapeo_concepto`) | CLARA |
  * | 2 | Producto del catálogo → compras generales | CLARA |
  * | 3 | CIIU del proveedor | DEDUCIDA |
- * | 4 | Palabras del renglón y la cuenta de gasto | DEDUCIDA |
+ * | 4 | La retención que sugiere el concepto del gasto (PC23), o si no las palabras del renglón y la cuenta | DEDUCIDA |
  * | 5 | La IA, con la lista cerrada, si ninguna otra dijo nada (Fase 5) | DEDUCIDA |
  *
  * La IA no se llama desde aquí: llega ya contestada (`contexto.ia`), guardada
@@ -21,7 +21,7 @@
  */
 
 export type OrigenClasificacion =
-  'CONFIRMADO' | 'PRODUCTO' | 'CIIU' | 'PALABRAS' | 'IA';
+  'CONFIRMADO' | 'PRODUCTO' | 'CIIU' | 'CONCEPTO' | 'PALABRAS' | 'IA';
 export type Certeza = 'CLARA' | 'DEDUCIDA' | 'PREGUNTA';
 
 export interface RenglonAClasificar {
@@ -31,6 +31,12 @@ export interface RenglonAClasificar {
   texto: string | null;
   /** La cuenta contra la que se debita (gastos): dice mucho del concepto. */
   cuentaCodigo: string | null;
+  /**
+   * La retención que sugiere el concepto del gasto (PC23): una sugerencia, no
+   * una orden. Pesa más que las palabras —alguien la eligió para ese
+   * concepto— pero es una deducción: se acepta o se cambia antes de registrar.
+   */
+  sugerida?: { concepto: string; nombreConcepto: string } | null;
 }
 
 export interface Aprendido {
@@ -388,7 +394,14 @@ export function clasificar(
 
   // 3 y 4. Deducciones. Si no coinciden, se pregunta con las dos a la vista.
   const ciiu = porCiiu(contexto.ciiuProveedor);
-  const palabras = porPalabras(r.texto) ?? porCuenta(r.cuentaCodigo);
+  const delConcepto = r.sugerida
+    ? {
+        concepto: r.sugerida.concepto,
+        que: `el concepto «${r.sugerida.nombreConcepto}» la sugiere`,
+      }
+    : null;
+  const palabras =
+    delConcepto ?? porPalabras(r.texto) ?? porCuenta(r.cuentaCodigo);
 
   if (
     ciiu !== null &&
@@ -417,7 +430,7 @@ export function clasificar(
     return {
       orden: r.orden,
       concepto: palabras.concepto,
-      origen: 'PALABRAS',
+      origen: palabras === delConcepto ? 'CONCEPTO' : 'PALABRAS',
       certeza: 'DEDUCIDA',
       razon: `La deduje: ${palabras.que}. ¿Es ${contexto.nombreDe(palabras.concepto)}?`,
     };

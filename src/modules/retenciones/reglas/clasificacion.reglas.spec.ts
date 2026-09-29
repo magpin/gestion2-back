@@ -122,6 +122,35 @@ describe('clasificación del concepto de renta — sin IA', () => {
     expect(c.opciones).toEqual(['TRANSPORTE_CARGA', 'HONORARIOS']);
   });
 
+  it('PC23: la retención que sugiere el concepto deduce, y pesa más que las palabras', () => {
+    const c = clasificar(
+      renglon({
+        texto: 'Canon de arrendamiento',
+        sugerida: {
+          concepto: 'SERVICIOS_GENERALES',
+          nombreConcepto: 'Mantenimiento',
+        },
+      }),
+      contexto(),
+    );
+    expect(c.concepto).toBe('SERVICIOS_GENERALES');
+    expect(c.origen).toBe('CONCEPTO');
+    // Es una sugerencia: se acepta o se cambia antes de registrar.
+    expect(c.certeza).toBe('DEDUCIDA');
+    expect(c.razon).toContain('«Mantenimiento»');
+  });
+
+  it('PC23: si el CIIU dice otra cosa que el concepto, pregunta con las dos', () => {
+    const c = clasificar(
+      renglon({
+        sugerida: { concepto: 'HONORARIOS', nombreConcepto: 'Asesoría' },
+      }),
+      contexto({ ciiu: '4923' }),
+    );
+    expect(c.certeza).toBe('PREGUNTA');
+    expect(c.opciones).toEqual(['TRANSPORTE_CARGA', 'HONORARIOS']);
+  });
+
   it('sin ninguna pista, pregunta', () => {
     expect(clasificar(renglon({ texto: 'Varios' }), contexto()).certeza).toBe(
       'PREGUNTA',

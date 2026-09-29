@@ -241,7 +241,8 @@ export class CrearCompraDto {
   @IsOptional()
   @IsString()
   @Length(20, 200, {
-    message: 'El CUFE tiene entre 20 y 200 caracteres: copialo completo o dejalo vacío.',
+    message:
+      'El CUFE tiene entre 20 y 200 caracteres: copialo completo o dejalo vacío.',
   })
   cufe?: string;
 

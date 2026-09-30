@@ -10,7 +10,8 @@
 //     --empresa 901299793 \                 NIT (sin DV) o id de la empresa destino
 //     [--api https://qa.contable.computintasdigital.com/api/v1] \   por defecto, la local
 //     [--fecha 2026-09-25] \                la de la existencia: fecha de la carga y del precio
-//     [--simular] \                         lee todo y escribe el reporte, sin cambiar nada
+//     [--prueba] \                          datos de prueba: negativos en positivo, costos inventados
+//     [--simular] \                        lee todo y escribe el reporte, sin cambiar nada
 //     [--reporte importacion-existencias.csv]
 //
 // Qué hace, por fila de la existencia:
@@ -146,6 +147,10 @@ function csv(filas) {
   const { pedir, entrar } = require('./lib/api');
 
   const simular = a.simular === true;
+  // Datos para probar, no para operar: los negativos entran con la cantidad en
+  // positivo y los que no tienen costo, con uno inventado (el 70 % del precio
+  // sin IVA, o 1.000). Se marcan PRUEBA en el reporte.
+  const prueba = a.prueba === true;
   const fecha = a.fecha || '2026-09-25';
   const rutaReporte = path.resolve(a.reporte || 'importacion-existencias.csv');
 
@@ -263,12 +268,21 @@ function csv(filas) {
     // --- Existencia --------------------------------------------------------
     if (r.existencia === 0) continue;
     if (r.existencia < 0) {
-      anotar(r, 'NEGATIVO', `${r.existencia}: queda en cero, ajustarlo con el conteo`);
-      continue;
+      if (!prueba) {
+        anotar(r, 'NEGATIVO', `${r.existencia}: queda en cero, ajustarlo con el conteo`);
+        continue;
+      }
+      anotar(r, 'PRUEBA', `negativo ${r.existencia}: se carga ${-r.existencia}`);
+      r.existencia = -r.existencia;
     }
     if (r.promedio <= 0) {
-      anotar(r, 'SIN_COSTO', `${r.existencia} sin costo promedio: no se carga`);
-      continue;
+      if (!prueba) {
+        anotar(r, 'SIN_COSTO', `${r.existencia} sin costo promedio: no se carga`);
+        continue;
+      }
+      const baseLista = lista && lista.precio > 0 ? baseSinIva(lista.precio, iva).base : 0;
+      r.promedio = baseLista > 0 ? Math.round(baseLista * 0.7 * 100) / 100 : 1000;
+      anotar(r, 'PRUEBA', `sin costo: se inventa ${r.promedio}`);
     }
 
     let cantidad = r.existencia;

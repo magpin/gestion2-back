@@ -6,11 +6,22 @@ const BASE =
   `http://localhost:${process.env.PORT || 3001}/${process.env.API_PREFIX || 'api/v1'}`;
 
 async function pedir(metodo, ruta, { token, cuerpo } = {}) {
-  const res = await fetch(BASE + ruta, {
-    method: metodo,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: cuerpo ? JSON.stringify(cuerpo) : undefined,
-  });
+  // Una importación son miles de llamadas: un corte de red suelto no puede
+  // tumbarla entera. Se reintenta hasta tres veces, con una pausa creciente.
+  let res;
+  for (let intento = 1; ; intento += 1) {
+    try {
+      res = await fetch(BASE + ruta, {
+        method: metodo,
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: cuerpo ? JSON.stringify(cuerpo) : undefined,
+      });
+      break;
+    } catch (e) {
+      if (intento >= 4) throw e;
+      await new Promise((r) => setTimeout(r, 1000 * intento));
+    }
+  }
   const texto = await res.text();
   let datos = null;
   try {

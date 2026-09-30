@@ -27,6 +27,7 @@ import {
   type VentaDocumentoLineaResumen,
   type VentaDocumentoResumen,
 } from './venta-documento.service';
+import { CruceCarteraService } from './cruce-cartera.service';
 import {
   calcularLineas,
   evaluarMargen,
@@ -85,6 +86,8 @@ export class FacturaService {
     private readonly contabilidad: ContabilidadApi,
     private readonly ventas: VentaDocumentoService,
     private readonly retenciones: RetencionesApi,
+    /** Anticipos y saldos a favor que se aplican al emitir (`dto.aplicar`). */
+    private readonly cruces?: CruceCarteraService,
   ) {}
 
   /**
@@ -441,6 +444,7 @@ export class FacturaService {
       pagos: opciones.pagos,
       vence: opciones.vence,
       retenciones: opciones.retenciones,
+      aplicar: opciones.aplicar,
     };
   }
 
@@ -756,14 +760,41 @@ export class FacturaService {
       t,
     );
 
+    // Lo que pagan los anticipos y saldos a favor del cliente, sin mover
+    // caja: se valida contra lo que tiene y no puede pasar del neto.
+    const aplicar = dto.aplicar ?? [];
+    if (aplicar.length > 0) {
+      if (this.cruces === undefined) {
+        throw new Error('FacturaService sin CruceCarteraService.');
+      }
+      await this.cruces.validarAlFacturar(ctx, dto.terceroId, aplicar, t);
+    }
+    const aplicadoCentavos = aplicar.reduce(
+      (s, a) => s + Math.round(a.valor * 100),
+      0,
+    );
+    const netoCentavos = Math.round((totales.total - totalRetenido) * 100);
+    if (aplicadoCentavos > netoCentavos) {
+      throw new BadRequestException(
+        `Los anticipos y saldos a favor suman ${aplicadoCentavos / 100} y la factura es por ${netoCentavos / 100}: sobra lo aplicado.`,
+      );
+    }
+    const faltaCentavos = netoCentavos - aplicadoCentavos;
+    const cubierta = aplicar.length > 0 && faltaCentavos === 0;
+
     // La forma de pago se valida acá, con lo retenido ya calculado y antes de
     // asentar: de contado se cobra lo que el cliente efectivamente paga, que
-    // es el total menos lo que nos retuvo.
-    const formaPago = validarFormaPago(
-      dto.formaPago,
-      dto.pagos?.map((p) => p.valor),
-      totales.total - totalRetenido,
-    );
+    // es el total menos lo que nos retuvo y menos lo que ya pagó con sus
+    // anticipos. Si ellos la cubren, no hay nada más que cobrar.
+    // Si la cubren, los medios que vengan no cobran nada: se ignoran —quien
+    // factura no tiene por qué saber el neto exacto antes del previo—.
+    const formaPago = cubierta
+      ? ({ ok: true, valores: [] } as const)
+      : validarFormaPago(
+          dto.formaPago,
+          dto.pagos?.map((p) => p.valor),
+          faltaCentavos / 100,
+        );
     if (!formaPago.ok) {
       throw new BadRequestException(formaPago.motivo);
     }
@@ -773,7 +804,7 @@ export class FacturaService {
         'La factura no puede vencer antes de la fecha en que se emite.',
       );
     }
-    const pagos = (dto.pagos ?? []).map((p, i) => ({
+    const pagos = (cubierta ? [] : (dto.pagos ?? [])).map((p, i) => ({
       ...p,
       valor: formaPago.valores[i],
     }));
@@ -791,22 +822,49 @@ export class FacturaService {
       dto.formaPago === 'CONTADO'
         ? await this.ventas.mediosDeContado(ctx, pagos, t)
         : [];
+    // El anticipo que se aplica sale de 280505 en este mismo asiento: la plata
+    // ya había entrado cuando el cliente la dejó, así que no se mueve caja.
+    const anticipos = aplicar.filter((a) => a.tipo === 'ANTICIPO');
+    const conceptoAnticipo =
+      anticipos.length > 0
+        ? await this.nucleo.conceptoPorCodigo(ctx, 'NG-ANTICIPO-CLIENTE', t)
+        : null;
+    if (conceptoAnticipo !== null && conceptoAnticipo.cuenta === null) {
+      throw new BadRequestException(
+        'Falta la cuenta de anticipos de clientes (280505).',
+      );
+    }
+    // Lo que queda en Clientes: el neto menos lo que entra ya a caja o banco y
+    // menos los anticipos. El saldo a favor se queda acá: ya está en 130505.
+    const carteraCentavos =
+      netoCentavos -
+      mediosContado.reduce((s, m) => s + Math.round(m.valor * 100), 0) -
+      anticipos.reduce((s, a) => s + Math.round(a.valor * 100), 0);
     const lineasAsiento: LineaAsientoDto[] = [
-      ...(mediosContado.length > 0
-        ? mediosContado.map((m) => ({
-            cuentaId: m.cuentaId,
-            debito: m.valor,
-            credito: 0,
-            detalle: `Recibido en ${m.nombre}`,
-          }))
-        : [
+      ...mediosContado.map((m) => ({
+        cuentaId: m.cuentaId,
+        debito: m.valor,
+        credito: 0,
+        detalle: `Recibido en ${m.nombre}`,
+      })),
+      ...anticipos.map((a) => ({
+        cuentaId: conceptoAnticipo!.cuenta!.id,
+        terceroId: dto.terceroId,
+        conceptoId: conceptoAnticipo!.id,
+        debito: a.valor,
+        credito: 0,
+        detalle: 'Anticipo del cliente aplicado',
+      })),
+      ...(carteraCentavos > 0
+        ? [
             {
               cuentaId: cuentaCartera.id,
               terceroId: dto.terceroId,
-              debito: totales.total - totalRetenido,
+              debito: carteraCentavos / 100,
               credito: 0,
             },
-          ]),
+          ]
+        : []),
       // Un activo: es impuesto nuestro pagado por anticipado, no un menor
       // ingreso. Registrarlo como menor ingreso diría que vendimos menos de lo
       // que vendimos.
@@ -859,7 +917,7 @@ export class FacturaService {
       {
         comprobanteTipoId: comprobante.id,
         fecha: dto.fecha,
-        glosa: `Factura de venta ${numero.numero}${glosaContado(mediosContado.map((m) => m.nombre))}`,
+        glosa: `Factura de venta ${numero.numero}${glosaContado(mediosContado.map((m) => m.nombre))}${anticipos.length > 0 ? ' · con anticipo' : ''}`,
         lineas: lineasAsiento,
       },
       { origenTipo: 'VENTA', origenId: documentoId },
@@ -1010,7 +1068,23 @@ export class FacturaService {
     // plata—, con el mismo candado y las mismas validaciones de un cobro
     // posterior: si la caja está cerrada, la factura no se emite. Quien factura puede cobrar acá aunque no tenga el rol CAJA:
     // es el mostrador, la plata la recibe quien vende.
-    if (dto.formaPago === 'CONTADO') {
+    // Lo que pagan los anticipos y saldos a favor queda como cruce, antes del
+    // cobro: el cobro de contado es solo por lo que falta.
+    if (aplicar.length > 0) {
+      await this.cruces!.registrarAlFacturar(
+        ctx,
+        {
+          facturaId: documento.id,
+          terceroId: dto.terceroId,
+          asientoId: asiento.id,
+          fecha: dto.fecha,
+          aplicar,
+        },
+        t,
+      );
+    }
+
+    if (dto.formaPago === 'CONTADO' && pagos.length > 0) {
       const cobrada = await this.ventas.cobrarEnTx(
         ctx,
         documento.id,
@@ -1020,6 +1094,16 @@ export class FacturaService {
         asiento.id,
       );
       return { ...cobrada, lineas: lineasInsertadas };
+    }
+    if (aplicar.length > 0) {
+      // Sin nada más que cobrar: el documento como quedó con lo aplicado.
+      const aplicada = await this.ventas.ajustarPagadoEnTx(
+        ctx,
+        documento.id,
+        0,
+        t,
+      );
+      return { ...aplicada, lineas: lineasInsertadas };
     }
 
     return { ...documento, lineas: lineasInsertadas };

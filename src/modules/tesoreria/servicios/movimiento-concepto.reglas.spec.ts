@@ -1,6 +1,7 @@
 import {
   admiteSinFactura,
   gmfDe,
+  gmfIncluido,
   problemaDeDireccion,
   valorMovido,
 } from './movimiento-concepto.reglas';
@@ -33,5 +34,18 @@ describe('movimiento-concepto.reglas', () => {
       valor: 1_950_000,
     });
     expect(valorMovido(1_000, [{ valor: 1_000 }]).ok).toBe(false);
+  });
+});
+
+describe('gmfIncluido — el 4×1000 que asume quien recibe', () => {
+  it('sale del mismo valor: lo transferido más su 4×1000 da el total', () => {
+    const gmf = gmfIncluido(1_004_000, false);
+    expect(gmf).toBe(4000);
+    // Se transfieren 1.000.000 y su 4×1000 son 4.000.
+    expect(gmfDe(1_004_000 - gmf, false)).toBe(gmf);
+  });
+
+  it('una cuenta exenta no lo cobra', () => {
+    expect(gmfIncluido(500_000, true)).toBe(0);
   });
 });

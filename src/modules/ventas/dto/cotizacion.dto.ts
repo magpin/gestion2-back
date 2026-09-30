@@ -15,7 +15,7 @@ import {
   MedioPagoAlFacturarDto,
   type FormaPago,
 } from './venta.dto';
-import { RetencionVentaDto } from './factura.dto';
+import { AplicarAlFacturarDto, RetencionVentaDto } from './factura.dto';
 
 export class LineaCotizacionDto {
   @IsUUID()
@@ -101,6 +101,12 @@ export class ConvertirCotizacionDto {
   @ValidateNested({ each: true })
   @Type(() => RetencionVentaDto)
   retenciones?: RetencionVentaDto[];
+
+  /** Ver `CrearFacturaDto.aplicar`. */
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => AplicarAlFacturarDto)
+  aplicar?: AplicarAlFacturarDto[];
 }
 
 export class LineaExistenciaDto {

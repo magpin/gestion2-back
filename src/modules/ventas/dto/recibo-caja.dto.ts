@@ -34,6 +34,21 @@ export class AplicacionReciboDto {
   descuento?: number;
 }
 
+/** Para qué es el anticipo: un producto, cuánto y a qué precio. */
+export class ProductoAnticipoDto {
+  @IsUUID()
+  productoId!: string;
+
+  @IsNumber({ maxDecimalPlaces: 6 })
+  @Min(0.000001)
+  cantidad!: number;
+
+  /** El precio acordado por unidad, sin IVA —el de la factura que vendrá—. */
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  precioUnitario!: number;
+}
+
 /**
  * Un recibo de caja: un cliente, una fecha, por dónde entra la plata y cuánto
  * se le abona a cada factura. Un solo medio por recibo: si el cliente pagó una
@@ -69,6 +84,16 @@ export class CrearReciboCajaDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   anticipo?: number;
+
+  /**
+   * Para qué es el anticipo. Un anticipo se recibe desde Anticipos y siempre
+   * dice qué productos se van a facturar: sin ellos no hay anticipo.
+   */
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => ProductoAnticipoDto)
+  @ArrayMaxSize(100)
+  productosAnticipo?: ProductoAnticipoDto[];
 
   /** Lo que se quedó el datáfono o la pasarela: sale del mismo medio. */
   @IsOptional()

@@ -64,6 +64,14 @@ const CAMPOS_CRUCE = `
  * lado —un anticipo, o el saldo a favor que le dejó una nota crédito en otra
  * factura—. No entra ni sale plata: solo cambia a qué factura se le abona.
  */
+/** Un anticipo o saldo a favor que se aplica al emitir la factura. */
+export interface AplicarAlFacturar {
+  tipo: 'ANTICIPO' | 'SALDO_A_FAVOR';
+  /** El movimiento del anticipo, o la factura con saldo a favor. */
+  origenId: string;
+  valor: number;
+}
+
 @Injectable()
 export class CruceCarteraService {
   constructor(
@@ -155,6 +163,90 @@ export class CruceCarteraService {
       );
       return f.map(aCruce);
     });
+  }
+
+  /**
+   * Lo que se quiere aplicar al emitir una factura, contra lo que el cliente
+   * tiene: cada anticipo o saldo a favor suyo, una sola vez y sin pasarse de
+   * lo que le queda.
+   */
+  async validarAlFacturar(
+    ctx: CtxEmpresa,
+    terceroId: string,
+    aplicar: readonly AplicarAlFacturar[],
+    t: Tx,
+  ): Promise<void> {
+    if (aplicar.length === 0) return;
+    const disponibles = await this.disponiblesDe(ctx, terceroId, t);
+    const vistos = new Set<string>();
+    for (const a of aplicar) {
+      if (vistos.has(a.origenId)) {
+        throw new BadRequestException(
+          'El mismo anticipo o saldo a favor va una sola vez en la factura.',
+        );
+      }
+      vistos.add(a.origenId);
+      const saldo =
+        a.tipo === 'ANTICIPO'
+          ? disponibles.anticipos.find((x) => x.movimientoId === a.origenId)
+              ?.saldo
+          : disponibles.saldosAFavor.find((x) => x.facturaId === a.origenId)
+              ?.saldo;
+      if (saldo === undefined) {
+        throw new BadRequestException(
+          a.tipo === 'ANTICIPO'
+            ? 'Ese anticipo no es de este cliente o ya no tiene saldo.'
+            : 'Ese saldo a favor no es de este cliente o ya se usó.',
+        );
+      }
+      if (Math.round(a.valor * 100) > Math.round(saldo * 100)) {
+        throw new BadRequestException(
+          `${a.tipo === 'ANTICIPO' ? 'Al anticipo' : 'Al saldo a favor'} solo le quedan ${saldo}.`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Deja registrado lo que se aplicó al emitir la factura. El anticipo ya va
+   * en el asiento de la factura (débito 280505), así que el cruce apunta a
+   * ese asiento; el saldo a favor no lleva asiento, como siempre.
+   */
+  async registrarAlFacturar(
+    ctx: CtxEmpresa,
+    datos: {
+      facturaId: string;
+      terceroId: string;
+      asientoId: string;
+      fecha: string;
+      aplicar: readonly AplicarAlFacturar[];
+    },
+    t: Tx,
+  ): Promise<void> {
+    for (const a of datos.aplicar) {
+      if (a.tipo === 'SALDO_A_FAVOR') {
+        await this.ventas.ajustarPagadoEnTx(ctx, a.origenId, -a.valor, t);
+      }
+      await this.ventas.ajustarPagadoEnTx(ctx, datos.facturaId, a.valor, t);
+      await t.query(
+        `INSERT INTO cruce_cartera
+           (empresa_id, tipo, tercero_id, origen_movimiento_id, origen_venta_id,
+            destino_venta_id, valor, fecha, asiento_id, creado_por, en_factura)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true)`,
+        [
+          ctx.empresaId,
+          a.tipo,
+          datos.terceroId,
+          a.tipo === 'ANTICIPO' ? a.origenId : null,
+          a.tipo === 'SALDO_A_FAVOR' ? a.origenId : null,
+          datos.facturaId,
+          a.valor,
+          datos.fecha,
+          a.tipo === 'ANTICIPO' ? datos.asientoId : null,
+          ctx.usuarioId,
+        ],
+      );
+    }
   }
 
   /**
@@ -302,9 +394,12 @@ export class CruceCarteraService {
           destino_venta_id: string;
           valor: string;
           asiento_id: string | null;
+          tercero_id: string;
+          en_factura: boolean;
         }>(
           await t.query(
-            `SELECT tipo, estado, origen_venta_id, destino_venta_id, valor, asiento_id
+            `SELECT tipo, estado, origen_venta_id, destino_venta_id, valor, asiento_id,
+                    tercero_id, en_factura
                FROM cruce_cartera WHERE id = $1 FOR UPDATE`,
             [id],
           ),
@@ -321,7 +416,22 @@ export class CruceCarteraService {
           -valor,
           t,
         );
-        if (cruce.tipo === 'ANTICIPO' && cruce.asiento_id !== null) {
+        if (cruce.tipo === 'ANTICIPO' && cruce.en_factura) {
+          // Aplicado al emitir: su asiento es el de la factura, que sigue
+          // vigente. Se asienta solo la inversa del cruce: la factura vuelve
+          // a Clientes y el anticipo recupera su saldo.
+          await this.asentarAnticipo(
+            ctx,
+            cruce.tercero_id,
+            {
+              destinoFacturaId: cruce.destino_venta_id,
+              valor,
+              fecha: hoyEnColombia(),
+            },
+            t,
+            `Anulación del anticipo aplicado · ${motivo}`,
+          );
+        } else if (cruce.tipo === 'ANTICIPO' && cruce.asiento_id !== null) {
           await this.recibos.invertirAsiento(
             ctx,
             cruce.asiento_id,
@@ -382,6 +492,8 @@ export class CruceCarteraService {
     terceroId: string,
     datos: { destinoFacturaId: string; valor: number; fecha: string },
     t: Tx,
+    /** Con glosa, es la inversa: Clientes al débito, el anticipo al crédito. */
+    reversa?: string,
   ): Promise<string> {
     const concepto = await this.nucleo.conceptoPorCodigo(
       ctx,
@@ -416,16 +528,24 @@ export class CruceCarteraService {
       {
         comprobanteTipoId: comprobante.id,
         fecha: datos.fecha,
-        glosa: `Anticipo del cliente aplicado a la factura ${factura?.numero ?? ''}`,
+        glosa:
+          reversa === undefined
+            ? `Anticipo del cliente aplicado a la factura ${factura?.numero ?? ''}`
+            : `${reversa} · factura ${factura?.numero ?? ''}`,
         lineas: [
           {
             cuentaId: concepto.cuenta.id,
-            debito: datos.valor,
-            credito: 0,
+            debito: reversa === undefined ? datos.valor : 0,
+            credito: reversa === undefined ? 0 : datos.valor,
             terceroId,
             conceptoId: concepto.id,
           },
-          { cuentaId: cartera.id, debito: 0, credito: datos.valor, terceroId },
+          {
+            cuentaId: cartera.id,
+            debito: reversa === undefined ? 0 : datos.valor,
+            credito: reversa === undefined ? datos.valor : 0,
+            terceroId,
+          },
         ],
       },
       { origenTipo: 'VENTA', origenId: datos.destinoFacturaId },

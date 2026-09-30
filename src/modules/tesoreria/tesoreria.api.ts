@@ -326,6 +326,16 @@ export class TesoreriaApi {
     return this.porConcepto.cobrarGmf(ctx, datos, t);
   }
 
+  /** El 4×1000 que va dentro de `total` cuando lo asume quien recibe la plata. */
+  gmfIncluidoEn(
+    _ctx: CtxEmpresa,
+    cuentaBancariaId: string,
+    total: number,
+    t: Tx,
+  ): Promise<number> {
+    return this.porConcepto.gmfIncluidoEn(cuentaBancariaId, total, t);
+  }
+
   /** Los movimientos por concepto, filtrados. */
   movimientosPorConcepto(
     ctx: CtxEmpresa,

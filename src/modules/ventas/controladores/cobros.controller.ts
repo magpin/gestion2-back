@@ -49,6 +49,16 @@ export class CobrosController {
     return this.anticipos.pendientes(ctx);
   }
 
+  /** Un anticipo con sus productos: con esto se llena la factura que lo aplica. */
+  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'VENTAS', 'CONSULTA')
+  @Get('cartera/anticipos/:id')
+  anticipo(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.anticipos.detalle(ctx, id);
+  }
+
   /** Lo que les quedó a favor a los clientes por notas crédito sobre facturas pagadas (E1). */
   @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'VENTAS', 'CONSULTA')
   @Get('cartera/saldos-a-favor')

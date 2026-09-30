@@ -53,6 +53,17 @@ export function gmfDe(valor: number, exenta: boolean): number {
 }
 
 /**
+ * Cuánto de `total` es el 4×1000 cuando el impuesto sale de ese mismo valor
+ * —lo asume quien recibe—: se transfiere `total - gmf` y el 4×1000 de esa
+ * transferencia es `gmf`, al peso.
+ */
+export function gmfIncluido(total: number, exenta: boolean): number {
+  if (exenta || total <= 0) return 0;
+  const transferido = Math.round((total * 1000) / 1004);
+  return Math.round((total - transferido) * 100) / 100;
+}
+
+/**
  * Lo que sale de la caja o del banco: lo que va al concepto menos lo que se
  * retiene. Tiene que quedar algo: una retención igual al anticipo no mueve
  * plata y no es un movimiento.

@@ -29,6 +29,16 @@ export interface AnticipoDeCliente {
   facturasPendientes: number;
 }
 
+/** Un anticipo con sus productos: con esto se llena la factura que lo aplica. */
+export interface DetalleAnticipo extends AnticipoDeCliente {
+  productos: Array<{
+    productoId: string;
+    nombre: string;
+    cantidad: number;
+    precioUnitario: number;
+  }>;
+}
+
 export interface DevolucionAnticipo {
   id: string;
   anticipoId: string;
@@ -83,7 +93,7 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 const NOMBRE = `COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.primer_apellido))`;
 
 /**
- * Cobros → Anticipos (Fase 5, PC19): la plata que dejaron los clientes y que
+ * Ingresos → Anticipos (Fase 5, PC19): la plata que dejaron los clientes y que
  * todavía no es venta, de todos a la vez, sin elegir primero al cliente. Está
  * en 280505 hasta que se cruce con una factura o se devuelva.
  *
@@ -144,14 +154,17 @@ export class AnticiposClienteService {
           .filter((a) => a.porAplicar > 0);
         const devoluciones = filas<Record<string, unknown>>(
           await t.query(
-            `SELECT d.id, d.devuelve_a, d.fecha::text AS fecha, d.valor_concepto AS valor,
+            `SELECT d.id, d.devuelve_a, d.fecha::text AS fecha,
+                    d.valor_concepto + coalesce((SELECT sum(g.valor_concepto) FROM movimiento_concepto g
+                                                  WHERE g.origen_id = d.id AND g.origen = 'DEVOLUCION_ANTICIPO'
+                                                    AND g.estado = 'VIGENTE'), 0) AS valor,
                     (SELECT ${NOMBRE} FROM tercero x WHERE x.id = d.tercero_id) AS tercero,
                     COALESCE((SELECT k.nombre FROM caja k WHERE k.id = d.caja_id),
                              (SELECT b.banco FROM cuenta_bancaria b WHERE b.id = d.cuenta_bancaria_id)) AS destino
                FROM movimiento_concepto d
                JOIN concepto_movimiento k ON k.id = d.concepto_id
               WHERE k.codigo = 'NG-ANTICIPO-CLIENTE' AND d.origen = 'DEVOLUCION_ANTICIPO'
-                AND d.estado = 'VIGENTE'
+                AND d.estado = 'VIGENTE' AND d.origen_id IS NULL
               ORDER BY d.creado_en DESC LIMIT 20`,
           ),
         ).map((d) => ({
@@ -217,6 +230,53 @@ export class AnticiposClienteService {
     );
   }
 
+  /** Un anticipo con lo que le queda y los productos para los que es. */
+  async detalle(
+    ctx: CtxEmpresa,
+    movimientoId: string,
+    tx?: Tx,
+  ): Promise<DetalleAnticipo> {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const anticipo = (await this.pendientes(ctx, t)).anticipos.find(
+          (a) => a.movimientoId === movimientoId,
+        );
+        if (anticipo === undefined) {
+          throw new NotFoundException(
+            'Ese anticipo no existe o ya no le queda nada por aplicar.',
+          );
+        }
+        const productos = filas<{
+          producto_id: string;
+          nombre: string;
+          cantidad: string;
+          precio_unitario: string;
+        }>(
+          await t.query(
+            `SELECT l.producto_id, p.nombre, l.cantidad, l.precio_unitario
+               FROM movimiento_concepto m
+               JOIN recibo_caja_anticipo_linea l ON l.recibo_id = m.origen_id
+               JOIN producto p ON p.id = l.producto_id
+              WHERE m.id = $1 AND m.origen = 'RECIBO_CAJA'
+              ORDER BY l.orden`,
+            [movimientoId],
+          ),
+        );
+        return {
+          ...anticipo,
+          productos: productos.map((p) => ({
+            productoId: p.producto_id,
+            nombre: p.nombre,
+            cantidad: Number(p.cantidad),
+            precioUnitario: Number(p.precio_unitario),
+          })),
+        };
+      },
+      tx,
+    );
+  }
+
   /** Le devuelve al cliente lo que quede de su anticipo, o una parte. */
   async devolver(
     ctx: CtxEmpresa,
@@ -260,6 +320,19 @@ export class AnticiposClienteService {
             `Al anticipo le quedan ${saldo?.porAplicar ?? 0} por aplicar: no se puede devolver más.`,
           );
         }
+        // Por banco, el 4×1000 lo asume el cliente (decisión del dueño, 30
+        // sep): sale de su anticipo, no es gasto de la empresa. Del valor que
+        // se devuelve, al cliente le llega lo que, sumado a su 4×1000, da ese
+        // valor; el anticipo baja por el total.
+        const gmf =
+          datos.medio === 'BANCO' && datos.cuentaBancariaId
+            ? await this.tesoreria.gmfIncluidoEn(
+                ctx,
+                datos.cuentaBancariaId,
+                r2(datos.valor),
+                t,
+              )
+            : 0;
         const movimiento = await this.tesoreria.registrarPorConcepto(
           ctx,
           {
@@ -271,26 +344,33 @@ export class AnticiposClienteService {
             conceptoId: anticipo.concepto_id,
             terceroId: anticipo.tercero_id,
             detalle: `Devolución de anticipo · ${datos.motivo.trim()}`,
-            valorConcepto: r2(datos.valor),
+            valorConcepto: r2(datos.valor - gmf),
             origen: 'DEVOLUCION_ANTICIPO',
             devuelveA: anticipoId,
           },
           t,
         );
-        if (datos.medio === 'BANCO' && datos.cuentaBancariaId) {
-          await this.tesoreria.cobrarGmf(
+        if (gmf > 0) {
+          await this.tesoreria.registrarPorConcepto(
             ctx,
             {
+              direccion: 'SALIDA',
+              medio: 'BANCO',
               cuentaBancariaId: datos.cuentaBancariaId,
-              base: movimiento.valorMovido,
               fecha: datos.fecha,
-              detalle: '4×1000 de la devolución de un anticipo',
+              conceptoId: anticipo.concepto_id,
+              terceroId: anticipo.tercero_id,
+              detalle:
+                '4×1000 de la devolución del anticipo · lo asume el cliente',
+              valorConcepto: gmf,
+              origen: 'DEVOLUCION_ANTICIPO',
               origenId: movimiento.id,
+              devuelveA: anticipoId,
             },
             t,
           );
         }
-        return movimiento;
+        return { ...movimiento, gmf };
       },
       tx,
     );
@@ -309,6 +389,19 @@ export class AnticiposClienteService {
         );
         if (d?.origen !== 'DEVOLUCION_ANTICIPO') {
           throw new NotFoundException('Esa devolución no existe.');
+        }
+        // Con ella se anula el 4×1000 que asumió el cliente, que cuelga de
+        // ella, y el que la empresa pagaba antes de ese cambio.
+        const colgados = filas<{ id: string }>(
+          await t.query(
+            `SELECT id FROM movimiento_concepto
+              WHERE origen_id = $1 AND origen IN ('DEVOLUCION_ANTICIPO', 'GMF')
+                AND estado = 'VIGENTE'`,
+            [id],
+          ),
+        );
+        for (const c of colgados) {
+          await this.tesoreria.anularPorConcepto(ctx, c.id, motivo, t);
         }
         return this.tesoreria.anularPorConcepto(ctx, id, motivo, t);
       },

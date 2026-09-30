@@ -361,6 +361,20 @@ export class ReciboCajaService {
   ): Promise<ReciboCaja> {
     const cuadre = validarRecibo(dto.aplicaciones, dto.anticipo, dto.comision);
     if (!cuadre.ok) throw new BadRequestException(cuadre.motivo);
+    // El anticipo se recibe solo desde Anticipos, con los productos para los
+    // que es (decisión del dueño, 30 sep): un recibo que abona facturas no
+    // deja plata de más.
+    const productosAnticipo = dto.productosAnticipo ?? [];
+    if ((dto.anticipo ?? 0) > 0 && productosAnticipo.length === 0) {
+      throw new BadRequestException(
+        'Un anticipo dice para qué productos es. Regístralo desde Anticipos.',
+      );
+    }
+    if (productosAnticipo.length > 0 && !((dto.anticipo ?? 0) > 0)) {
+      throw new BadRequestException(
+        'Los productos van con un anticipo: falta cuánto paga el cliente.',
+      );
+    }
 
     return this.tx.enContexto(
       ctx,
@@ -460,12 +474,39 @@ export class ReciboCajaService {
           );
         }
 
+        for (const [i, p] of productosAnticipo.entries()) {
+          await t.query(
+            `INSERT INTO recibo_caja_anticipo_linea
+               (empresa_id, recibo_id, orden, producto_id, cantidad, precio_unitario)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [
+              ctx.empresaId,
+              recibo.id,
+              i + 1,
+              p.productoId,
+              p.cantidad,
+              p.precioUnitario,
+            ],
+          );
+        }
+
         if ((dto.anticipo ?? 0) > 0) {
           const concepto = await this.nucleo.conceptoPorCodigo(
             ctx,
             'NG-ANTICIPO-CLIENTE',
             t,
           );
+          // El detalle dice para qué es: «RC-000231 · Anticipo para Tinta
+          // negra 664, Impresora L3250».
+          const nombres = filas<{ nombre: string }>(
+            await t.query(
+              `SELECT p.nombre FROM recibo_caja_anticipo_linea l
+                 JOIN producto p ON p.id = l.producto_id
+                WHERE l.recibo_id = $1 ORDER BY l.orden`,
+              [recibo.id],
+            ),
+          ).map((n) => n.nombre);
+          const para = nombres.join(', ');
           const anticipo = await this.tesoreria.registrarPorConcepto(
             ctx,
             {
@@ -474,7 +515,7 @@ export class ReciboCajaService {
               fecha: dto.fecha,
               conceptoId: concepto.id,
               terceroId: dto.terceroId,
-              detalle: `${referencia} · Anticipo del cliente`,
+              detalle: `${referencia} · Anticipo para ${para.length > 160 ? `${para.slice(0, 157)}...` : para}`,
               valorConcepto: dto.anticipo ?? 0,
               origen: 'RECIBO_CAJA',
               origenId: recibo.id,

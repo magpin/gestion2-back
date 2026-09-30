@@ -20,6 +20,23 @@ import {
 } from './venta.dto';
 
 /**
+ * Un anticipo o saldo a favor del cliente que paga parte de la factura al
+ * emitirla, sin mover caja ni banco.
+ */
+export class AplicarAlFacturarDto {
+  @IsIn(['ANTICIPO', 'SALDO_A_FAVOR'])
+  tipo!: 'ANTICIPO' | 'SALDO_A_FAVOR';
+
+  /** El movimiento del anticipo, o la factura con saldo a favor. */
+  @IsUUID()
+  origenId!: string;
+
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  valor!: number;
+}
+
+/**
  * Una línea de la factura: un producto del catálogo, o un concepto de ingreso
  * —un servicio (41) u otro ingreso (42)—. Una de las dos (Fase 8, pantalla 13).
  */
@@ -148,4 +165,14 @@ export class CrearFacturaDto {
   @ValidateNested({ each: true })
   @Type(() => MedioPagoAlFacturarDto)
   pagos?: MedioPagoAlFacturarDto[];
+
+  /**
+   * Anticipos y saldos a favor del cliente que pagan parte de la factura. La
+   * forma de pago y los `pagos` son sobre lo que falta; si esto la cubre
+   * entera, va de contado sin `pagos`.
+   */
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => AplicarAlFacturarDto)
+  aplicar?: AplicarAlFacturarDto[];
 }

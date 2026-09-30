@@ -1573,3 +1573,143 @@ describe('FacturaService.previo — de contado repartido', () => {
     ]);
   });
 });
+
+describe('FacturaService.crear — con anticipo del cliente', () => {
+  // 1 x 289900 + 19% = 344981.
+  const TOTAL = 344981;
+
+  function servicioConAnticipo() {
+    const { tx } = txFalso();
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+    const nucleo = nucleoFalso().fake as unknown as Record<string, unknown>;
+    nucleo.conceptoPorCodigo = jest.fn(() =>
+      Promise.resolve({
+        id: 'con-anticipo',
+        cuenta: { id: 'cta-anticipos' },
+      }),
+    );
+    const { fake: ventas, cobrarEnTx } = ventasConCobro();
+    (ventas as unknown as Record<string, unknown>).ajustarPagadoEnTx = jest.fn(
+      (_ctx: unknown, id: string) =>
+        Promise.resolve({ id, monto_pagado: String(TOTAL), pendiente: '0' }),
+    );
+    const validarAlFacturar = jest.fn(() => Promise.resolve());
+    const registrarAlFacturar = jest.fn(() => Promise.resolve());
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleo as never,
+      inventarioFalso(),
+      contabilidad,
+      ventas,
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
+      { validarAlFacturar, registrarAlFacturar } as never,
+    );
+    const lineasDelAsiento = () =>
+      (
+        (asentar.mock.calls[0] as unknown[])[1] as {
+          lineas: Array<{ cuentaId: string; debito: number }>;
+        }
+      ).lineas;
+    return {
+      servicio,
+      cobrarEnTx,
+      validarAlFacturar,
+      registrarAlFacturar,
+      lineasDelAsiento,
+    };
+  }
+
+  it('el anticipo paga una parte sin mover caja y el resto entra por caja, en el mismo asiento', async () => {
+    const { servicio, cobrarEnTx, registrarAlFacturar, lineasDelAsiento } =
+      servicioConAnticipo();
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CONTADO',
+      pagos: [{ medio: 'CAJA', cajaId: 'caja-1' }],
+      aplicar: [{ tipo: 'ANTICIPO', origenId: 'ant-1', valor: 100000 }],
+      lineas: [{ productoId: 'p-1', cantidad: 1 }],
+    });
+
+    const lineas = lineasDelAsiento();
+    expect(lineas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ cuentaId: 'cta-anticipos', debito: 100000 }),
+        expect.objectContaining({
+          cuentaId: 'cta-caja',
+          debito: TOTAL - 100000,
+        }),
+      ]),
+    );
+    expect(lineas.some((l) => l.cuentaId === 'cta-cartera')).toBe(false);
+    // Caja cobra solo lo que falta.
+    const [, , dto] = cobrarEnTx.mock.calls[0] as unknown as [
+      unknown,
+      string,
+      { pagos: Array<{ valor: number }> },
+    ];
+    expect(dto.pagos).toEqual([
+      expect.objectContaining({ valor: TOTAL - 100000 }),
+    ]);
+    expect(registrarAlFacturar).toHaveBeenCalledTimes(1);
+  });
+
+  it('si el anticipo la cubre entera, no se cobra nada ni se toca cartera', async () => {
+    const { servicio, cobrarEnTx, lineasDelAsiento } = servicioConAnticipo();
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CONTADO',
+      aplicar: [{ tipo: 'ANTICIPO', origenId: 'ant-1', valor: TOTAL }],
+      lineas: [{ productoId: 'p-1', cantidad: 1 }],
+    });
+
+    expect(cobrarEnTx).not.toHaveBeenCalled();
+    const lineas = lineasDelAsiento();
+    expect(lineas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ cuentaId: 'cta-anticipos', debito: TOTAL }),
+      ]),
+    );
+    expect(lineas.some((l) => l.cuentaId === 'cta-cartera')).toBe(false);
+  });
+
+  it('a crédito, lo que falta queda en cartera', async () => {
+    const { servicio, lineasDelAsiento } = servicioConAnticipo();
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CREDITO',
+      aplicar: [{ tipo: 'ANTICIPO', origenId: 'ant-1', valor: 44981 }],
+      lineas: [{ productoId: 'p-1', cantidad: 1 }],
+    });
+
+    expect(lineasDelAsiento()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ cuentaId: 'cta-anticipos', debito: 44981 }),
+        expect.objectContaining({ cuentaId: 'cta-cartera', debito: 300000 }),
+      ]),
+    );
+  });
+
+  it('rechaza aplicar más de lo que vale la factura', async () => {
+    const { servicio } = servicioConAnticipo();
+
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        formaPago: 'CONTADO',
+        aplicar: [{ tipo: 'ANTICIPO', origenId: 'ant-1', valor: TOTAL + 1 }],
+        lineas: [{ productoId: 'p-1', cantidad: 1 }],
+      }),
+    ).rejects.toThrow(/sobra lo aplicado/);
+  });
+});

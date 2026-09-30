@@ -17,6 +17,7 @@ import {
   gmfDe,
   problemaDeDireccion,
   valorMovido,
+  gmfIncluido,
   type Direccion,
 } from './movimiento-concepto.reglas';
 
@@ -430,6 +431,22 @@ export class MovimientoConceptoService {
       },
       t,
     );
+  }
+
+  /** El 4×1000 que va dentro de `total` cuando lo asume quien recibe (`gmfIncluido`). */
+  async gmfIncluidoEn(
+    cuentaBancariaId: string,
+    total: number,
+    t: Tx,
+  ): Promise<number> {
+    const cuenta = fila<{ exenta_gmf: boolean }>(
+      await t.query('SELECT exenta_gmf FROM cuenta_bancaria WHERE id = $1', [
+        cuentaBancariaId,
+      ]),
+    );
+    if (cuenta === undefined)
+      throw new NotFoundException('Cuenta bancaria no encontrada.');
+    return gmfIncluido(total, cuenta.exenta_gmf);
   }
 
   /** Lo cuánto calcularía el 4×1000 de una salida, sin registrar nada. */

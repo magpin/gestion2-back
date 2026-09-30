@@ -314,41 +314,29 @@ function bloqueBase(h: HechosPlan): CuentaSugerida[] {
     }),
   ];
 
-  // Una caja por sede: el arqueo se hace por punto de venta, y un solo saldo
-  // junto no se puede cuadrar contra la caja física de cada local.
-  //
-  // El consecutivo es posicional y de dos dígitos, no el código de la sede: ese
-  // lo escribe el usuario y puede ser '001' o 'PPAL', lo que daría auxiliares de
-  // largo distinto colgando de la misma cuenta. Un plan de cuentas se lee en
-  // columna y los códigos desparejos lo vuelven ilegible.
+  // Una sola caja, la de la sede principal (decisión del dueño, 30-09): una
+  // empresa maneja una sola caja. `h.sedes` llega con la principal primero.
+  // Si ya hay una cuenta de caja bajo 110505, no se propone otra.
   //
   // El número sale del siguiente libre bajo 110505 (`proximoCodigoAuxiliar`),
-  // no de la posición de la sede: una sede agregada después chocaba con el
-  // código de otra y se descartaba sin aviso. La sede que ya tiene su «Caja -
-  // {sede}» no se vuelve a proponer.
-  const asignados: string[] = [];
-  const conCaja = new Set(
-    (h.cajasExistentes ?? []).map((c) => c.nombre.trim()),
-  );
-  h.sedes.forEach((sede) => {
-    if (conCaja.has(`Caja - ${sede.nombre}`.trim())) return;
-    const siguiente = proximoCodigoAuxiliar('110505', [
-      ...h.codigosExistentes,
-      ...asignados,
-    ]);
-    if (!siguiente.ok) return;
-    asignados.push(siguiente.codigo);
-    lista.push(
-      cuenta({
-        codigo: siguiente.codigo,
-        nombre: `Caja - ${sede.nombre}`,
-        codigoPuc: '110505',
-        bloque: 'BASE',
-        porque: `Tenés registrada la sede "${sede.nombre}", y el arqueo se hace por sede.`,
-        sugerido: true,
-      }),
-    );
-  });
+  // de dos dígitos, no del código de la sede: ese lo escribe el usuario y
+  // puede ser '001' o 'PPAL'.
+  const principal = h.sedes[0];
+  if (principal !== undefined && (h.cajasExistentes ?? []).length === 0) {
+    const siguiente = proximoCodigoAuxiliar('110505', h.codigosExistentes);
+    if (siguiente.ok) {
+      lista.push(
+        cuenta({
+          codigo: siguiente.codigo,
+          nombre: `Caja - ${principal.nombre}`,
+          codigoPuc: '110505',
+          bloque: 'BASE',
+          porque: `La caja de la empresa, en su sede principal "${principal.nombre}".`,
+          sugerido: true,
+        }),
+      );
+    }
+  }
 
   // Donde se ajusta un arqueo que no cuadra. Toda caja se cuenta, y tarde o
   // temprano una no cuadra: tener las cuentas desde el principio evita que el

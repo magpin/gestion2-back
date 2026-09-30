@@ -999,7 +999,7 @@ export class PlanCuentasService {
          g.division_codigo, d.seccion_codigo,
          cc.maneja_centro_de_costo,
          COALESCE((SELECT json_agg(json_build_object('codigo', s.codigo, 'nombre', s.nombre)
-                                   ORDER BY s.codigo)
+                                   ORDER BY s.es_principal DESC, s.codigo)
                      FROM empresa_sede s WHERE s.empresa_id = e.id AND s.activo),
                   '[]'::json)                                            AS sedes,
          COALESCE((SELECT array_agg(ec.codigo) FROM empresa_cuenta ec

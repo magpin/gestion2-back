@@ -90,6 +90,16 @@ export class CajaService {
 
   async crear(ctx: CtxEmpresa, dto: CrearCajaDto): Promise<Caja> {
     return this.tx.enContexto(ctx, async (t) => {
+      // Una empresa maneja una sola caja, la principal (decisión del dueño,
+      // 30-09): con una activa no se crea otra.
+      const [otra] = filas<{ nombre: string }>(
+        await t.query('SELECT nombre FROM caja WHERE activa LIMIT 1'),
+      );
+      if (otra !== undefined) {
+        throw new BadRequestException(
+          `La empresa ya tiene su caja (${otra.nombre}): se maneja una sola, la principal.`,
+        );
+      }
       await this.validarCuenta(ctx, dto.tipo, dto.cuentaId, t);
       const creada = fila<Caja>(
         await t.query(
@@ -192,9 +202,21 @@ export class CajaService {
     );
   }
 
+  /** Solo si no hay otra activa: una empresa maneja una sola caja. */
   async activar(ctx: CtxEmpresa, id: string): Promise<void> {
-    await this.tx.enContexto(ctx, (t) =>
-      t.query('UPDATE caja SET activa = true WHERE id = $1', [id]),
-    );
+    await this.tx.enContexto(ctx, async (t) => {
+      const [otra] = filas<{ nombre: string }>(
+        await t.query(
+          'SELECT nombre FROM caja WHERE activa AND id <> $1 LIMIT 1',
+          [id],
+        ),
+      );
+      if (otra !== undefined) {
+        throw new BadRequestException(
+          `La empresa ya tiene su caja activa (${otra.nombre}): se maneja una sola.`,
+        );
+      }
+      await t.query('UPDATE caja SET activa = true WHERE id = $1', [id]);
+    });
   }
 }

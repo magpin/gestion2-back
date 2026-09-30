@@ -3,7 +3,6 @@ import { Injectable } from '@nestjs/common';
 import type { CtxEmpresa } from '../../../common/ctx';
 import {
   CuentasAutomaticas,
-  resolverCuentaConcepto,
   type ConceptoConfigurado,
 } from '../../../common/contabilidad/cuentas-automaticas';
 import { fila, filas } from '../../../common/db/filas';
@@ -98,9 +97,8 @@ export class CajaConfiguracionService {
    *
    * 1. Crea las cuentas de arqueo que falten (429553, 136530, 531595) y
    *    asigna cada concepto si no hay nada que elegir.
-   * 2. Crea la caja principal de cada sede que no tenga una, con su cuenta
-   *    «Caja - {sede}» del plan.
-   * 3. Si la empresa maneja caja menor, crea la caja menor con la 110510.
+   * 2. Si la empresa no tiene caja, crea la caja principal en su sede
+   *    principal, con su cuenta «Caja - {sede}». Una sola caja por empresa.
    *
    * Lo llama el asistente al crear el plan de cuentas y la pantalla de
    * tesorería al abrirse, así también llega a las empresas que ya tenían plan.
@@ -113,99 +111,56 @@ export class CajaConfiguracionService {
         avisos: [],
       };
 
-      // ── Una caja principal por sede ──────────────────────────────────────
-      const sedes = await this.nucleo.sedes(ctx, t);
-      const cajasSede = await this.nucleo.cuentaConAuxiliares(ctx, '110505', t);
-      const conCaja = new Set(
-        filas<{ sede_id: string }>(
-          await t.query(
-            `SELECT sede_id FROM caja WHERE tipo = 'PRINCIPAL' AND activa`,
-          ),
-        ).map((c) => c.sede_id),
+      // ── Una sola caja: la principal ──────────────────────────────────────
+      // Decisión del dueño (30-09): una empresa maneja una sola caja, la
+      // principal, en su sede principal. Ni una por sede ni caja menor.
+      const [yaTiene] = filas<{ id: string }>(
+        await t.query(`SELECT id FROM caja WHERE activa LIMIT 1`),
       );
+      if (yaTiene !== undefined) return resultado;
 
-      for (const sede of sedes) {
-        if (conCaja.has(sede.id)) continue;
-        // El plan crea «Caja - {sede}» debajo de 110505. Con una sola sede y
-        // sin auxiliares, la 110505 misma es su caja.
-        let cuenta: { id: string } | undefined =
-          cajasSede.auxiliares.find(
-            (c) => c.nombre.trim() === `Caja - ${sede.nombre}`.trim(),
-          ) ??
-          (sedes.length === 1 &&
-          cajasSede.auxiliares.length === 0 &&
-          cajasSede.cuenta?.esAuxiliar
-            ? cajasSede.cuenta
-            : undefined);
-        // Una sede sin su cuenta —agregada después, o que el plan no alcanzó a
-        // crear— recibe su auxiliar «Caja - {sede}» bajo 110505. Si la 110505
-        // ya tiene movimientos y no admite hijas, se avisa y se sigue con las
-        // demás: la caja de esa sede se crea a mano con otra cuenta.
-        if (cuenta === undefined) {
-          try {
-            await t.query('SAVEPOINT caja_sede');
-            const creada = await this.nucleo.crearAuxiliar(
-              ctx,
-              { madre: '110505', nombre: `Caja - ${sede.nombre}` },
-              { sistema: true },
-              t,
-            );
-            await t.query('RELEASE SAVEPOINT caja_sede');
-            resultado.cuentasCreadas.push(`${creada.codigo} ${creada.nombre}`);
-            cuenta = creada;
-          } catch (e) {
-            await t.query('ROLLBACK TO SAVEPOINT caja_sede');
-            resultado.avisos.push(
-              `La caja de ${sede.nombre} no se creó: ${e instanceof Error ? e.message : 'no se pudo crear su cuenta'}`,
-            );
-            continue;
-          }
-        }
-
-        await this.crearCaja(ctx, t, {
-          nombre: `Caja ${sede.nombre}`,
-          tipo: 'PRINCIPAL',
-          sedeId: sede.id,
-          cuentaId: cuenta.id,
-        });
-        resultado.cajasCreadas.push(`Caja ${sede.nombre}`);
+      const [sede] = await this.nucleo.sedes(ctx, t);
+      if (sede === undefined) {
+        resultado.avisos.push(
+          'La caja principal no se creó: la empresa no tiene sede.',
+        );
+        return resultado;
       }
-
-      // ── Caja menor ───────────────────────────────────────────────────────
-      const manejaCajaMenor = await this.nucleo.tieneHechoOperativo(
-        ctx,
-        'MANEJA_CAJA_MENOR',
-        t,
-      );
-      // Cualquier caja menor, activa o no: si alguien la desactivó, no se
-      // vuelve a crear por la espalda.
-      const yaTiene = fila<{ id: string }>(
-        await t.query(`SELECT id FROM caja WHERE tipo = 'MENOR' LIMIT 1`),
-      );
-      if (manejaCajaMenor && yaTiene === undefined) {
-        let familia = await this.nucleo.cuentaConAuxiliares(ctx, '110510', t);
-        if (familia.cuenta === null && familia.auxiliares.length === 0) {
-          const creada = await this.nucleo.asegurarCuenta(
+      const familia = await this.nucleo.cuentaConAuxiliares(ctx, '110505', t);
+      let cuenta: { id: string } | undefined =
+        familia.auxiliares.find(
+          (c) => c.nombre.trim() === `Caja - ${sede.nombre}`.trim(),
+        ) ??
+        familia.auxiliares[0] ??
+        (familia.cuenta?.esAuxiliar ? familia.cuenta : undefined);
+      if (cuenta === undefined) {
+        try {
+          await t.query('SAVEPOINT caja_principal');
+          const creada = await this.nucleo.crearAuxiliar(
             ctx,
-            { codigo: '110510', nombre: 'Caja menor' },
+            { madre: '110505', nombre: `Caja - ${sede.nombre}` },
+            { sistema: true },
             t,
           );
-          if (creada !== null) {
-            resultado.cuentasCreadas.push(`${creada.codigo} ${creada.nombre}`);
-          }
-          familia = await this.nucleo.cuentaConAuxiliares(ctx, '110510', t);
-        }
-        const { cuentaId } = resolverCuentaConcepto(familia);
-        if (cuentaId !== null) {
-          await this.crearCaja(ctx, t, {
-            nombre: 'Caja menor',
-            tipo: 'MENOR',
-            sedeId: null,
-            cuentaId,
-          });
-          resultado.cajasCreadas.push('Caja menor');
+          await t.query('RELEASE SAVEPOINT caja_principal');
+          resultado.cuentasCreadas.push(`${creada.codigo} ${creada.nombre}`);
+          cuenta = creada;
+        } catch (e) {
+          await t.query('ROLLBACK TO SAVEPOINT caja_principal');
+          resultado.avisos.push(
+            `La caja principal no se creó: ${e instanceof Error ? e.message : 'no se pudo crear su cuenta'}`,
+          );
+          return resultado;
         }
       }
+
+      await this.crearCaja(ctx, t, {
+        nombre: 'Caja principal',
+        tipo: 'PRINCIPAL',
+        sedeId: sede.id,
+        cuentaId: cuenta.id,
+      });
+      resultado.cajasCreadas.push('Caja principal');
 
       return resultado;
     });

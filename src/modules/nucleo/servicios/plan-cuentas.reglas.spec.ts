@@ -429,7 +429,7 @@ describe('sugerirPlan · centros de costo', () => {
 });
 
 describe('sugerirPlan · sedes y cuentas ya existentes', () => {
-  it('propone una caja por sede', () => {
+  it('propone una sola caja: la de la sede principal (la primera)', () => {
     const c = codigos(
       con({
         sedes: [
@@ -438,7 +438,8 @@ describe('sugerirPlan · sedes y cuentas ya existentes', () => {
         ],
       }),
     );
-    expect(c).toEqual(expect.arrayContaining(['11050501', '11050502']));
+    expect(c).toContain('11050501');
+    expect(c).not.toContain('11050502');
   });
 
   it('no vuelve a proponer lo que la empresa ya tiene', () => {
@@ -547,8 +548,8 @@ describe('sugerirPlan · la depreciación con el código que dice el decreto', (
   });
 });
 
-describe('sugerirPlan · la caja de una sede agregada después', () => {
-  it('no choca con el código de otra sede: toma el siguiente libre', () => {
+describe('sugerirPlan · una sola caja por empresa', () => {
+  it('con una caja ya creada no propone otra, aunque haya más sedes', () => {
     const c = codigos(
       con({
         sedes: [
@@ -559,8 +560,7 @@ describe('sugerirPlan · la caja de una sede agregada después', () => {
         cajasExistentes: [{ codigo: '11050501', nombre: 'Caja - Almacén' }],
       }),
     );
-    expect(c).toContain('11050502');
-    expect(c).not.toContain('11050501');
+    expect(c).not.toContain('11050502');
   });
 
   it('la sede que ya tiene su caja no se vuelve a proponer', () => {

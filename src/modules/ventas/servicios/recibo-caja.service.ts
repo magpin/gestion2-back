@@ -33,6 +33,7 @@ import {
   CAMPOS_DOCUMENTO,
   VentaDocumentoService,
 } from './venta-documento.service';
+import { cuentaInactiva } from '../../../common/contabilidad/cuenta-inactiva';
 
 /** Una factura con saldo, como la ve quien cobra. */
 export interface FacturaPorCobrar {
@@ -546,9 +547,7 @@ export class ReciboCajaService {
     }
     const cartera = await this.nucleo.cuenta(ctx, CODIGO_CARTERA, t);
     if (cartera === null) {
-      throw new BadRequestException(
-        `No existe o está inactiva la cuenta de cartera (${CODIGO_CARTERA}).`,
-      );
+      throw cuentaInactiva('cartera', CODIGO_CARTERA);
     }
     const comprobante = await this.contabilidad.tipoComprobantePorCodigo(
       ctx,

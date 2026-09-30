@@ -102,7 +102,26 @@ export class CuentasAutomaticas<C extends string> {
     private readonly orden: C[],
     private readonly nucleo: NucleoApi,
     private readonly contabilidad: ContabilidadApi,
+    /**
+     * Las definiciones de ESTA empresa, cuando dependen de ella: el ingreso y
+     * el costo de un producto salen de su actividad (4135 un comercio, 4155
+     * una empresa de servicios). La columna no cambia; la familia y la cuenta
+     * que se crea, sí. Sin esto, `conceptos` para todas.
+     */
+    private readonly porEmpresa?: (
+      ctx: CtxEmpresa,
+      t: Tx,
+    ) => Promise<Record<C, DefinicionConcepto>>,
   ) {}
+
+  private async definiciones(
+    ctx: CtxEmpresa,
+    t: Tx,
+  ): Promise<Record<C, DefinicionConcepto>> {
+    return this.porEmpresa === undefined
+      ? this.conceptos
+      : this.porEmpresa(ctx, t);
+  }
 
   /** Lo guardado: una columna por concepto, `null` si nadie la ha fijado. */
   async leer(ctx: CtxEmpresa, t: Tx): Promise<Record<C, string | null>> {
@@ -127,8 +146,9 @@ export class CuentasAutomaticas<C extends string> {
     const guardada = await this.leer(ctx, t);
     const conceptos: ConceptoConfigurado<C>[] = [];
 
+    const defs = await this.definiciones(ctx, t);
     for (const concepto of this.orden) {
-      const def = this.conceptos[concepto];
+      const def = defs[concepto];
       const { opciones } = resolverCuentaConcepto(
         await this.nucleo.cuentaConAuxiliares(ctx, def.familia, t),
       );
@@ -174,7 +194,7 @@ export class CuentasAutomaticas<C extends string> {
     cuentaId: string,
     t: Tx,
   ): Promise<void> {
-    const def = this.conceptos[concepto];
+    const def = (await this.definiciones(ctx, t))[concepto];
     const { opciones } = resolverCuentaConcepto(
       await this.nucleo.cuentaConAuxiliares(ctx, def.familia, t),
     );
@@ -194,8 +214,9 @@ export class CuentasAutomaticas<C extends string> {
     const creadas: string[] = [];
     const guardada = await this.leer(ctx, t);
 
+    const defs = await this.definiciones(ctx, t);
     for (const concepto of this.orden) {
-      const def = this.conceptos[concepto];
+      const def = defs[concepto];
       let familia = await this.nucleo.cuentaConAuxiliares(ctx, def.familia, t);
 
       // Sin nada que reciba asientos —ni auxiliares, ni una cuenta madre que

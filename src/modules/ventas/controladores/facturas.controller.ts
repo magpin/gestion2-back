@@ -16,7 +16,7 @@ import {
   Roles,
 } from '../../../common/auth/decoradores';
 import type { CtxEmpresa } from '../../../common/ctx';
-import { ConvertirCotizacionDto } from '../dto/cotizacion.dto';
+import { ConvertirCotizacionDto, ExistenciaDto } from '../dto/cotizacion.dto';
 import { CrearFacturaDto } from '../dto/factura.dto';
 import {
   AnularVentaDto,
@@ -74,6 +74,26 @@ export class FacturasController {
   @HttpCode(HttpStatus.OK)
   previo(@ActorEmpresa() ctx: CtxEmpresa, @Body() dto: CrearFacturaDto) {
     return this.facturas.previo(ctx, dto);
+  }
+
+  /** Qué productos no alcanzan, antes de emitir. Solo lee. */
+  @Roles('VENTAS', 'DIRECTOR')
+  @Post('existencia')
+  @HttpCode(HttpStatus.OK)
+  existencia(@ActorEmpresa() ctx: CtxEmpresa, @Body() dto: ExistenciaDto) {
+    return this.facturas.existencia(ctx, dto.lineas);
+  }
+
+  /** Cómo quedaría la factura de una cotización, sin emitirla. */
+  @Roles('VENTAS', 'DIRECTOR')
+  @Post('desde-cotizacion/:cotizacionId/previo')
+  @HttpCode(HttpStatus.OK)
+  previoConversion(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('cotizacionId', ParseUUIDPipe) cotizacionId: string,
+    @Body() dto: ConvertirCotizacionDto,
+  ) {
+    return this.facturas.previoConversion(ctx, cotizacionId, dto);
   }
 
   /**

@@ -26,9 +26,11 @@ import {
   calcularCobro,
   calcularDevolucionCobro,
   calcularLineas,
+  resolverPrecio,
   sumarPagos,
   type LineaVentaEntrada,
 } from './venta.reglas';
+import { cuentaInactiva } from '../../../common/contabilidad/cuenta-inactiva';
 
 /** [BASE] en toda empresa (`preactivacion-cuentas-comercio.md`): cartera, exige tercero. */
 const CODIGO_CUENTA_CARTERA = '130505';
@@ -241,9 +243,8 @@ const PREFIJO_COTIZACION = 'COT';
  * y `ContabilidadApi.asentar`, que este servicio deliberadamente no toca.
  *
  * Una cotización no asienta ni mueve el kardex: el precio de cada línea es
- * siempre el vigente del catálogo (nunca lo que mande el cliente — ver
- * "Descuentos por línea o por documento" en `ventas-backend.md`), pero de
- * ahí no sale ningún movimiento de inventario ni ningún asiento.
+ * el que se digitó —el que se pactó con el cliente— o, sin digitar, el de
+ * lista vigente; de ahí no sale ningún movimiento de inventario ni asiento.
  *
  * `anular` y `cobrar` viven acá y no en `FacturaService` porque son
  * operaciones sobre el documento ya existente, no sobre su creación —
@@ -298,20 +299,17 @@ export class VentaDocumentoService {
         );
       }
 
-      // El precio de lista manda cuando existe; el digitado en la línea es
-      // la salida para un producto que todavía no tiene precio —los 1.638
-      // importados llegaron así—. Una cotización no es un dato fiscal: que
-      // quede trabada por un dato que falta en la ficha no le sirve a nadie.
+      // El digitado en la línea manda: es el precio que se le ofrece al
+      // cliente, y la factura que salga de esta cotización lo respeta. Sin
+      // digitar, el de lista. Al cotizar no se bloquea un precio bajo costo
+      // —la pantalla avisa—: el bloqueo es al facturar, donde se pierde plata.
       const precioVigente = await this.inventario.precioVigente(
         ctx,
         l.productoId,
         t,
       );
-      const precio =
-        precioVigente !== null && precioVigente > 0
-          ? precioVigente
-          : l.precioUnitario;
-      if (precio === undefined) {
+      const precio = resolverPrecio(l.precioUnitario, precioVigente);
+      if (precio === null) {
         throw new BadRequestException(
           `El producto ${producto.codigo} no tiene precio de venta configurado: fijale uno en su ficha, o digitá el precio en la línea.`,
         );
@@ -904,9 +902,7 @@ export class VentaDocumentoService {
       t,
     );
     if (cuentaCartera === null) {
-      throw new BadRequestException(
-        `No existe o está inactiva la cuenta de cartera (${CODIGO_CUENTA_CARTERA}). Actívala en el plan de cuentas.`,
-      );
+      throw cuentaInactiva('cartera', CODIGO_CUENTA_CARTERA);
     }
 
     const numero = `${documento.prefijo}-${String(documento.consecutivo).padStart(6, '0')}`;
@@ -1059,9 +1055,7 @@ export class VentaDocumentoService {
       t,
     );
     if (cuentaCartera === null) {
-      throw new BadRequestException(
-        `No existe o está inactiva la cuenta de cartera (${CODIGO_CUENTA_CARTERA}). Actívala en el plan de cuentas.`,
-      );
+      throw cuentaInactiva('cartera', CODIGO_CUENTA_CARTERA);
     }
 
     const numero = `${documento.prefijo}-${String(documento.consecutivo).padStart(6, '0')}`;

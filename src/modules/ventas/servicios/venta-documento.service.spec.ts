@@ -428,7 +428,7 @@ describe('VentaDocumentoService.crearCotizacion', () => {
     expect(documento.total_iva).toBe('38000');
   });
 
-  it('el precio de lista manda sobre el digitado cuando el producto sí tiene precio', async () => {
+  it('el precio digitado manda sobre el de lista: es el que se le ofrece al cliente', async () => {
     const { tx } = txFalso();
     const servicio = new VentaDocumentoService(
       txServiceFalso(tx),
@@ -442,10 +442,10 @@ describe('VentaDocumentoService.crearCotizacion', () => {
     const documento = await servicio.crearCotizacion(ctx, {
       terceroId: 'ter-1',
       fecha: '2026-09-07',
-      lineas: [{ productoId: 'p-1', cantidad: 1, precioUnitario: 1 }],
+      lineas: [{ productoId: 'p-1', cantidad: 1, precioUnitario: 250000 }],
     });
 
-    expect(documento.lineas[0].precio_unitario).toBe('289900');
+    expect(documento.lineas[0].precio_unitario).toBe('250000');
   });
 
   it('no mira la existencia: cotiza 9.999 unidades de un producto sin nada en bodega', async () => {
@@ -508,6 +508,20 @@ describe('VentaDocumentoService.editarCotizacion', () => {
       consultas.some((s) => s.includes('DELETE FROM venta_documento_linea')),
     ).toBe(true);
     expect(consultas.some((s) => s.includes('FOR UPDATE'))).toBe(true);
+  });
+
+  it('corregir conserva el precio digitado', async () => {
+    const { tx } = txFalso();
+    const servicio = servicioCon(tx);
+
+    const documento = await servicio.editarCotizacion(ctx, 'cot-1', {
+      terceroId: 'ter-1',
+      fecha: '2026-09-07',
+      lineas: [{ productoId: 'p-1', cantidad: 2, precioUnitario: 250000 }],
+    });
+
+    expect(documento.lineas[0].precio_unitario).toBe('250000');
+    expect(documento.subtotal).toBe('500000');
   });
 
   it('rechaza corregir una cotización ya convertida en factura', async () => {

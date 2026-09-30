@@ -5,6 +5,7 @@ import {
   evaluarMargen,
   calcularLinea,
   calcularLineas,
+  resolverPrecio,
   sumarPagos,
   validarFormaPago,
 } from './venta.reglas';
@@ -304,5 +305,23 @@ describe('validarFormaPago', () => {
     expect(validarFormaPago('CONTADO', [120000, undefined], 119000).ok).toBe(
       false,
     );
+  });
+});
+
+describe('resolverPrecio', () => {
+  it('el digitado manda sobre el de lista', () => {
+    expect(resolverPrecio(250000, 289900)).toBe(250000);
+  });
+
+  it('sin digitar, el de lista', () => {
+    expect(resolverPrecio(undefined, 289900)).toBe(289900);
+  });
+
+  it('sin ninguno de los dos, null', () => {
+    expect(resolverPrecio(undefined, null)).toBeNull();
+  });
+
+  it('un precio de lista en cero cuenta como que no hay', () => {
+    expect(resolverPrecio(undefined, 0)).toBeNull();
   });
 });

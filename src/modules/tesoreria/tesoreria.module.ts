@@ -30,6 +30,9 @@ import { SaldosInicialesController } from './controladores/saldos-iniciales.cont
 import { CajaBancosService } from './servicios/caja-bancos.service';
 import { SaldosInicialesService } from './servicios/saldos-iniciales.service';
 import { TrasladoService } from './servicios/traslado.service';
+import { PrepararTodoService } from './servicios/preparar-todo.service';
+import { PrepararTodoController } from './controladores/preparar-todo.controller';
+import { InventarioModule } from '../inventario/inventario.module';
 
 /**
  * Tesorería (módulo 7 de la secuencia): Caja y Bancos. Bancos se suma
@@ -51,7 +54,7 @@ import { TrasladoService } from './servicios/traslado.service';
  * importa directamente.
  */
 @Module({
-  imports: [NucleoModule, ContabilidadModule],
+  imports: [NucleoModule, ContabilidadModule, InventarioModule],
   controllers: [
     CajasController,
     CajaMovimientosController,
@@ -67,6 +70,7 @@ import { TrasladoService } from './servicios/traslado.service';
     TrasladosController,
     CajaBancosController,
     SaldosInicialesController,
+    PrepararTodoController,
   ],
   providers: [
     CajaService,
@@ -82,6 +86,7 @@ import { TrasladoService } from './servicios/traslado.service';
     TrasladoService,
     CajaBancosService,
     SaldosInicialesService,
+    PrepararTodoService,
     TesoreriaApi,
   ],
   exports: [TesoreriaApi],

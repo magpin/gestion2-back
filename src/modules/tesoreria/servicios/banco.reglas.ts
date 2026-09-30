@@ -507,3 +507,28 @@ export function armarCorte(
       saldoBanco === undefined ? null : redondear(saldoBanco - saldoFinal),
   };
 }
+
+/**
+ * Qué impide que una cuenta bancaria (o billetera) lleve esta cuenta
+ * contable, o `null`. Tiene que estar activa, recibir asientos y ser de
+ * bancos (1110) o de cuentas de ahorro (1120).
+ */
+export function problemaCuentaDeBanco(cuenta: {
+  codigo: string;
+  activa: boolean;
+  esAuxiliar: boolean;
+}): string | null {
+  if (!cuenta.activa)
+    return `La cuenta ${cuenta.codigo} está inactiva. Actívala en Plan de cuentas.`;
+  if (!cuenta.esAuxiliar)
+    return `La cuenta ${cuenta.codigo} agrupa otras y no recibe asientos: elegí uno de sus auxiliares o creá uno.`;
+  if (!cuenta.codigo.startsWith('1110') && !cuenta.codigo.startsWith('1120'))
+    return `Una cuenta bancaria va en una cuenta de 1110 (bancos) o 1120 (cuentas de ahorro); la ${cuenta.codigo} no lo es.`;
+  return null;
+}
+
+/** «Bancos - Bancolombia ···1234»: el nombre del auxiliar de una cuenta bancaria. */
+export function nombreDelAuxiliar(banco: string, numero: string): string {
+  const ultimos = numero.replace(/\D/g, '').slice(-4);
+  return `Bancos - ${banco.trim()}${ultimos ? ` ···${ultimos}` : ''}`;
+}

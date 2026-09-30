@@ -19,6 +19,7 @@ import {
   type VentaDocumentoResumen,
 } from './venta-documento.service';
 import { esDeHoy, hoyEnColombia } from '../../../common/fecha';
+import { cuentaInactiva } from '../../../common/contabilidad/cuenta-inactiva';
 
 const CAMPOS_LINEA = `id, venta_documento_id, orden, producto_id, concepto_id, cuenta_id, detalle, cantidad, precio_unitario,
                        iva_tarifa, subtotal, iva_valor, total, costo_unitario`;
@@ -116,8 +117,9 @@ export class NotaCreditoService {
           t,
         );
         if (cuentaDevoluciones === null) {
-          throw new BadRequestException(
-            `No existe o está inactiva la cuenta de devoluciones en ventas (${CODIGO_CUENTA_DEVOLUCIONES}). Actívala en el plan de cuentas.`,
+          throw cuentaInactiva(
+            'devoluciones en ventas',
+            CODIGO_CUENTA_DEVOLUCIONES,
           );
         }
 
@@ -127,9 +129,7 @@ export class NotaCreditoService {
           t,
         );
         if (cuentaCartera === null) {
-          throw new BadRequestException(
-            `No existe o está inactiva la cuenta de cartera (${CODIGO_CUENTA_CARTERA}). Actívala en el plan de cuentas.`,
-          );
+          throw cuentaInactiva('cartera', CODIGO_CUENTA_CARTERA);
         }
 
         const totalIva = Number(factura.total_iva);
@@ -141,9 +141,7 @@ export class NotaCreditoService {
             t,
           );
           if (cuentaIva === null) {
-            throw new BadRequestException(
-              `No existe o está inactiva la cuenta de IVA generado (${CODIGO_CUENTA_IVA_GENERADO}). Actívala en el plan de cuentas.`,
-            );
+            throw cuentaInactiva('IVA generado', CODIGO_CUENTA_IVA_GENERADO);
           }
           cuentaIvaId = cuentaIva.id;
         }

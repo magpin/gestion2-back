@@ -92,6 +92,8 @@ export interface HechosPlan {
   responsabilidadesRut: number[];
   /** Lo que ningún documento declara: empleados, activos, crédito, caja menor. */
   hechosOperativos: string[];
+  /** Las cuentas que ya cuelgan de 110505, con su nombre: la caja de cada sede. */
+  cajasExistentes?: Array<{ codigo: string; nombre: string }>;
   actividadPrincipal: {
     codigoCiiu: string;
     seccionCiiu: string | null;
@@ -319,10 +321,26 @@ function bloqueBase(h: HechosPlan): CuentaSugerida[] {
   // lo escribe el usuario y puede ser '001' o 'PPAL', lo que daría auxiliares de
   // largo distinto colgando de la misma cuenta. Un plan de cuentas se lee en
   // columna y los códigos desparejos lo vuelven ilegible.
-  h.sedes.forEach((sede, i) => {
+  //
+  // El número sale del siguiente libre bajo 110505 (`proximoCodigoAuxiliar`),
+  // no de la posición de la sede: una sede agregada después chocaba con el
+  // código de otra y se descartaba sin aviso. La sede que ya tiene su «Caja -
+  // {sede}» no se vuelve a proponer.
+  const asignados: string[] = [];
+  const conCaja = new Set(
+    (h.cajasExistentes ?? []).map((c) => c.nombre.trim()),
+  );
+  h.sedes.forEach((sede) => {
+    if (conCaja.has(`Caja - ${sede.nombre}`.trim())) return;
+    const siguiente = proximoCodigoAuxiliar('110505', [
+      ...h.codigosExistentes,
+      ...asignados,
+    ]);
+    if (!siguiente.ok) return;
+    asignados.push(siguiente.codigo);
     lista.push(
       cuenta({
-        codigo: `110505${String(i + 1).padStart(2, '0')}`,
+        codigo: siguiente.codigo,
         nombre: `Caja - ${sede.nombre}`,
         codigoPuc: '110505',
         bloque: 'BASE',
@@ -824,9 +842,9 @@ function bloqueGiro(h: HechosPlan): CuentaSugerida[] {
           'Marcaste SERVICIOS: la herramienta con la que se presta el servicio es un activo.',
       }),
       cuenta({
-        codigo: '159245',
+        codigo: '159210',
         nombre: 'Depreciación acumulada - maquinaria y equipo',
-        codigoPuc: '159245',
+        codigoPuc: '159210',
         bloque: 'GIRO',
         porque: 'Contrapartida de la herramienta: se deprecia con el uso.',
       }),
@@ -916,6 +934,14 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
         bloque: 'OPERACION',
         porque:
           'Declaraste que tenés empleados: las vacaciones se provisionan por empleado.',
+      }),
+      cuenta({
+        codigo: '261020',
+        nombre: 'Provisión - prima de servicios',
+        codigoPuc: '261020',
+        bloque: 'OPERACION',
+        porque:
+          'Declaraste que tenés empleados: la plantilla de prima provisiona el doceavo del mes contra esta cuenta.',
       }),
       cuenta({
         codigo: '236505',
@@ -1028,16 +1054,16 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
           'Declaraste que tenés activos fijos: computadores, impresoras, terminal POS.',
       }),
       cuenta({
-        codigo: '159235',
+        codigo: '159215',
         nombre: 'Depreciación acumulada - equipo de oficina',
-        codigoPuc: '159235',
+        codigoPuc: '159215',
         bloque: 'OPERACION',
         porque: 'Contrapartida del equipo de oficina: se deprecia con el uso.',
       }),
       cuenta({
-        codigo: '159240',
+        codigo: '159220',
         nombre: 'Depreciación acumulada - equipo de computación',
-        codigoPuc: '159240',
+        codigoPuc: '159220',
         bloque: 'OPERACION',
         porque: 'Contrapartida del equipo de cómputo: se deprecia con el uso.',
       }),
@@ -1166,6 +1192,28 @@ function bloqueIngresos(h: HechosPlan): {
       bloque: 'GIRO',
       porque: `Contrapartida de ${cuentaIngreso}. Elegí la subcuenta que corresponde a lo que vendés.`,
     }),
+    // Una subcuenta con nombre propio que reciba asientos desde el primer día:
+    // sin ella, la empresa queda con una cuenta que agrupa y no puede facturar
+    // hasta abrirle un auxiliar. Es la misma que inventario crea si falta.
+    cuenta({
+      codigo: `${cuentaIngreso}95`,
+      nombre: nombreSubcuenta95(cuentaIngreso),
+      codigoPuc: SIN_SUBCUENTA_95.has(cuentaIngreso)
+        ? cuentaIngreso
+        : `${cuentaIngreso}95`,
+      bloque: 'GIRO',
+      porque: `Donde entra lo que vendés mientras no elijas otra subcuenta de ${cuentaIngreso}.`,
+    }),
+    cuenta({
+      codigo: `${cuentaCosto}95`,
+      nombre: nombreSubcuenta95(cuentaCosto),
+      codigoPuc: SIN_SUBCUENTA_95.has(cuentaCosto)
+        ? cuentaCosto
+        : `${cuentaCosto}95`,
+      exigeCentroCosto: h.manejaCentroCosto,
+      bloque: 'GIRO',
+      porque: `Lo que costó lo vendido, contrapartida de ${cuentaIngreso}95.`,
+    }),
     libre('4175', '05', {
       nombre: 'Devoluciones en ventas',
       bloque: 'GIRO',
@@ -1231,4 +1279,68 @@ export function sugerirPlan(h: HechosPlan): Sugerencia {
     cuentas,
     faltantes: [...impuestos.faltantes, ...ingresos.faltantes],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Auxiliares creados desde los formularios (plan de ventas, Fase 5)
+// ---------------------------------------------------------------------------
+
+/**
+ * El código del siguiente auxiliar bajo una madre, como venía numerada la
+ * base de origen: `110505` → `11050501`. Cuenta las hijas activas **e
+ * inactivas**: reusar el número de una desactivada dejaría dos cuentas con el
+ * mismo código en la historia del libro (y choca con `uq_empresa_cuenta`).
+ *
+ * Se apoya en el mayor sufijo, no en la cantidad. `reservados` son códigos
+ * que ya se van a usar en la misma operación. Si se acaba el rango, error.
+ */
+export function proximoCodigoAuxiliar(
+  madre: string,
+  hijas: readonly string[],
+): { ok: true; codigo: string } | { ok: false; motivo: string } {
+  const sufijos = hijas
+    .filter((h) => h.startsWith(madre) && h.length > madre.length)
+    .map((h) => h.slice(madre.length))
+    .filter((s) => /^[0-9]+$/.test(s));
+  const ancho = Math.max(2, ...sufijos.map((s) => s.length));
+  const siguiente = Math.max(0, ...sufijos.map(Number)) + 1;
+  if (siguiente > 10 ** ancho - 1 || madre.length + ancho > 20) {
+    return {
+      ok: false,
+      motivo: `La cuenta ${madre} ya no tiene códigos libres para otro auxiliar.`,
+    };
+  }
+  return { ok: true, codigo: madre + String(siguiente).padStart(ancho, '0') };
+}
+
+/**
+ * Bajo qué madres puede crear un auxiliar cada rol, desde el formulario que
+ * lo necesita (D3): quien puede crear ese registro, solo bajo la madre de ese
+ * contexto. El plan completo sigue siendo del director y del contador.
+ */
+export const MADRES_POR_ROL: Readonly<Record<string, readonly string[]>> = {
+  CAJA: ['1105', '1110'],
+  INVENTARIO: ['1435', '41', '61'],
+  COMPRAS: ['5', '6', '1'],
+};
+
+export function madrePermitida(
+  roles: readonly string[],
+  madre: string,
+): boolean {
+  if (roles.includes('DIRECTOR') || roles.includes('CONTADOR')) return true;
+  return roles.some((r) =>
+    (MADRES_POR_ROL[r] ?? []).some((prefijo) => madre.startsWith(prefijo)),
+  );
+}
+
+/** Las cuentas de ingresos y costos cuyo decreto no trae subcuenta 95. */
+const SIN_SUBCUENTA_95 = new Set(['4105', '6150', '6160']);
+
+/** El nombre de la subcuenta 95 del decreto (4135 y 4120 tienen el suyo). */
+function nombreSubcuenta95(familia: string): string {
+  const resto = familia.slice(2);
+  if (resto === '35') return 'Venta de otros productos';
+  if (resto === '20') return 'Productos de otras industrias manufactureras';
+  return 'Actividades conexas';
 }

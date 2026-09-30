@@ -46,7 +46,7 @@ export class CajaConfiguracionController {
    * Crea lo que falte para operar: cuentas de arqueo, cajas por sede y caja
    * menor. Idempotente. Solo CONTADOR/DIRECTOR: crea cuentas en el plan.
    */
-  @Roles('CONTADOR', 'DIRECTOR')
+  @Roles('CONTADOR', 'DIRECTOR', 'ADMIN_TENANT')
   @Post('preparar')
   preparar(@ActorEmpresa() ctx: CtxEmpresa) {
     return this.configuracion.preparar(ctx);

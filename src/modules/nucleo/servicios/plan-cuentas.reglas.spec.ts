@@ -1,4 +1,9 @@
-import { sugerirPlan, type HechosPlan } from './plan-cuentas.reglas';
+import {
+  madrePermitida,
+  proximoCodigoAuxiliar,
+  sugerirPlan,
+  type HechosPlan,
+} from './plan-cuentas.reglas';
 
 /** Una empresa que declaró lo mínimo: sin régimen, sin actividad y sin sector. */
 const minima: HechosPlan = {
@@ -273,7 +278,7 @@ describe('sugerirPlan · giro derivado del sector', () => {
 
   it('servicios recibe herramienta y su depreciacion', () => {
     const c = codigos(con({ sectores: ['SERVICIOS'] }));
-    expect(c).toEqual(expect.arrayContaining(['152410', '159245', '516010']));
+    expect(c).toEqual(expect.arrayContaining(['152410', '159210', '516010']));
   });
 
   it('el taller mixto recibe la union de los dos, nunca la interseccion', () => {
@@ -318,8 +323,8 @@ describe('sugerirPlan · hechos que ningun documento declara', () => {
       expect.arrayContaining([
         '151605',
         '152805',
-        '159235',
-        '159240',
+        '159215',
+        '159220',
         '516015',
         '516020',
       ]),
@@ -456,5 +461,147 @@ describe('sugerirPlan · sedes y cuentas ya existentes', () => {
     expect(s.cuentas.find((c) => c.codigo === '240805')!.codigoPuc).toBe(
       '2408',
     );
+  });
+});
+
+describe('proximoCodigoAuxiliar', () => {
+  it('la primera hija es 01', () => {
+    expect(proximoCodigoAuxiliar('110505', [])).toEqual({
+      ok: true,
+      codigo: '11050501',
+    });
+  });
+
+  it('cuenta las inactivas: no reusa el número de una desactivada', () => {
+    // 11050502 está desactivada, pero sigue en la lista.
+    expect(proximoCodigoAuxiliar('110505', ['11050501', '11050502'])).toEqual({
+      ok: true,
+      codigo: '11050503',
+    });
+  });
+
+  it('se apoya en el mayor, no en la cantidad', () => {
+    expect(proximoCodigoAuxiliar('110505', ['11050507'])).toEqual({
+      ok: true,
+      codigo: '11050508',
+    });
+  });
+
+  it('con el rango lleno, error', () => {
+    const r = proximoCodigoAuxiliar('110505', ['11050599']);
+    expect(r.ok).toBe(false);
+  });
+
+  it('no cuenta la madre ni otras ramas', () => {
+    expect(proximoCodigoAuxiliar('110505', ['110505', '11051001'])).toEqual({
+      ok: true,
+      codigo: '11050501',
+    });
+  });
+});
+
+describe('madrePermitida', () => {
+  it('director y contador, cualquier madre', () => {
+    expect(madrePermitida(['DIRECTOR'], '5105')).toBe(true);
+    expect(madrePermitida(['CONTADOR'], '2408')).toBe(true);
+  });
+
+  it('caja solo bajo 1105 y 1110', () => {
+    expect(madrePermitida(['CAJA'], '110505')).toBe(true);
+    expect(madrePermitida(['CAJA'], '111005')).toBe(true);
+    expect(madrePermitida(['CAJA'], '5105')).toBe(false);
+  });
+
+  it('inventario bajo 1435, 41 y 61', () => {
+    expect(madrePermitida(['INVENTARIO'], '143505')).toBe(true);
+    expect(madrePermitida(['INVENTARIO'], '4135')).toBe(true);
+    expect(madrePermitida(['INVENTARIO'], '6135')).toBe(true);
+    expect(madrePermitida(['INVENTARIO'], '1105')).toBe(false);
+  });
+
+  it('compras bajo 5, 6 y 1', () => {
+    expect(madrePermitida(['COMPRAS'], '5135')).toBe(true);
+    expect(madrePermitida(['COMPRAS'], '2205')).toBe(false);
+  });
+});
+
+describe('sugerirPlan · la depreciación con el código que dice el decreto', () => {
+  it('equipo de oficina a 159215 y de cómputo a 159220, no a flota', () => {
+    const c = codigos(con({ hechosOperativos: ['TIENE_ACTIVOS_FIJOS'] }));
+    expect(c).toEqual(expect.arrayContaining(['159215', '159220']));
+    expect(c).not.toContain('159235');
+    expect(c).not.toContain('159240');
+  });
+
+  it('la herramienta de servicios a 159210 (maquinaria), no a flota aérea', () => {
+    const c = codigos(con({ sectores: ['SERVICIOS'] }));
+    expect(c).toContain('159210');
+    expect(c).not.toContain('159245');
+  });
+
+  it('con empleados, la provisión de prima (261020) que usa la plantilla', () => {
+    expect(codigos(con({ hechosOperativos: ['TIENE_EMPLEADOS'] }))).toContain(
+      '261020',
+    );
+    expect(codigos(minima)).not.toContain('261020');
+  });
+});
+
+describe('sugerirPlan · la caja de una sede agregada después', () => {
+  it('no choca con el código de otra sede: toma el siguiente libre', () => {
+    const c = codigos(
+      con({
+        sedes: [
+          { codigo: '1', nombre: 'Almacén' },
+          { codigo: '2', nombre: 'Taller' },
+        ],
+        codigosExistentes: ['110505', '11050501'],
+        cajasExistentes: [{ codigo: '11050501', nombre: 'Caja - Almacén' }],
+      }),
+    );
+    expect(c).toContain('11050502');
+    expect(c).not.toContain('11050501');
+  });
+
+  it('la sede que ya tiene su caja no se vuelve a proponer', () => {
+    const s = sugerirPlan(
+      con({
+        sedes: [{ codigo: '1', nombre: 'Almacén' }],
+        codigosExistentes: ['11050507'],
+        cajasExistentes: [{ codigo: '11050507', nombre: 'Caja - Almacén' }],
+      }),
+    );
+    expect(s.cuentas.filter((c) => c.nombre.startsWith('Caja -'))).toHaveLength(
+      0,
+    );
+  });
+});
+
+describe('sugerirPlan · ingreso y costo con una subcuenta que recibe asientos', () => {
+  const actividad = (seccion: string, division = '00') =>
+    con({
+      actividadPrincipal: {
+        codigoCiiu: '9999',
+        seccionCiiu: seccion,
+        divisionCiiu: division,
+        tarifaIcaPorMil: 10,
+      },
+    });
+
+  it('un comercio recibe 413595 y 613595', () => {
+    expect(codigos(actividad('G'))).toEqual(
+      expect.arrayContaining(['4135', '413595', '6135', '613595']),
+    );
+  });
+
+  it('una empresa de servicios recibe 415595 y 615595, no 413595', () => {
+    const c = codigos(actividad('M'));
+    expect(c).toEqual(expect.arrayContaining(['415595', '615595']));
+    expect(c).not.toContain('413595');
+  });
+
+  it('la subcuenta recibe asientos', () => {
+    const s = sugerirPlan(actividad('M'));
+    expect(s.cuentas.find((c) => c.codigo === '415595')!.esAuxiliar).toBe(true);
   });
 });

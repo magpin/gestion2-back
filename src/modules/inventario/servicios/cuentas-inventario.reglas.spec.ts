@@ -2,6 +2,7 @@ import {
   CONCEPTOS_INVENTARIO,
   ORDEN_CONCEPTOS_INVENTARIO,
   conceptoDelFaltante,
+  conceptosInventarioPara,
 } from './cuentas-inventario.reglas';
 
 describe('conceptoDelFaltante', () => {
@@ -53,5 +54,26 @@ describe('CONCEPTOS_INVENTARIO', () => {
         (c) => CONCEPTOS_INVENTARIO[c].exigeTercero === true,
       ),
     ).toEqual(['FALTANTE_COBRABLE']);
+  });
+});
+
+describe('conceptosInventarioPara', () => {
+  it('un comercio usa 4135 y 6135', () => {
+    const c = conceptosInventarioPara('4135');
+    expect(c.INGRESO.familia).toBe('4135');
+    expect(c.COSTO_VENTA.codigoCrear).toBe('613595');
+  });
+
+  it('una empresa de servicios usa 4155 y 6155, sin 413595', () => {
+    const c = conceptosInventarioPara('4155');
+    expect(c.INGRESO).toMatchObject({ familia: '4155', codigoCrear: '415595' });
+    expect(c.COSTO_VENTA).toMatchObject({
+      familia: '6155',
+      codigoCrear: '615595',
+    });
+  });
+
+  it('sin actividad, las de comercio', () => {
+    expect(conceptosInventarioPara(null).INGRESO.familia).toBe('4135');
   });
 });

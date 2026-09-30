@@ -26,6 +26,8 @@ export interface CajaConfiguracion {
 export interface ResultadoPreparar {
   cuentasCreadas: string[];
   cajasCreadas: string[];
+  /** Lo que no se pudo dejar listo, en palabras. */
+  avisos: string[];
 }
 
 /**
@@ -108,6 +110,7 @@ export class CajaConfiguracionService {
       const resultado: ResultadoPreparar = {
         cuentasCreadas: await this.cuentas.preparar(ctx, t),
         cajasCreadas: [],
+        avisos: [],
       };
 
       // ── Una caja principal por sede ──────────────────────────────────────
@@ -125,7 +128,7 @@ export class CajaConfiguracionService {
         if (conCaja.has(sede.id)) continue;
         // El plan crea «Caja - {sede}» debajo de 110505. Con una sola sede y
         // sin auxiliares, la 110505 misma es su caja.
-        const cuenta =
+        let cuenta: { id: string } | undefined =
           cajasSede.auxiliares.find(
             (c) => c.nombre.trim() === `Caja - ${sede.nombre}`.trim(),
           ) ??
@@ -134,7 +137,30 @@ export class CajaConfiguracionService {
           cajasSede.cuenta?.esAuxiliar
             ? cajasSede.cuenta
             : undefined);
-        if (cuenta === undefined) continue;
+        // Una sede sin su cuenta —agregada después, o que el plan no alcanzó a
+        // crear— recibe su auxiliar «Caja - {sede}» bajo 110505. Si la 110505
+        // ya tiene movimientos y no admite hijas, se avisa y se sigue con las
+        // demás: la caja de esa sede se crea a mano con otra cuenta.
+        if (cuenta === undefined) {
+          try {
+            await t.query('SAVEPOINT caja_sede');
+            const creada = await this.nucleo.crearAuxiliar(
+              ctx,
+              { madre: '110505', nombre: `Caja - ${sede.nombre}` },
+              { sistema: true },
+              t,
+            );
+            await t.query('RELEASE SAVEPOINT caja_sede');
+            resultado.cuentasCreadas.push(`${creada.codigo} ${creada.nombre}`);
+            cuenta = creada;
+          } catch (e) {
+            await t.query('ROLLBACK TO SAVEPOINT caja_sede');
+            resultado.avisos.push(
+              `La caja de ${sede.nombre} no se creó: ${e instanceof Error ? e.message : 'no se pudo crear su cuenta'}`,
+            );
+            continue;
+          }
+        }
 
         await this.crearCaja(ctx, t, {
           nombre: `Caja ${sede.nombre}`,

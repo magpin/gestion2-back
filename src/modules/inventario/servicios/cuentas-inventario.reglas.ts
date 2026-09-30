@@ -102,3 +102,41 @@ export function conceptoDelFaltante(
       tratamiento === 'RESPONSABLE' ? 'FALTANTE_COBRABLE' : 'FALTANTE_ASUMIDO',
   };
 }
+
+/** El nombre de la subcuenta 95 del decreto en cada cuenta de ingresos y costos. */
+function nombreSubcuenta95(familia: string): string {
+  const resto = familia.slice(2);
+  if (resto === '35') return 'Venta de otros productos';
+  if (resto === '20') return 'Productos de otras industrias manufactureras';
+  return 'Actividades conexas';
+}
+
+/**
+ * Las cuentas de inventario de una empresa según su actividad: el ingreso y
+ * el costo de un producto nuevo van a la cuenta de su actividad (4135 un
+ * comercio, 4155 una empresa de servicios), con la subcuenta 95 del decreto
+ * como la que se crea si falta. Sin actividad conocida, las de comercio.
+ */
+export function conceptosInventarioPara(
+  familiaIngreso: string | null,
+): Record<ConceptoInventario, DefinicionConcepto> {
+  if (familiaIngreso === null || familiaIngreso === '4135') {
+    return CONCEPTOS_INVENTARIO;
+  }
+  const familiaCosto = `61${familiaIngreso.slice(2)}`;
+  return {
+    ...CONCEPTOS_INVENTARIO,
+    INGRESO: {
+      ...CONCEPTOS_INVENTARIO.INGRESO,
+      familia: familiaIngreso,
+      codigoCrear: `${familiaIngreso}95`,
+      nombreCuenta: nombreSubcuenta95(familiaIngreso),
+    },
+    COSTO_VENTA: {
+      ...CONCEPTOS_INVENTARIO.COSTO_VENTA,
+      familia: familiaCosto,
+      codigoCrear: `${familiaCosto}95`,
+      nombreCuenta: nombreSubcuenta95(familiaCosto),
+    },
+  };
+}

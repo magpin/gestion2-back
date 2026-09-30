@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -17,11 +18,17 @@ import type {
   ListarCuentasEmpresaDto,
 } from '../dto/plan-cuentas.dto';
 import {
+  madrePermitida,
+  proximoCodigoAuxiliar,
   sugerirPlan,
   type HechosPlan,
   type Sugerencia,
 } from './plan-cuentas.reglas';
-import { evaluarPertinencia, seccionesPertinentes } from './secciones-ciiu';
+import {
+  cuentaIngresoDeActividad,
+  evaluarPertinencia,
+  seccionesPertinentes,
+} from './secciones-ciiu';
 
 /**
  * Lo que otro módulo necesita saber de una cuenta para asentar contra ella.
@@ -523,6 +530,375 @@ export class PlanCuentasService {
   }
 
   // ---------------------------------------------------------------------------
+  // Auxiliares desde los formularios (plan de ventas, Fase 5)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Un auxiliar bajo `madre`, con el código que sigue y el nombre que se pidió.
+   * Es lo que usa «+ Crear cuenta auxiliar» en los selectores de cuenta: la
+   * persona solo pone el nombre, y la cuenta queda lista para elegirse.
+   *
+   * Quien no es director ni contador solo puede crear bajo la madre de su
+   * contexto (`madrePermitida`). La madre queda bloqueada mientras tanto: dos
+   * creaciones a la vez no pueden sacar el mismo código. Si la madre no está
+   * en el plan pero sí en el decreto, se agrega como cuenta que agrupa. Los
+   * requisitos de la madre (tercero, centro de costo, base) pasan a la hija.
+   */
+  async crearAuxiliar(
+    ctx: CtxEmpresa,
+    datos: { madre: string; nombre: string },
+    /** El sistema al configurar (cajas por sede, bancos): no pregunta el rol. */
+    { sistema = false }: { sistema?: boolean } = {},
+    tx?: Tx,
+  ): Promise<Record<string, unknown>> {
+    if (!sistema && !madrePermitida(ctx.roles, datos.madre)) {
+      throw new ForbiddenException(
+        `Tu rol no puede crear cuentas bajo la ${datos.madre}. Pedíselo al contador o al director.`,
+      );
+    }
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const madre = await this.madreBloqueada(t, ctx, datos.madre);
+        await this.prepararMadre(t, ctx, madre, []);
+        const codigo = await this.siguienteEn(t, madre.codigo, []);
+        const creada = await this.insertar(t, ctx, {
+          codigo,
+          nombre: datos.nombre.trim(),
+          esAuxiliar: true,
+          exigeTercero: madre.exige_tercero,
+          exigeCentroCosto: madre.exige_centro_costo,
+          exigeBaseGravable: madre.exige_base_gravable,
+        });
+        const [fila] = await t.query<Array<Record<string, unknown>>>(
+          `SELECT ${CAMPOS_LISTAR} FROM empresa_cuenta ec
+             JOIN cuenta_puc p ON p.codigo = ec.codigo_puc
+            WHERE ec.id = $1`,
+          [creada.id],
+        );
+        return fila;
+      },
+      tx,
+    );
+  }
+
+  /** La cuenta 41xx de la actividad principal, o `null`. Ver `cuentaIngresoDeActividad`. */
+  async familiaDeIngreso(ctx: CtxEmpresa, tx?: Tx): Promise<string | null> {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const [f] = await t.query<
+          Array<{ seccion: string | null; division: string | null }>
+        >(
+          `SELECT d.seccion_codigo AS seccion, g.division_codigo AS division
+             FROM empresa_actividad_economica a
+             JOIN ciiu_clase    c ON c.codigo = a.codigo_ciiu
+             JOIN ciiu_grupo    g ON g.codigo = c.grupo_codigo
+             JOIN ciiu_division d ON d.codigo = g.division_codigo
+            WHERE a.empresa_id = $1 AND a.fecha_fin IS NULL AND a.es_principal
+            LIMIT 1`,
+          [ctx.empresaId],
+        );
+        return f === undefined
+          ? null
+          : (cuentaIngresoDeActividad(f.seccion, f.division) ?? null);
+      },
+      tx,
+    );
+  }
+
+  /** El código que saldría bajo `madre`, para mostrarlo antes de guardar. */
+  async siguiente(ctx: CtxEmpresa, madre: string): Promise<{ codigo: string }> {
+    return this.tx.enContexto(ctx, async (t) => ({
+      codigo: await this.siguienteEn(t, madre, []),
+    }));
+  }
+
+  /**
+   * Vuelve a activar una cuenta. Si su madre está inactiva, primero la madre:
+   * una cuenta activa colgando de una inactiva no se ve en el árbol.
+   */
+  async activar(ctx: CtxEmpresa, id: string): Promise<void> {
+    await this.tx.enContexto(ctx, async (t) => {
+      const [cuenta] = await t.query<
+        Array<{ codigo: string; codigo_padre: string | null }>
+      >('SELECT codigo, codigo_padre FROM empresa_cuenta WHERE id = $1', [id]);
+      if (cuenta === undefined)
+        throw new NotFoundException('La cuenta no existe');
+      if (cuenta.codigo_padre !== null) {
+        const [madre] = await t.query<Array<{ activa: boolean }>>(
+          'SELECT activa FROM empresa_cuenta WHERE codigo = $1',
+          [cuenta.codigo_padre],
+        );
+        if (madre !== undefined && !madre.activa) {
+          throw new BadRequestException(
+            `Activa primero la ${cuenta.codigo_padre}: la ${cuenta.codigo} cuelga de ella.`,
+          );
+        }
+      }
+      await t.query('UPDATE empresa_cuenta SET activa = true WHERE id = $1', [
+        id,
+      ]);
+    });
+  }
+
+  /**
+   * La madre, bloqueada hasta el final de la transacción. Si la empresa no la
+   * tiene pero el decreto sí, se agrega como cuenta que agrupa.
+   */
+  private async madreBloqueada(
+    t: Tx,
+    ctx: CtxEmpresa,
+    codigo: string,
+  ): Promise<FilaMadre> {
+    const buscar = async () =>
+      (
+        await t.query<FilaMadre[]>(
+          `SELECT id, codigo, nombre, activa, es_auxiliar, exige_tercero,
+                  exige_centro_costo, exige_base_gravable
+             FROM empresa_cuenta WHERE codigo = $1 FOR UPDATE`,
+          [codigo],
+        )
+      )[0];
+    let madre = await buscar();
+    if (madre === undefined) {
+      const [puc] = await t.query<Array<{ nombre: string }>>(
+        'SELECT nombre FROM cuenta_puc WHERE codigo = $1',
+        [codigo],
+      );
+      if (puc === undefined) {
+        throw new NotFoundException(
+          `La cuenta ${codigo} no existe en el plan ni en el decreto.`,
+        );
+      }
+      await this.insertar(t, ctx, {
+        codigo,
+        nombre: puc.nombre,
+        esAuxiliar: false,
+      });
+      madre = (await buscar())!;
+    }
+    if (!madre.activa) {
+      throw new BadRequestException(
+        `La cuenta ${codigo} está inactiva. Actívala en Plan de cuentas antes de crearle auxiliares.`,
+      );
+    }
+    return madre;
+  }
+
+  /** El siguiente código libre bajo `madre`, contando activas e inactivas. */
+  private async siguienteEn(
+    t: Tx,
+    madre: string,
+    reservados: readonly string[],
+  ): Promise<string> {
+    const hijas = await t.query<Array<{ codigo: string }>>(
+      'SELECT codigo FROM empresa_cuenta WHERE codigo_padre = $1',
+      [madre],
+    );
+    const r = proximoCodigoAuxiliar(madre, [
+      ...hijas.map((h) => h.codigo),
+      ...reservados,
+    ]);
+    if (!r.ok) throw new BadRequestException(r.motivo);
+    return r.codigo;
+  }
+
+  /**
+   * Antes de que una cuenta auxiliar tenga hijas, deja de recibir asientos
+   * (la base no deja asentar en una que agrupa). Lo que ya apuntaba a ella
+   * —la caja de una sede única sobre la 110505, un producto, un concepto—
+   * pasa a una hija nueva con su mismo nombre, así nada queda apuntando a una
+   * cuenta que agrupa (D5). Si ya tiene movimientos contables, no se puede:
+   * el libro la mostraría con saldo propio y con hijas a la vez.
+   *
+   * `reservados`: códigos que la misma operación ya va a usar.
+   */
+  private async prepararMadre(
+    t: Tx,
+    ctx: CtxEmpresa,
+    madre: FilaMadre,
+    reservados: readonly string[],
+  ): Promise<void> {
+    if (!madre.es_auxiliar) return;
+    const [movimiento] = await t.query<Array<{ uno: number }>>(
+      'SELECT 1 AS uno FROM asiento_linea WHERE cuenta_id = $1 LIMIT 1',
+      [madre.id],
+    );
+    if (movimiento !== undefined) {
+      throw new BadRequestException(
+        `La cuenta ${madre.codigo} ${madre.nombre} ya tiene movimientos: no se le pueden abrir auxiliares sin descuadrar el libro. Creá la cuenta bajo otra madre o pedíselo al contador.`,
+      );
+    }
+
+    const usadas = await this.referenciasA(t, madre.id);
+    await t.query(
+      'UPDATE empresa_cuenta SET es_auxiliar = false WHERE id = $1',
+      [madre.id],
+    );
+    if (usadas.length === 0) return;
+
+    const codigo = await this.siguienteEn(t, madre.codigo, reservados);
+    const traslado = await this.insertar(t, ctx, {
+      codigo,
+      nombre: madre.nombre,
+      esAuxiliar: true,
+      exigeTercero: madre.exige_tercero,
+      exigeCentroCosto: madre.exige_centro_costo,
+      exigeBaseGravable: madre.exige_base_gravable,
+    });
+    await this.moverReferencias(t, usadas, madre.id, traslado.id as string);
+  }
+
+  /**
+   * Qué tablas apuntan hoy a una cuenta (fuera de los asientos), sacado del
+   * catálogo de la base: así no se escapa una tabla nueva que alguien agregue
+   * mañana.
+   */
+  private async referenciasA(
+    t: Tx,
+    cuentaId: string,
+  ): Promise<Array<{ tabla: string; columna: string }>> {
+    const referencias = await t.query<
+      Array<{ tabla: string; columna: string }>
+    >(
+      `SELECT c.conrelid::regclass::text AS tabla, a.attname AS columna
+         FROM pg_constraint c
+         CROSS JOIN LATERAL unnest(c.conkey, c.confkey) AS k(local, remota)
+         JOIN pg_attribute a  ON a.attrelid = c.conrelid  AND a.attnum = k.local
+         JOIN pg_attribute ar ON ar.attrelid = c.confrelid AND ar.attnum = k.remota
+        WHERE c.contype = 'f'
+          AND c.confrelid = 'empresa_cuenta'::regclass
+          AND ar.attname = 'id'
+          AND c.conrelid <> 'asiento_linea'::regclass`,
+    );
+    const usadas: Array<{ tabla: string; columna: string }> = [];
+    for (const r of referencias) {
+      const [hay] = await t.query<Array<{ uno: number }>>(
+        `SELECT 1 AS uno FROM ${r.tabla} WHERE ${quote(r.columna)} = $1 LIMIT 1`,
+        [cuentaId],
+      );
+      if (hay !== undefined) usadas.push(r);
+    }
+    return usadas;
+  }
+
+  private async moverReferencias(
+    t: Tx,
+    usadas: Array<{ tabla: string; columna: string }>,
+    de: string,
+    a: string,
+  ): Promise<void> {
+    for (const r of usadas) {
+      await t.query(
+        `UPDATE ${r.tabla} SET ${quote(r.columna)} = $1 WHERE ${quote(r.columna)} = $2`,
+        [a, de],
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Dejar la configuración lista (plan de ventas, Fase 6)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * El capital y las utilidades acumuladas (370505) según el tipo de
+   * sociedad, si faltan: sin ellos no se puede cargar el saldo inicial de
+   * caja y bancos. Es el bloque de patrimonio de la sugerencia, sin preguntar:
+   * lo necesita cualquier empresa. Idempotente.
+   */
+  async prepararPatrimonio(ctx: CtxEmpresa, tx?: Tx): Promise<string[]> {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const aCrear = sugerirPlan(await this.hechos(t, ctx))
+          .cuentas.filter((c) => c.bloque === 'PATRIMONIO')
+          .sort(
+            (a, b) =>
+              a.codigo.length - b.codigo.length ||
+              a.codigo.localeCompare(b.codigo),
+          );
+        const creadas: string[] = [];
+        for (const c of aCrear) {
+          await this.insertar(t, ctx, {
+            codigo: c.codigo,
+            nombre: c.nombre,
+            codigoPuc: c.codigoPuc,
+            esAuxiliar: c.esAuxiliar,
+            exigeTercero: c.exigeTercero,
+            exigeCentroCosto: c.exigeCentroCosto,
+            exigeBaseGravable: c.exigeBaseGravable,
+          });
+          creadas.push(`${c.codigo} ${c.nombre}`);
+        }
+        return creadas;
+      },
+      tx,
+    );
+  }
+
+  /**
+   * La sugerencia vieja ponía la depreciación del equipo de oficina, de
+   * cómputo y de la maquinaria en 159235, 159240 y 159245, que en el decreto
+   * son de flota (terrestre, fluvial y aérea). El código no se edita: si la
+   * cuenta mal puesta no tiene movimientos, se crea la correcta, lo que
+   * apuntaba a la vieja pasa a la nueva y la vieja se desactiva. Con
+   * movimientos no se toca: eso lo decide el contador. Idempotente.
+   */
+  async corregirDepreciacion(ctx: CtxEmpresa, tx?: Tx): Promise<string[]> {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const hechas: string[] = [];
+        for (const par of CORRECCION_1592) {
+          const [mala] = await t.query<
+            Array<{ id: string; nombre: string; activa: boolean }>
+          >('SELECT id, nombre, activa FROM empresa_cuenta WHERE codigo = $1', [
+            par.malo,
+          ]);
+          if (mala === undefined || !mala.activa) continue;
+          if (!/^Depreciaci[oó]n acumulada - /i.test(mala.nombre)) continue;
+          const [movimiento] = await t.query<Array<{ uno: number }>>(
+            'SELECT 1 AS uno FROM asiento_linea WHERE cuenta_id = $1 LIMIT 1',
+            [mala.id],
+          );
+          if (movimiento !== undefined) continue;
+          const [hija] = await t.query<Array<{ uno: number }>>(
+            'SELECT 1 AS uno FROM empresa_cuenta WHERE codigo_padre = $1 AND activa LIMIT 1',
+            [par.malo],
+          );
+          if (hija !== undefined) continue;
+
+          let [buena] = await t.query<Array<{ id: string }>>(
+            'SELECT id FROM empresa_cuenta WHERE codigo = $1',
+            [par.bueno],
+          );
+          if (buena === undefined) {
+            buena = (await this.insertar(t, ctx, {
+              codigo: par.bueno,
+              nombre: par.nombre,
+              codigoPuc: par.bueno,
+            })) as { id: string };
+          }
+          await this.moverReferencias(
+            t,
+            await this.referenciasA(t, mala.id),
+            mala.id,
+            buena.id,
+          );
+          await t.query(
+            'UPDATE empresa_cuenta SET activa = false WHERE id = $1',
+            [mala.id],
+          );
+          hechas.push(`${par.malo} → ${par.bueno} ${par.nombre}`);
+        }
+        return hechas;
+      },
+      tx,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Internos
   // ---------------------------------------------------------------------------
 
@@ -540,12 +916,19 @@ export class PlanCuentasService {
 
     // El padre es la cuenta propia mas larga que sea prefijo de esta. Si no hay
     // ninguna, la cuenta cuelga directo del catalogo y `codigo_padre` va en NULL.
-    const [padre] = await t.query<Array<{ codigo: string }>>(
-      `SELECT codigo FROM empresa_cuenta
+    const [padre] = await t.query<FilaMadre[]>(
+      `SELECT id, codigo, nombre, activa, es_auxiliar, exige_tercero,
+              exige_centro_costo, exige_base_gravable
+         FROM empresa_cuenta
         WHERE $1 LIKE codigo || '%' AND length(codigo) < length($1)
-        ORDER BY length(codigo) DESC LIMIT 1`,
+        ORDER BY length(codigo) DESC LIMIT 1
+        FOR UPDATE`,
       [dto.codigo],
     );
+    // Una madre que recibía asientos deja de hacerlo al tener hijas (D5).
+    if (padre !== undefined) {
+      await this.prepararMadre(t, ctx, padre, [dto.codigo]);
+    }
 
     const [fila] = await t.query<Array<Record<string, unknown>>>(
       `INSERT INTO empresa_cuenta
@@ -621,7 +1004,11 @@ export class PlanCuentasService {
                   '[]'::json)                                            AS sedes,
          COALESCE((SELECT array_agg(ec.codigo) FROM empresa_cuenta ec
                     WHERE ec.empresa_id = e.id),
-                  ARRAY[]::varchar[])                                    AS codigos
+                  ARRAY[]::varchar[])                                    AS codigos,
+         COALESCE((SELECT json_agg(json_build_object('codigo', ec.codigo, 'nombre', ec.nombre))
+                     FROM empresa_cuenta ec
+                    WHERE ec.empresa_id = e.id AND ec.codigo LIKE '110505_%'),
+                  '[]'::json)                                            AS cajas
        FROM empresa e
        LEFT JOIN empresa_configuracion_contable cc ON cc.empresa_id = e.id
        LEFT JOIN empresa_actividad_economica a
@@ -656,6 +1043,8 @@ export class PlanCuentasService {
       manejaCentroCosto: fila.maneja_centro_de_costo === true,
       sedes: (fila.sedes as Array<{ codigo: string; nombre: string }>) ?? [],
       codigosExistentes: (fila.codigos as string[]) ?? [],
+      cajasExistentes:
+        (fila.cajas as Array<{ codigo: string; nombre: string }>) ?? [],
     };
   }
 }
@@ -676,3 +1065,44 @@ function resumirCuenta(f: Record<string, unknown>): CuentaResumen {
     exigeBaseGravable: f.exige_base_gravable === true,
   };
 }
+
+/** Lo mismo que devuelve `listar`, para una cuenta recién creada. */
+const CAMPOS_LISTAR = `ec.id, ec.codigo, ec.nombre, ec.codigo_puc, ec.naturaleza, ec.codigo_padre,
+                ec.es_auxiliar, ec.exige_tercero, ec.exige_centro_costo, ec.exige_base_gravable,
+                ec.activa,
+                p.nombre AS puc_nombre, p.nivel AS puc_nivel, p.rango_libre AS puc_rango_libre`;
+
+interface FilaMadre {
+  id: string;
+  codigo: string;
+  nombre: string;
+  activa: boolean;
+  es_auxiliar: boolean;
+  exige_tercero: boolean;
+  exige_centro_costo: boolean;
+  exige_base_gravable: boolean;
+}
+
+/** Un nombre de columna sacado del catálogo, entre comillas por si acaso. */
+function quote(identificador: string): string {
+  return `"${identificador.replace(/"/g, '""')}"`;
+}
+
+/** La depreciación que la sugerencia vieja puso en códigos de flota. */
+const CORRECCION_1592 = [
+  {
+    malo: '159235',
+    bueno: '159215',
+    nombre: 'Depreciación acumulada - equipo de oficina',
+  },
+  {
+    malo: '159240',
+    bueno: '159220',
+    nombre: 'Depreciación acumulada - equipo de computación',
+  },
+  {
+    malo: '159245',
+    bueno: '159210',
+    nombre: 'Depreciación acumulada - maquinaria y equipo',
+  },
+] as const;

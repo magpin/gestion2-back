@@ -39,8 +39,16 @@ export class LineaFacturaDto {
   @Length(2, 200)
   detalle?: string;
 
-  /** Solo en la de concepto: un servicio no tiene precio de lista, lo pone quien factura. */
-  @ValidateIf((l: LineaFacturaDto) => l.conceptoId !== undefined)
+  /**
+   * Sin IVA. En la de concepto es obligatorio: un servicio no tiene precio de
+   * lista, lo pone quien factura. En la de producto es opcional: si viene,
+   * manda sobre el de lista —el precio pactado con el cliente—; si no, se
+   * toma el de lista vigente.
+   */
+  @ValidateIf(
+    (l: LineaFacturaDto) =>
+      l.conceptoId !== undefined || l.precioUnitario !== undefined,
+  )
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
   precioUnitario?: number;
@@ -50,7 +58,7 @@ export class LineaFacturaDto {
   @IsIn([0, 5, 19])
   ivaTarifa?: number;
 
-  /** En la de producto, sin `precioUnitario`: se toma el precio de lista vigente — ver `CrearCotizacionDto`. */
+  /** En la de producto, sin `precioUnitario` se toma el precio de lista vigente — ver `resolverPrecio`. */
   @IsNumber({ maxDecimalPlaces: 6 })
   @Min(0.000001)
   cantidad!: number;
@@ -92,7 +100,7 @@ export class CrearFacturaDto {
    * "Sé que no hay existencia y la emito igual".
    *
    * No es un permiso: es una confirmación. La empresa tiene que haber
-   * habilitado el descubierto (`inventario_configuracion.permite_existencia_negativa`)
+   * habilitado el descubierto (el hecho operativo `VENDE_SIN_EXISTENCIA`)
    * y el producto tiene que tener un costo promedio conocido; si falta
    * cualquiera de las dos, la factura se rechaza aunque esto venga en `true`.
    * Lo que salga sin estar queda anotado en `venta_faltante`.

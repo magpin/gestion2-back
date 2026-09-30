@@ -1,5 +1,6 @@
 import {
   calcularDiferenciaArqueo,
+  problemaCuentaDeCaja,
   conceptoDelAjuste,
   resolverCuentaConcepto,
   calcularEgreso,
@@ -233,5 +234,44 @@ describe('conceptoDelAjuste', () => {
       ok: true,
       concepto: 'FALTANTE_COBRABLE',
     });
+  });
+});
+
+describe('problemaCuentaDeCaja', () => {
+  const cuenta = (
+    codigo: string,
+    o: Partial<{ activa: boolean; esAuxiliar: boolean }> = {},
+  ) => ({
+    codigo,
+    activa: true,
+    esAuxiliar: true,
+    ...o,
+  });
+
+  it('una caja bajo 1105, activa y auxiliar, sirve', () => {
+    expect(problemaCuentaDeCaja('PRINCIPAL', cuenta('11050501'))).toBeNull();
+  });
+
+  it('la caja menor va bajo 110510', () => {
+    expect(problemaCuentaDeCaja('MENOR', cuenta('11051001'))).toBeNull();
+    expect(problemaCuentaDeCaja('MENOR', cuenta('11050501'))).toMatch(/110510/);
+  });
+
+  it('una cuenta de otra clase no sirve', () => {
+    expect(problemaCuentaDeCaja('PRINCIPAL', cuenta('11100501'))).toMatch(
+      /1105/,
+    );
+  });
+
+  it('inactiva o que agrupa, tampoco', () => {
+    expect(
+      problemaCuentaDeCaja(
+        'PRINCIPAL',
+        cuenta('110505', { esAuxiliar: false }),
+      ),
+    ).toMatch(/agrupa/);
+    expect(
+      problemaCuentaDeCaja('PRINCIPAL', cuenta('11050501', { activa: false })),
+    ).toMatch(/inactiva/);
   });
 });

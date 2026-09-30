@@ -264,7 +264,7 @@ export class EmpresaService {
       ctx,
       (t) =>
         t.query(
-          'SELECT id, nombre FROM empresa_sede ORDER BY es_principal DESC, nombre',
+          'SELECT id, nombre FROM empresa_sede WHERE activo ORDER BY es_principal DESC, nombre',
         ),
       tx,
     );

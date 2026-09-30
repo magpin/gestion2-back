@@ -38,6 +38,7 @@ import {
   validarFormaPago,
 } from './compra.reglas';
 import type { LineaCompraEntrada } from './compra.reglas';
+import { cuentaInactiva } from '../../../common/contabilidad/cuenta-inactiva';
 
 export interface CompraDocumentoResumen {
   id: string;
@@ -476,9 +477,7 @@ export class CompraService {
           t,
         );
         if (cuentaProveedores === null) {
-          throw new BadRequestException(
-            `No existe o está inactiva la cuenta de proveedores (${CODIGO_CUENTA_PROVEEDORES}). Actívala en el plan de cuentas.`,
-          );
+          throw cuentaInactiva('proveedores', CODIGO_CUENTA_PROVEEDORES);
         }
 
         let cuentaIvaId: string | null = null;
@@ -492,8 +491,9 @@ export class CompraService {
             t,
           );
           if (cuentaIva === null) {
-            throw new BadRequestException(
-              `No existe o está inactiva la cuenta de IVA descontable (${CODIGO_CUENTA_IVA_DESCONTABLE}). Actívala en el plan de cuentas.`,
+            throw cuentaInactiva(
+              'IVA descontable',
+              CODIGO_CUENTA_IVA_DESCONTABLE,
             );
           }
           cuentaIvaId = cuentaIva.id;
@@ -676,8 +676,9 @@ export class CompraService {
                 )?.id)
               : cuentaDebitoDe[(r.renglones?.[0] ?? 1) - 1];
             if (cuenta === undefined) {
-              throw new BadRequestException(
-                `No existe o está inactiva la cuenta de IVA descontable (${CODIGO_CUENTA_IVA_DESCONTABLE}). Actívala en el plan de cuentas.`,
+              throw cuentaInactiva(
+                'IVA descontable',
+                CODIGO_CUENTA_IVA_DESCONTABLE,
               );
             }
             lineasAsiento.push({
@@ -1374,9 +1375,7 @@ export class CompraService {
       t,
     );
     if (cuentaProveedores === null) {
-      throw new BadRequestException(
-        `No existe o está inactiva la cuenta de proveedores (${CODIGO_CUENTA_PROVEEDORES}). Actívala en el plan de cuentas.`,
-      );
+      throw cuentaInactiva('proveedores', CODIGO_CUENTA_PROVEEDORES);
     }
 
     // Un movimiento por renglón, en la misma transacción — espejo de
@@ -1502,9 +1501,7 @@ export class CompraService {
         t,
       );
       if (cuentaProveedores === null) {
-        throw new BadRequestException(
-          `No existe o está inactiva la cuenta de proveedores (${CODIGO_CUENTA_PROVEEDORES}). Actívala en el plan de cuentas.`,
-        );
+        throw cuentaInactiva('proveedores', CODIGO_CUENTA_PROVEEDORES);
       }
 
       for (const [i, pago] of dto.pagos.entries()) {

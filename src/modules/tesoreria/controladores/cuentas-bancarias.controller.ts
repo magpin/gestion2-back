@@ -16,7 +16,10 @@ import {
   Roles,
 } from '../../../common/auth/decoradores';
 import type { CtxEmpresa } from '../../../common/ctx';
-import { CrearCuentaBancariaDto } from '../dto/cuenta-bancaria.dto';
+import {
+  CrearCuentaBancariaConAuxiliarDto,
+  CrearCuentaBancariaDto,
+} from '../dto/cuenta-bancaria.dto';
 import { CuentaBancariaService } from '../servicios/cuenta-bancaria.service';
 
 /**
@@ -52,6 +55,16 @@ export class CuentasBancariasController {
   @Post()
   crear(@ActorEmpresa() ctx: CtxEmpresa, @Body() dto: CrearCuentaBancariaDto) {
     return this.cuentas.crear(ctx, dto);
+  }
+
+  /** La cuenta bancaria y su auxiliar del plan, todo o nada. */
+  @Roles('CAJA', 'DIRECTOR', 'CONTADOR', 'ADMIN_TENANT')
+  @Post('con-auxiliar')
+  crearConAuxiliar(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Body() dto: CrearCuentaBancariaConAuxiliarDto,
+  ) {
+    return this.cuentas.crearConAuxiliar(ctx, dto);
   }
 
   /** No borra: desactiva. Una cuenta bancaria con movimientos no se puede quitar. */

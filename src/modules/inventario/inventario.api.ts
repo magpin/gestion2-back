@@ -5,6 +5,7 @@ import { PaginacionDto } from '../../common/dto/paginacion.dto';
 import type { CtxEmpresa } from '../../common/ctx';
 import type { Tx } from '../../common/db/tx.service';
 import type { SaldoKardex } from './servicios/kardex.reglas';
+import { ConfiguracionService } from './servicios/configuracion.service';
 import { KardexService } from './servicios/kardex.service';
 import { PrecioService } from './servicios/precio.service';
 import {
@@ -44,6 +45,7 @@ export class InventarioApi {
     private readonly productos: ProductoService,
     private readonly kardex: KardexService,
     private readonly precios: PrecioService,
+    private readonly configuracion: ConfiguracionService,
   ) {}
 
   /**
@@ -53,6 +55,17 @@ export class InventarioApi {
    * con la misma búsqueda que `GET /productos`. **No mira roles**: eso lo hace
    * quien llama, igual que el controlador.
    */
+  /**
+   * Las cuentas automáticas de inventario, creadas y asignadas si faltan.
+   * Ver `ConfiguracionService.preparar`.
+   */
+  async prepararCuentas(
+    ctx: CtxEmpresa,
+    tx?: Tx,
+  ): Promise<{ cuentasCreadas: string[] }> {
+    return this.configuracion.preparar(ctx, tx);
+  }
+
   async existencias(ctx: CtxEmpresa, busqueda: string): Promise<Existencia[]> {
     const p = Object.assign(new PaginacionDto(), {
       tamano: EXISTENCIAS_POR_BUSQUEDA,
@@ -102,13 +115,10 @@ export class InventarioApi {
   }
 
   /**
-   * El precio de lista vigente de un producto, para ponerlo en una línea de
-   * venta. `null` si el producto no tiene ninguno configurado.
-   *
-   * Es el ÚNICO precio que un documento de venta puede usar en este corte —
-   * ver "Descuentos por línea o por documento" en
-   * `docs/planes/ventas-backend.md`, "Qué NO entra": no hay negociación de
-   * precio por documento todavía.
+   * El precio de lista vigente de un producto, para proponerlo en una línea
+   * de venta. `null` si el producto no tiene ninguno configurado. La línea
+   * puede llevar otro —el que se pactó con el cliente—: ver `resolverPrecio`
+   * en `ventas`.
    */
   async precioVigente(
     ctx: CtxEmpresa,

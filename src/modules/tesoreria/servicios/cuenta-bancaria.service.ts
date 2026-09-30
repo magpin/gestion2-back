@@ -7,7 +7,12 @@ import {
 import type { CtxEmpresa } from '../../../common/ctx';
 import { fila, filas } from '../../../common/db/filas';
 import { TxService, type Tx } from '../../../common/db/tx.service';
-import type { CrearCuentaBancariaDto } from '../dto/cuenta-bancaria.dto';
+import { NucleoApi } from '../../nucleo/nucleo.api';
+import type {
+  CrearCuentaBancariaConAuxiliarDto,
+  CrearCuentaBancariaDto,
+} from '../dto/cuenta-bancaria.dto';
+import { nombreDelAuxiliar, problemaCuentaDeBanco } from './banco.reglas';
 
 export interface CuentaBancaria {
   id: string;
@@ -55,35 +60,86 @@ const CAMPOS = `id, banco, numero_cuenta, tipo_cuenta, cuenta_id, activa, exenta
  */
 @Injectable()
 export class CuentaBancariaService {
-  constructor(private readonly tx: TxService) {}
+  constructor(
+    private readonly tx: TxService,
+    private readonly nucleo: NucleoApi,
+  ) {}
+
+  /** La cuenta existe, está activa, recibe asientos y es de bancos (1110 o 1120). */
+  private async validarCuenta(
+    ctx: CtxEmpresa,
+    cuentaId: string,
+    t: Tx,
+  ): Promise<void> {
+    const cuenta = await this.nucleo.cuentaPorId(ctx, cuentaId, t);
+    if (cuenta === null) {
+      throw new BadRequestException(
+        'Esa cuenta no está en el plan de la empresa.',
+      );
+    }
+    const problema = problemaCuentaDeBanco({
+      codigo: cuenta.codigo,
+      activa: cuenta.activa,
+      esAuxiliar: cuenta.es_auxiliar,
+    });
+    if (problema !== null) throw new BadRequestException(problema);
+  }
+
+  /**
+   * La cuenta bancaria y su auxiliar bajo 111005 en una sola transacción: si
+   * algo falla, no queda ni la cuenta contable suelta ni el banco sin cuenta.
+   */
+  async crearConAuxiliar(
+    ctx: CtxEmpresa,
+    dto: CrearCuentaBancariaConAuxiliarDto,
+  ): Promise<CuentaBancaria> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const cuenta = await this.nucleo.crearAuxiliar(
+        ctx,
+        {
+          madre: '111005',
+          nombre: nombreDelAuxiliar(dto.banco, dto.numeroCuenta),
+        },
+        { sistema: true },
+        t,
+      );
+      return this.crear(ctx, { ...dto, cuentaId: cuenta.id }, t);
+    });
+  }
 
   async crear(
     ctx: CtxEmpresa,
     dto: CrearCuentaBancariaDto,
+    tx?: Tx,
   ): Promise<CuentaBancaria> {
-    return this.tx.enContexto(ctx, async (t) => {
-      const creada = fila<CuentaBancaria>(
-        await t.query(
-          `INSERT INTO cuenta_bancaria
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        await this.validarCuenta(ctx, dto.cuentaId, t);
+        const creada = fila<CuentaBancaria>(
+          await t.query(
+            `INSERT INTO cuenta_bancaria
              (empresa_id, banco, numero_cuenta, tipo_cuenta, cuenta_id, creado_por)
            VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING ${CAMPOS}`,
-          [
-            ctx.empresaId,
-            dto.banco,
-            dto.numeroCuenta,
-            dto.tipoCuenta,
-            dto.cuentaId,
-            ctx.usuarioId,
-          ],
-        ),
-      );
+            [
+              ctx.empresaId,
+              dto.banco,
+              dto.numeroCuenta,
+              dto.tipoCuenta,
+              dto.cuentaId,
+              ctx.usuarioId,
+            ],
+          ),
+        );
 
-      if (creada === undefined) {
-        throw new BadRequestException('No se pudo crear la cuenta bancaria.');
-      }
-      return creada;
-    });
+        if (creada === undefined) {
+          throw new BadRequestException('No se pudo crear la cuenta bancaria.');
+        }
+        return creada;
+      },
+      tx,
+    );
   }
 
   async listar(

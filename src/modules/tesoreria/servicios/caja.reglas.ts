@@ -259,3 +259,25 @@ export function conceptoDelAjuste(
       tratamiento === 'RESPONSABLE' ? 'FALTANTE_COBRABLE' : 'FALTANTE_ASUMIDO',
   };
 }
+
+/**
+ * Qué impide que una caja lleve esta cuenta, o `null`. Tiene que estar
+ * activa, recibir asientos y colgar de 1105; la caja menor, de 110510. Sin
+ * esto, una caja podía quedar sobre una cuenta que agrupa y fallar recién al
+ * primer movimiento.
+ */
+export function problemaCuentaDeCaja(
+  tipo: 'PRINCIPAL' | 'MENOR',
+  cuenta: { codigo: string; activa: boolean; esAuxiliar: boolean },
+): string | null {
+  if (!cuenta.activa)
+    return `La cuenta ${cuenta.codigo} está inactiva. Actívala en Plan de cuentas.`;
+  if (!cuenta.esAuxiliar)
+    return `La cuenta ${cuenta.codigo} agrupa otras y no recibe asientos: elegí uno de sus auxiliares o creá uno.`;
+  const prefijo = tipo === 'MENOR' ? '110510' : '1105';
+  if (!cuenta.codigo.startsWith(prefijo))
+    return tipo === 'MENOR'
+      ? `La caja menor va en una cuenta de 110510 (caja menor); la ${cuenta.codigo} no lo es.`
+      : `Una caja va en una cuenta de 1105 (caja); la ${cuenta.codigo} no lo es.`;
+  return null;
+}

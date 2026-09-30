@@ -30,9 +30,11 @@ import {
 import {
   calcularLineas,
   evaluarMargen,
+  resolverPrecio,
   validarFormaPago,
   type LineaVentaEntrada,
 } from './venta.reglas';
+import { cuentaInactiva } from '../../../common/contabilidad/cuenta-inactiva';
 
 const CAMPOS_LINEA = `id, venta_documento_id, orden, producto_id, cantidad, precio_unitario,
                        iva_tarifa, subtotal, iva_valor, total, costo_unitario,
@@ -140,13 +142,50 @@ export class FacturaService {
     }>;
     /** El par costo de venta contra inventario, aparte: no es lo que se cobra. */
     costo: number;
+    /** De contado: por dónde entra la plata y cuánto por cada medio. */
+    pagos: Array<{ medio: 'CAJA' | 'BANCO'; nombre: string; valor: number }>;
   }> {
     return this.tx.enContexto(
       ctx,
       async (t) => {
         await t.query('SAVEPOINT factura_previa');
         try {
-          const factura = await this.crearInterno(ctx, dto, null, t);
+          const salida: Parameters<FacturaService['crearInterno']>[5] = {
+            pagos: [],
+          };
+          const factura = await this.crearInterno(
+            ctx,
+            dto,
+            null,
+            t,
+            undefined,
+            salida,
+          );
+          // Por dónde entra la plata de contado, con el nombre de cada caja o
+          // cuenta y el valor que le tocó (el renglón en blanco, el resto).
+          const pagos: Array<{
+            medio: 'CAJA' | 'BANCO';
+            nombre: string;
+            valor: number;
+          }> = [];
+          for (const p of salida.pagos) {
+            const [medio] = filas<{ nombre: string }>(
+              p.medio === 'CAJA'
+                ? await t.query(`SELECT nombre FROM caja WHERE id = $1`, [
+                    p.cajaId,
+                  ])
+                : await t.query(
+                    `SELECT banco || ' ···' || right(numero_cuenta, 4) AS nombre
+                       FROM cuenta_bancaria WHERE id = $1`,
+                    [p.cuentaBancariaId],
+                  ),
+            );
+            pagos.push({
+              medio: p.medio === 'CAJA' ? 'CAJA' : 'BANCO',
+              nombre: medio?.nombre ?? '',
+              valor: p.valor,
+            });
+          }
           const [doc] = filas<{ asiento_id: string; vence: string | null }>(
             await t.query(
               `SELECT asiento_id, vence::text AS vence FROM venta_documento WHERE id = $1`,
@@ -216,6 +255,7 @@ export class FacturaService {
                 credito: Number(l.credito),
               })),
             costo: Number(costo?.costo ?? 0),
+            pagos,
           };
         } finally {
           await t.query('ROLLBACK TO SAVEPOINT factura_previa');
@@ -226,17 +266,97 @@ export class FacturaService {
   }
 
   /**
-   * Convierte una cotización EMITIDA en factura: el cliente y las líneas
-   * (producto + cantidad) vienen de la cotización, no se vuelven a pedir.
-   * El precio, el IVA y el costo de cada línea se recalculan contra lo
-   * vigente a la fecha de la factura — nunca se copia el precio congelado
-   * que tenía la cotización, mismo criterio que ya sostiene `crear()`.
+   * Qué productos no alcanzan para una venta, antes de emitirla: el modal
+   * de convertir y la factura avisan con esto en vez de esperar el error. Las
+   * cantidades del mismo producto se suman. Solo lee: la existencia puede
+   * cambiar entre esta consulta y la emisión, y ahí decide el kardex.
    *
-   * El `SELECT ... FOR UPDATE` sobre la cotización es el candado: si dos
-   * conversiones de la misma cotización llegan a la vez, la segunda espera
-   * a que la primera termine y, cuando le toca, ya la ve `CONVERTIDA` y se
-   * rechaza — sin este candado, las dos podrían leer `EMITIDA` a la vez y
-   * facturar el mismo pedido dos veces.
+   * `nuncaTuvoEntrada` es el mismo criterio del kardex para rechazar un
+   * descubierto (`exigirCostoConocido`): sin saldo o sin costo conocido.
+   */
+  async existencia(
+    ctx: CtxEmpresa,
+    lineas: Array<{ productoId: string; cantidad: number }>,
+    tx?: Tx,
+  ): Promise<{
+    vendeSinExistencia: boolean;
+    faltantes: Array<{
+      productoId: string;
+      codigo: string;
+      nombre: string;
+      pide: number;
+      hay: number;
+      faltan: number;
+      nuncaTuvoEntrada: boolean;
+    }>;
+  }> {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        const pedidas = new Map<string, number>();
+        for (const l of lineas) {
+          pedidas.set(
+            l.productoId,
+            (pedidas.get(l.productoId) ?? 0) + l.cantidad,
+          );
+        }
+        const faltantes = [];
+        for (const [productoId, pide] of pedidas) {
+          const producto = await this.inventario.producto(ctx, productoId, t);
+          if (producto === null) continue;
+          const saldo = await this.inventario.saldoActual(ctx, productoId, t);
+          const hay = saldo?.cantidad ?? 0;
+          if (hay >= pide) continue;
+          faltantes.push({
+            productoId,
+            codigo: producto.codigo,
+            nombre: producto.nombre,
+            pide,
+            hay,
+            faltan: Math.round((pide - hay) * 1e6) / 1e6,
+            nuncaTuvoEntrada: saldo === null || !(saldo.costoPromedio > 0),
+          });
+        }
+        return {
+          vendeSinExistencia: await this.nucleo.tieneHechoOperativo(
+            ctx,
+            'VENDE_SIN_EXISTENCIA',
+            t,
+          ),
+          faltantes,
+        };
+      },
+      tx,
+    );
+  }
+
+  /**
+   * Cómo quedaría la factura de una cotización, sin emitirla: lo mismo que
+   * `previo`, con el cliente y las líneas de la cotización.
+   */
+  async previoConversion(
+    ctx: CtxEmpresa,
+    cotizacionId: string,
+    opciones: ConvertirCotizacionDto,
+  ): ReturnType<FacturaService['previo']> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const dto = await this.dtoDesdeCotizacion(
+        ctx,
+        cotizacionId,
+        opciones,
+        false,
+        t,
+      );
+      return this.previo(ctx, dto, t);
+    });
+  }
+
+  /**
+   * Convierte una cotización EMITIDA en factura: el cliente, las líneas
+   * (producto y cantidad) y el precio de cada una vienen de la cotización, no
+   * se vuelven a pedir. Se factura al precio cotizado aunque el de lista haya
+   * cambiado: es lo que se le ofreció al cliente. El IVA y el costo sí se
+   * calculan a la fecha de la factura.
    */
   async convertirCotizacion(
     ctx: CtxEmpresa,
@@ -244,49 +364,13 @@ export class FacturaService {
     opciones: ConvertirCotizacionDto,
   ): Promise<VentaDocumentoDetalle> {
     return this.tx.enContexto(ctx, async (t) => {
-      const bloqueo = fila<{ estado: string }>(
-        await t.query(
-          `SELECT estado FROM venta_documento
-            WHERE id = $1 AND tipo = 'COTIZACION'
-            FOR UPDATE`,
-          [cotizacionId],
-        ),
-      );
-      if (bloqueo === undefined) {
-        throw new NotFoundException('Cotización no encontrada.');
-      }
-      if (bloqueo.estado === 'CONVERTIDA') {
-        throw new BadRequestException(
-          'Esta cotización ya se convirtió en factura.',
-        );
-      }
-      if (bloqueo.estado !== 'EMITIDA') {
-        throw new BadRequestException('Esta cotización no está vigente.');
-      }
-
-      const cotizacion = await this.ventas.porId(
+      const dto = await this.dtoDesdeCotizacion(
         ctx,
-        'COTIZACION',
         cotizacionId,
+        opciones,
+        true,
         t,
       );
-
-      const dto: CrearFacturaDto = {
-        terceroId: cotizacion.tercero_id,
-        fecha: opciones.fecha,
-        // Una cotización es solo de productos: la línea de concepto es de la
-        // factura (Fase 8).
-        lineas: cotizacion.lineas.map((l) => ({
-          productoId: l.producto_id!,
-          cantidad: Number(l.cantidad),
-        })),
-        confirmaSinExistencia: opciones.confirmaSinExistencia ?? false,
-        confirmaPrecioBajoCosto: opciones.confirmaPrecioBajoCosto ?? false,
-        formaPago: opciones.formaPago,
-        pagos: opciones.pagos,
-        vence: opciones.vence,
-      };
-
       const factura = await this.crearInterno(ctx, dto, cotizacionId, t);
 
       await t.query(
@@ -296,6 +380,105 @@ export class FacturaService {
 
       return factura;
     });
+  }
+
+  /**
+   * La factura que sale de una cotización EMITIDA. Con `bloquear`, el
+   * `SELECT ... FOR UPDATE` sobre la cotización es el candado: si dos
+   * conversiones de la misma cotización llegan a la vez, la segunda espera
+   * a que la primera termine y, cuando le toca, ya la ve `CONVERTIDA` y se
+   * rechaza — sin este candado, las dos podrían leer `EMITIDA` a la vez y
+   * facturar el mismo pedido dos veces. El previo no bloquea.
+   */
+  private async dtoDesdeCotizacion(
+    ctx: CtxEmpresa,
+    cotizacionId: string,
+    opciones: ConvertirCotizacionDto,
+    bloquear: boolean,
+    t: Tx,
+  ): Promise<CrearFacturaDto> {
+    const bloqueo = fila<{ estado: string }>(
+      await t.query(
+        `SELECT estado FROM venta_documento
+          WHERE id = $1 AND tipo = 'COTIZACION'
+          ${bloquear ? 'FOR UPDATE' : ''}`,
+        [cotizacionId],
+      ),
+    );
+    if (bloqueo === undefined) {
+      throw new NotFoundException('Cotización no encontrada.');
+    }
+    if (bloqueo.estado === 'CONVERTIDA') {
+      throw new BadRequestException(
+        'Esta cotización ya se convirtió en factura.',
+      );
+    }
+    if (bloqueo.estado !== 'EMITIDA') {
+      throw new BadRequestException('Esta cotización no está vigente.');
+    }
+
+    const cotizacion = await this.ventas.porId(
+      ctx,
+      'COTIZACION',
+      cotizacionId,
+      t,
+    );
+
+    return {
+      terceroId: cotizacion.tercero_id,
+      fecha: opciones.fecha,
+      // Una cotización es solo de productos: la línea de concepto es de la
+      // factura (Fase 8). El precio es el cotizado.
+      lineas: cotizacion.lineas.map((l) => ({
+        productoId: l.producto_id!,
+        cantidad: Number(l.cantidad),
+        precioUnitario: Number(l.precio_unitario),
+      })),
+      confirmaSinExistencia: opciones.confirmaSinExistencia ?? false,
+      confirmaPrecioBajoCosto: opciones.confirmaPrecioBajoCosto ?? false,
+      formaPago: opciones.formaPago,
+      pagos: opciones.pagos,
+      vence: opciones.vence,
+      retenciones: opciones.retenciones,
+    };
+  }
+
+  /**
+   * `costearSalida` del kardex, con el código del producto en el mensaje: en
+   * una factura de varias líneas, «Solo hay 3 en existencia» no dice cuál.
+   * Si quien factura confirmó vender sin existencia pero la empresa no lo
+   * tiene habilitado, se lo dice en vez de repetir el mismo mensaje.
+   */
+  private async costear(
+    ctx: CtxEmpresa,
+    codigo: string,
+    productoId: string,
+    cantidad: number,
+    confirmaSinExistencia: boolean,
+    t: Tx,
+  ): Promise<{ costoUnitario: number; valorTotal: number; faltante: number }> {
+    try {
+      return await this.inventario.costearSalida(
+        ctx,
+        productoId,
+        cantidad,
+        t,
+        confirmaSinExistencia,
+      );
+    } catch (e) {
+      if (!(e instanceof BadRequestException)) throw e;
+      const motivo = e.message;
+      if (
+        confirmaSinExistencia &&
+        /en existencia/.test(motivo) &&
+        !(await this.nucleo.tieneHechoOperativo(ctx, 'VENDE_SIN_EXISTENCIA', t))
+      ) {
+        throw new BadRequestException(
+          `${codigo}: ${motivo} Esta empresa no vende sin existencia: registrá la compra o un ajuste de entrada.`,
+        );
+      }
+      throw new BadRequestException(`${codigo}: ${motivo}`);
+    }
   }
 
   /**
@@ -312,6 +495,15 @@ export class FacturaService {
     origenCotizacionId: string | null,
     t: Tx,
     origen?: OrigenDeLaFactura,
+    /** Si viene, se llena con los medios de pago ya resueltos (el previo los muestra). */
+    salida?: {
+      pagos: Array<{
+        medio: string;
+        cajaId?: string;
+        cuentaBancariaId?: string;
+        valor: number;
+      }>;
+    },
   ): Promise<VentaDocumentoDetalle> {
     for (const l of dto.lineas) {
       if ((l.productoId === undefined) === (l.conceptoId === undefined)) {
@@ -419,15 +611,16 @@ export class FacturaService {
         );
       }
 
-      const precioVigente = await this.inventario.precioVigente(
-        ctx,
-        l.productoId!,
-        t,
-      );
-      // Un precio en cero también cuenta como "sin precio": la línea saldría en
+      // El precio digitado en la línea manda —el pactado con el cliente, o el
+      // de la cotización que se convierte—; sin digitar, el de lista. Un
+      // precio de lista en cero cuenta como "sin precio": la línea saldría en
       // cero y el asiento fallaría más abajo con un mensaje contable que no le
       // dice nada a quien está facturando.
-      if (precioVigente === null || precioVigente <= 0) {
+      const precio = resolverPrecio(
+        l.precioUnitario,
+        await this.inventario.precioVigente(ctx, l.productoId!, t),
+      );
+      if (precio === null) {
         throw new BadRequestException(
           `El producto ${producto.codigo} no tiene un precio de venta configurado.`,
         );
@@ -437,27 +630,24 @@ export class FacturaService {
       // alcanza por sí sola: si la empresa no habilitó el descubierto, el
       // kardex rechaza la salida igual, y si el producto nunca tuvo una
       // entrada tampoco hay costo con el que valorarla.
-      const costeo = await this.inventario.costearSalida(
+      const costeo = await this.costear(
         ctx,
+        producto.codigo,
         l.productoId!,
         l.cantidad,
-        t,
         dto.confirmaSinExistencia ?? false,
+        t,
       );
 
       // Vender por debajo del costo promedio es una pérdida contable en el
       // momento de emitir, no un problema que aparezca al cierre. Se bloquea, y
       // solo un DIRECTOR puede levantarlo —quien vende no se autoriza a sí
       // mismo un descuento con pérdida—; la línea guarda quién lo hizo.
-      const margen = evaluarMargen(
-        precioVigente,
-        costeo.costoUnitario,
-        l.cantidad,
-      );
+      const margen = evaluarMargen(precio, costeo.costoUnitario, l.cantidad);
       if (margen.bajoCosto) {
         if (dto.confirmaPrecioBajoCosto !== true) {
           throw new BadRequestException(
-            `El producto ${producto.codigo} se vendería por debajo de su costo: cuesta ${costeo.costoUnitario} y el precio de lista es ${precioVigente}. La venta perdería ${margen.perdidaTotal}.`,
+            `El producto ${producto.codigo} se vendería por debajo de su costo: cuesta ${costeo.costoUnitario} y el precio de la línea es ${precio}. La venta perdería ${margen.perdidaTotal}.`,
           );
         }
         if (!ctx.roles.includes('DIRECTOR')) {
@@ -477,7 +667,7 @@ export class FacturaService {
       conceptoDe.push(null);
       entradas.push({
         cantidad: l.cantidad,
-        precioUnitario: precioVigente,
+        precioUnitario: precio,
         ivaTarifa: responsableIva ? Number(producto.iva_tarifa) : 0,
       });
     }
@@ -490,9 +680,7 @@ export class FacturaService {
       t,
     );
     if (cuentaCartera === null) {
-      throw new BadRequestException(
-        `No existe o está inactiva la cuenta de cartera (${CODIGO_CUENTA_CARTERA}). Actívala en el plan de cuentas.`,
-      );
+      throw cuentaInactiva('cartera', CODIGO_CUENTA_CARTERA);
     }
 
     let cuentaIvaId: string | null = null;
@@ -503,9 +691,7 @@ export class FacturaService {
         t,
       );
       if (cuentaIva === null) {
-        throw new BadRequestException(
-          `No existe o está inactiva la cuenta de IVA generado (${CODIGO_CUENTA_IVA_GENERADO}). Actívala en el plan de cuentas.`,
-        );
+        throw cuentaInactiva('IVA generado', CODIGO_CUENTA_IVA_GENERADO);
       }
       cuentaIvaId = cuentaIva.id;
     }
@@ -590,6 +776,7 @@ export class FacturaService {
       ...p,
       valor: formaPago.valores[i],
     }));
+    if (salida !== undefined) salida.pagos = pagos;
 
     // El asiento: débito cartera por lo que queda por cobrar, débito de las
     // retenciones que nos practicaron, crédito ingreso por línea, crédito IVA

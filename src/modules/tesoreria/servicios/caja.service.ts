@@ -7,7 +7,9 @@ import {
 import type { CtxEmpresa } from '../../../common/ctx';
 import { fila, filas } from '../../../common/db/filas';
 import { TxService, type Tx } from '../../../common/db/tx.service';
+import { NucleoApi } from '../../nucleo/nucleo.api';
 import type { CrearCajaDto, EditarCajaDto } from '../dto/caja.dto';
+import { problemaCuentaDeCaja } from './caja.reglas';
 
 export interface Caja {
   id: string;
@@ -60,10 +62,35 @@ const CAMPOS = `id, nombre, tipo, sede_id, cuenta_id, activa,
  */
 @Injectable()
 export class CajaService {
-  constructor(private readonly tx: TxService) {}
+  constructor(
+    private readonly tx: TxService,
+    private readonly nucleo: NucleoApi,
+  ) {}
+
+  /** La cuenta existe, está activa, recibe asientos y es de caja (1105). */
+  private async validarCuenta(
+    ctx: CtxEmpresa,
+    tipo: 'PRINCIPAL' | 'MENOR',
+    cuentaId: string,
+    t: Tx,
+  ): Promise<void> {
+    const cuenta = await this.nucleo.cuentaPorId(ctx, cuentaId, t);
+    if (cuenta === null) {
+      throw new BadRequestException(
+        'Esa cuenta no está en el plan de la empresa.',
+      );
+    }
+    const problema = problemaCuentaDeCaja(tipo, {
+      codigo: cuenta.codigo,
+      activa: cuenta.activa,
+      esAuxiliar: cuenta.es_auxiliar,
+    });
+    if (problema !== null) throw new BadRequestException(problema);
+  }
 
   async crear(ctx: CtxEmpresa, dto: CrearCajaDto): Promise<Caja> {
     return this.tx.enContexto(ctx, async (t) => {
+      await this.validarCuenta(ctx, dto.tipo, dto.cuentaId, t);
       const creada = fila<Caja>(
         await t.query(
           `INSERT INTO caja (empresa_id, nombre, tipo, sede_id, cuenta_id, creado_por,

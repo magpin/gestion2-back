@@ -99,7 +99,7 @@ export function calcularEntrada(
  *
  * Se rechaza si deja el saldo negativo, salvo que `permitirNegativo` diga lo
  * contrario: la empresa puede habilitar el descubierto
- * (`inventario_configuracion.permite_existencia_negativa`) y quien factura
+ * (el hecho operativo `VENDE_SIN_EXISTENCIA`) y quien factura
  * confirmarlo documento por documento. Cuando eso pasa, la salida sale igual y
  * `faltante` dice cuántas unidades no estaban — es lo que hay que comprar—.
  *
@@ -157,7 +157,10 @@ export function calcularReversaDeEntrada(
   decimalesCantidad: number,
   decimalesCosto: number,
 ): ResultadoSalida {
-  const nuevaCantidad = redondear(actual.cantidad - cantidad, decimalesCantidad);
+  const nuevaCantidad = redondear(
+    actual.cantidad - cantidad,
+    decimalesCantidad,
+  );
   if (nuevaCantidad < 0) {
     return {
       ok: false,
@@ -169,7 +172,8 @@ export function calcularReversaDeEntrada(
     cantidad * costoUnitarioOriginal,
     DECIMALES_DINERO,
   );
-  const valorRestante = actual.cantidad * actual.costoPromedio - valorMovimiento;
+  const valorRestante =
+    actual.cantidad * actual.costoPromedio - valorMovimiento;
   const costoPromedio =
     nuevaCantidad === 0
       ? actual.costoPromedio

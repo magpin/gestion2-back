@@ -12,8 +12,8 @@ import { DocumentoService } from './documento.service';
  * Hermano de `ConfirmacionFacturaService`, con una diferencia que viene de
  * ventas: **acá las líneas sí vienen de la petición**. En una compra los
  * montos salen del papel y la persona solo contesta lo que faltó; en una venta
- * el precio lo pone la lista —el servidor no acepta uno— y lo que se decide son
- * el cliente, los productos y las cantidades, que la persona revisó y pudo
+ * el precio es el de lista salvo que la persona lo cambie en la línea, y lo que
+ * se decide son el cliente, los productos y las cantidades, que la persona revisó y pudo
  * cambiar en el formulario de siempre. Es lo mismo que manda `POST /facturas`.
  *
  * Lo único que agrega esta puerta es decir **de qué pedido salió**, y eso lo

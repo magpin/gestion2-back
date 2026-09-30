@@ -207,3 +207,16 @@ export function evaluarPertinencia(
 
   return { pertinente: true };
 }
+
+/**
+ * La cuenta de ingresos (41xx) de una actividad, por su sección y división.
+ * La pesca (división 03) tiene cuenta propia aunque comparta sección con la
+ * agricultura. `undefined` si la sección no se conoce.
+ */
+export function cuentaIngresoDeActividad(
+  seccion: string | null,
+  division: string | null,
+): string | undefined {
+  if (division === '03') return INGRESO_PESCA;
+  return seccion === null ? undefined : INGRESO_POR_SECCION[seccion];
+}

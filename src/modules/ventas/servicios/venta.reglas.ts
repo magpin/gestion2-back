@@ -342,3 +342,18 @@ export function validarFormaPago(
     ),
   };
 }
+
+/**
+ * El precio de una línea de producto: el digitado en la línea si viene —el
+ * que se pactó con el cliente—, y si no, el de lista vigente. Un precio de
+ * lista en cero cuenta como que no hay: la línea saldría en cero. Sin
+ * ninguno de los dos, `null`: el servicio dice qué producto es.
+ */
+export function resolverPrecio(
+  digitado: number | undefined,
+  deLista: number | null,
+): number | null {
+  if (digitado !== undefined) return digitado;
+  if (deLista !== null && deLista > 0) return deLista;
+  return null;
+}

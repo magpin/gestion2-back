@@ -41,7 +41,7 @@ export class ConceptosController {
   }
 
   /** Siembra el catálogo inicial y les busca cuenta a los que no tienen. Idempotente. */
-  @Roles('DIRECTOR', 'CONTADOR')
+  @Roles('DIRECTOR', 'CONTADOR', 'ADMIN_TENANT')
   @Post('preparar')
   preparar(@ActorEmpresa() ctx: CtxEmpresa) {
     return this.conceptos.preparar(ctx);

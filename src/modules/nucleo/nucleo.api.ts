@@ -212,6 +212,48 @@ export class NucleoApi {
     return this.plan.asegurarCuenta(ctx, datos, tx);
   }
 
+  /**
+   * Un auxiliar bajo `madre` con el código que sigue. Con `sistema`, lo crea
+   * la configuración (la caja de una sede, el banco) sin preguntar el rol.
+   * Ver `PlanCuentasService.crearAuxiliar`.
+   */
+  async crearAuxiliar(
+    ctx: CtxEmpresa,
+    datos: { madre: string; nombre: string },
+    opciones: { sistema?: boolean } = {},
+    tx?: Tx,
+  ): Promise<{ id: string; codigo: string; nombre: string }> {
+    const f = await this.plan.crearAuxiliar(ctx, datos, opciones, tx);
+    return {
+      id: f.id as string,
+      codigo: f.codigo as string,
+      nombre: f.nombre as string,
+    };
+  }
+
+  /**
+   * La cuenta de ingresos (41xx) de la actividad principal de la empresa, o
+   * `null` si no la ha declarado. El costo es la misma con 61.
+   */
+  async familiaDeIngreso(ctx: CtxEmpresa, tx?: Tx): Promise<string | null> {
+    return this.plan.familiaDeIngreso(ctx, tx);
+  }
+
+  /** El capital y la 370505 si faltan. Ver `PlanCuentasService.prepararPatrimonio`. */
+  async prepararPatrimonio(ctx: CtxEmpresa, tx?: Tx): Promise<string[]> {
+    return this.plan.prepararPatrimonio(ctx, tx);
+  }
+
+  /** La depreciación en códigos de flota, corregida. Ver `PlanCuentasService.corregirDepreciacion`. */
+  async corregirDepreciacion(ctx: CtxEmpresa, tx?: Tx): Promise<string[]> {
+    return this.plan.corregirDepreciacion(ctx, tx);
+  }
+
+  /** Los conceptos de movimiento iniciales, con su cuenta. Ver `ConceptosService.preparar`. */
+  async prepararConceptos(ctx: CtxEmpresa, tx?: Tx) {
+    return this.conceptos.preparar(ctx, tx);
+  }
+
   /** Las sedes de la empresa: id y nombre, la principal primero. */
   async sedes(ctx: CtxEmpresa, tx?: Tx) {
     return this.empresas.sedesResumen(ctx, tx);

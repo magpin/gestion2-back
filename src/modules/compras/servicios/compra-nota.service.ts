@@ -23,6 +23,7 @@ import {
   type CompraDocumentoLineaResumen,
   type CompraDocumentoResumen,
 } from './compra.service';
+import { cuentaInactiva } from '../../../common/contabilidad/cuenta-inactiva';
 
 const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cuenta_id, detalle, concepto_id, cantidad,
                        costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable, iva_base,
@@ -418,8 +419,9 @@ export class CompraNotaService {
                 ?.id)
             : cuentaDebitoDe[(r.renglones?.[0] ?? 1) - 1];
           if (cuenta === undefined) {
-            throw new BadRequestException(
-              `No existe o está inactiva la cuenta de IVA descontable (${CODIGO_CUENTA_IVA_DESCONTABLE}). Actívala en el plan de cuentas.`,
+            throw cuentaInactiva(
+              'IVA descontable',
+              CODIGO_CUENTA_IVA_DESCONTABLE,
             );
           }
           lineasAsiento.push({
@@ -545,9 +547,7 @@ export class CompraNotaService {
       t,
     );
     if (cuentaProveedores === null) {
-      throw new BadRequestException(
-        `No existe o está inactiva la cuenta de proveedores (${CODIGO_CUENTA_PROVEEDORES}). Actívala en el plan de cuentas.`,
-      );
+      throw cuentaInactiva('proveedores', CODIGO_CUENTA_PROVEEDORES);
     }
 
     const totalIvaDescontable = lineas
@@ -561,9 +561,7 @@ export class CompraNotaService {
         t,
       );
       if (cuentaIva === null) {
-        throw new BadRequestException(
-          `No existe o está inactiva la cuenta de IVA descontable (${CODIGO_CUENTA_IVA_DESCONTABLE}). Actívala en el plan de cuentas.`,
-        );
+        throw cuentaInactiva('IVA descontable', CODIGO_CUENTA_IVA_DESCONTABLE);
       }
       cuentaIvaId = cuentaIva.id;
     }

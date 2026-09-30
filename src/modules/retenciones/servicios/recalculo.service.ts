@@ -27,6 +27,7 @@ import {
 } from './motor-renta.service';
 import { MotorVentaService } from './motor-venta.service';
 import { retencionesVivas } from './retenciones-vivas';
+import { cuentaInactiva } from '../../../common/contabilidad/cuenta-inactiva';
 
 /** La cuenta por pagar a proveedores: la contrapartida del ajuste (R-D15). */
 const CODIGO_CUENTA_PROVEEDORES = '220505';
@@ -727,9 +728,7 @@ export class RecalculoService {
       t,
     );
     if (proveedores === null) {
-      throw new BadRequestException(
-        `No existe o está inactiva la cuenta de proveedores (${CODIGO_CUENTA_PROVEEDORES}).`,
-      );
+      throw cuentaInactiva('proveedores', CODIGO_CUENTA_PROVEEDORES);
     }
     const valor = Math.abs(Number(d.diferencia));
     const retencion = {

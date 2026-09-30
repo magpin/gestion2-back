@@ -20,11 +20,13 @@ import type { CtxEmpresa } from '../../../common/ctx';
 import { BuscarPucDto } from '../dto/catalogo.dto';
 import {
   AplicarSugerenciaDto,
+  CrearAuxiliarDto,
   CrearCentroCostoDto,
   CrearCuentaEmpresaDto,
   EditarCentroCostoDto,
   EditarCuentaEmpresaDto,
   ListarCuentasEmpresaDto,
+  SiguienteAuxiliarDto,
 } from '../dto/plan-cuentas.dto';
 import { PlanCuentasService } from '../servicios/plan-cuentas.service';
 
@@ -109,6 +111,27 @@ export class PlanCuentasController {
     return this.plan.aplicar(ctx, dto);
   }
 
+  /**
+   * «+ Crear cuenta auxiliar» desde un formulario: la caja, el banco, el
+   * producto, el concepto. Además del director y el contador, quien puede
+   * crear ese registro, y solo bajo la madre de su contexto: eso lo revisa el
+   * servicio (`madrePermitida`). Devuelve la cuenta como `listar`.
+   */
+  @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'INVENTARIO', 'COMPRAS')
+  @Post('auxiliar')
+  crearAuxiliar(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Body() dto: CrearAuxiliarDto,
+  ) {
+    return this.plan.crearAuxiliar(ctx, dto);
+  }
+
+  /** El código que saldría bajo una madre, para mostrarlo antes de guardar. */
+  @Get('siguiente')
+  siguiente(@ActorEmpresa() ctx: CtxEmpresa, @Query() q: SiguienteAuxiliarDto) {
+    return this.plan.siguiente(ctx, q.madre);
+  }
+
   @Get(':id')
   porId(
     @ActorEmpresa() ctx: CtxEmpresa,
@@ -142,5 +165,16 @@ export class PlanCuentasController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
     await this.plan.desactivar(ctx, id);
+  }
+
+  /** La vuelve a ofrecer. Si su madre está inactiva, primero la madre. */
+  @Roles('DIRECTOR', 'CONTADOR')
+  @Post(':id/activar')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async activar(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.plan.activar(ctx, id);
   }
 }

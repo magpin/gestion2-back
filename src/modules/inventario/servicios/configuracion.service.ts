@@ -10,6 +10,7 @@ import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import { NucleoApi } from '../../nucleo/nucleo.api';
 import {
   CONCEPTOS_INVENTARIO,
+  conceptosInventarioPara,
   ORDEN_CONCEPTOS_INVENTARIO,
   type ConceptoInventario,
 } from './cuentas-inventario.reglas';
@@ -46,6 +47,10 @@ export class ConfiguracionService {
       ORDEN_CONCEPTOS_INVENTARIO,
       nucleo,
       contabilidad,
+      // El ingreso y el costo de un producto nuevo, según la actividad de la
+      // empresa: una de servicios no vende en 4135.
+      async (ctx, t) =>
+        conceptosInventarioPara(await nucleo.familiaDeIngreso(ctx, t)),
     );
   }
 

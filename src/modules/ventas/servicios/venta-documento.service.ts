@@ -1027,8 +1027,12 @@ export class VentaDocumentoService {
     id: string,
     dto: DevolverCobroDto,
   ): Promise<VentaDocumentoResumen> {
+    // Es plata que se le devuelve al cliente: por banco, el 4×1000 sale de
+    // lo que se le devuelve (decisión del dueño, 30 sep).
     return this.tx.enContexto(ctx, (t) =>
-      this.devolverCobroEnTx(ctx, id, dto, t),
+      this.devolverCobroEnTx(ctx, id, dto, t, undefined, {
+        gmfDelCliente: true,
+      }),
     );
   }
 
@@ -1044,6 +1048,12 @@ export class VentaDocumentoService {
     t: Tx,
     /** El documento que se anula —«RC-000128»—, para el libro de caja. */
     referencia?: string,
+    /**
+     * `gmfDelCliente`: por banco, el 4×1000 sale del valor devuelto —al
+     * cliente le llega el resto— y no es gasto de la empresa. Anular un recibo
+     * no lo usa: ahí no se le devuelve plata a nadie, se corrige un error.
+     */
+    opciones: { gmfDelCliente?: boolean } = {},
   ): Promise<VentaDocumentoResumen> {
     const documento = fila<{
       tipo: string;
@@ -1119,19 +1129,46 @@ export class VentaDocumentoService {
             } as const);
       const reparto =
         dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
+      const gmf =
+        opciones.gmfDelCliente && medio.medio === 'BANCO'
+          ? await this.tesoreria.gmfIncluidoEn(
+              ctx,
+              medio.cuentaBancariaId,
+              pago.valor,
+              t,
+            )
+          : 0;
+      const concepto = `${referencia === undefined ? '' : `${referencia} · `}Devolución de cobro de la factura ${numero}${reparto}`;
       await this.tesoreria.registrarDevolucionCobro(
         ctx,
         {
           ...medio,
           fecha: dto.fecha,
-          valor: pago.valor,
-          concepto: `${referencia === undefined ? '' : `${referencia} · `}Devolución de cobro de la factura ${numero}${reparto}`,
+          valor: Math.round((pago.valor - gmf) * 100) / 100,
+          concepto,
           cuentaClientesId: cuentaCartera.id,
           terceroId: documento.tercero_id,
           facturaVentaId: id,
         },
         t,
       );
+      // El 4×1000 de esa transferencia sale de la misma cuenta y también
+      // contra Clientes: lo paga el cliente con lo que se le devolvía.
+      if (gmf > 0) {
+        await this.tesoreria.registrarDevolucionCobro(
+          ctx,
+          {
+            ...medio,
+            fecha: dto.fecha,
+            valor: gmf,
+            concepto: `${concepto} · 4×1000, lo asume el cliente`,
+            cuentaClientesId: cuentaCartera.id,
+            terceroId: documento.tercero_id,
+            facturaVentaId: id,
+          },
+          t,
+        );
+      }
     }
 
     const actualizado = fila<VentaDocumentoResumen>(

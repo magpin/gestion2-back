@@ -210,6 +210,10 @@ function tesoreriaFalso() {
   const fake = {
     registrarCobro,
     registrarDevolucionCobro,
+    // Una cuenta que paga 4×1000: de 100.400 que se devuelven, 400 son el impuesto.
+    gmfIncluidoEn: jest.fn((_ctx: unknown, _cuenta: string, total: number) =>
+      Promise.resolve(total - Math.round((total * 1000) / 1004)),
+    ),
     cuentaDelMedio: jest.fn((_ctx: unknown, m: { medio: string }) =>
       Promise.resolve(
         m.medio === 'CAJA'
@@ -1345,8 +1349,44 @@ describe('VentaDocumentoService.devolverCobro', () => {
       ],
     });
 
-    expect(registrarDevolucionCobro).toHaveBeenCalledTimes(2);
+    // Caja, banco y el 4×1000 del banco, que sale de lo que se devuelve.
+    expect(registrarDevolucionCobro).toHaveBeenCalledTimes(3);
     expect(actualizaciones).toHaveLength(1);
     expect(actualizado.monto_pagado).toBe('0');
+  });
+
+  it('por banco, el 4×1000 lo asume el cliente: le llega el resto y la factura baja por el total', async () => {
+    const { tx } = txCobrarFalso(FACTURA_COBRADA);
+    const { fake: tesoreria, registrarDevolucionCobro } = tesoreriaFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoCarteraFalso(),
+      inventarioFalso(),
+      {} as never,
+      tesoreria,
+      retencionesVentaFalsas(),
+    );
+
+    await servicio.devolverCobro(ctx, 'fv-1', {
+      fecha: '2026-09-16',
+      pagos: [{ medio: 'BANCO', cuentaBancariaId: 'cb-1', valor: 100400 }],
+    });
+
+    expect(registrarDevolucionCobro).toHaveBeenCalledTimes(2);
+    expect(registrarDevolucionCobro).toHaveBeenNthCalledWith(
+      1,
+      ctx,
+      expect.objectContaining({ valor: 100000 }),
+      expect.anything(),
+    );
+    expect(registrarDevolucionCobro).toHaveBeenNthCalledWith(
+      2,
+      ctx,
+      expect.objectContaining({
+        valor: 400,
+        concepto: expect.stringMatching(/4×1000, lo asume el cliente$/),
+      }),
+      expect.anything(),
+    );
   });
 });

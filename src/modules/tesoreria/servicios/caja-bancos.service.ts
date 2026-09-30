@@ -58,6 +58,8 @@ export interface MovimientoTesoreria {
   sale: number;
   /** El saldo de esa cuenta después del movimiento, como lo lleva su libro. */
   saldo: number;
+  /** El saldo inicial de la cuenta: se lista, pero no suma en «entró». */
+  apertura: boolean;
 }
 
 export interface MovimientosTesoreria {
@@ -206,25 +208,25 @@ export class CajaBancosService {
                       m.caja_id AS cuenta_id, k.nombre AS cuenta, m.concepto, a.numero AS documento,
                       (SELECT COALESCE(NULLIF(BTRIM(x.razon_social), ''), BTRIM(CONCAT_WS(' ', x.primer_nombre, x.primer_apellido)))
                          FROM tercero x WHERE x.id = m.tercero_id) AS tercero,
-                      CASE WHEN m.tipo = 'INGRESO' THEN m.valor ELSE 0 END AS entra,
+                      CASE WHEN m.tipo IN ('INGRESO', 'SALDO_INICIAL') THEN m.valor ELSE 0 END AS entra,
                       CASE WHEN m.tipo = 'EGRESO' THEN m.valor ELSE 0 END AS sale,
-                      m.saldo_valor AS saldo
+                      m.saldo_valor AS saldo, m.tipo = 'SALDO_INICIAL' AS apertura
                  FROM caja_movimiento m
                  JOIN caja k ON k.id = m.caja_id
                  LEFT JOIN asiento a ON a.id = m.asiento_id
-                WHERE m.fecha BETWEEN $1 AND $2 AND m.tipo <> 'SALDO_INICIAL'
+                WHERE m.fecha BETWEEN $1 AND $2
                UNION ALL
                SELECT m.id, m.fecha::text, m.secuencia, m.creado_en, 'BANCO',
                       m.cuenta_bancaria_id, b.banco, m.concepto, a.numero,
                       (SELECT COALESCE(NULLIF(BTRIM(x.razon_social), ''), BTRIM(CONCAT_WS(' ', x.primer_nombre, x.primer_apellido)))
                          FROM tercero x WHERE x.id = m.tercero_id),
-                      CASE WHEN m.tipo = ANY ($3) THEN m.valor ELSE 0 END,
-                      CASE WHEN m.tipo <> ALL ($3) THEN m.valor ELSE 0 END,
-                      m.saldo_valor
+                      CASE WHEN m.tipo = ANY ($3) OR m.tipo = 'SALDO_INICIAL' THEN m.valor ELSE 0 END,
+                      CASE WHEN m.tipo <> ALL ($3) AND m.tipo <> 'SALDO_INICIAL' THEN m.valor ELSE 0 END,
+                      m.saldo_valor, m.tipo = 'SALDO_INICIAL'
                  FROM banco_movimiento m
                  JOIN cuenta_bancaria b ON b.id = m.cuenta_bancaria_id
                  LEFT JOIN asiento a ON a.id = m.asiento_id
-                WHERE m.fecha BETWEEN $1 AND $2 AND m.tipo <> 'SALDO_INICIAL'
+                WHERE m.fecha BETWEEN $1 AND $2
              ) x
              ORDER BY x.fecha DESC, x.creado_en DESC, x.secuencia DESC
              LIMIT 1000`,
@@ -248,12 +250,17 @@ export class CajaBancosService {
           entra: Number(m.entra),
           sale: Number(m.sale),
           saldo: Number(m.saldo),
+          apertura: m.apertura === true,
         }));
         return {
           desde,
           hasta,
           movimientos,
-          entro: r2(movimientos.reduce((s, m) => s + m.entra, 0)),
+          // El saldo inicial se lista pero no suma: es con lo que se arrancó,
+          // no plata que entró ese día.
+          entro: r2(
+            movimientos.reduce((s, m) => s + (m.apertura ? 0 : m.entra), 0),
+          ),
           salio: r2(movimientos.reduce((s, m) => s + m.sale, 0)),
         };
       },

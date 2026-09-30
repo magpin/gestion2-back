@@ -25,6 +25,8 @@ export interface CajaConfiguracion {
 export interface ResultadoPreparar {
   cuentasCreadas: string[];
   cajasCreadas: string[];
+  /** Las cajas de más, sin movimientos, que se desactivaron: se maneja una sola. */
+  cajasDesactivadas: string[];
   /** Lo que no se pudo dejar listo, en palabras. */
   avisos: string[];
 }
@@ -108,16 +110,47 @@ export class CajaConfiguracionService {
       const resultado: ResultadoPreparar = {
         cuentasCreadas: await this.cuentas.preparar(ctx, t),
         cajasCreadas: [],
+        cajasDesactivadas: [],
         avisos: [],
       };
 
       // ── Una sola caja: la principal ──────────────────────────────────────
       // Decisión del dueño (30-09): una empresa maneja una sola caja, la
       // principal, en su sede principal. Ni una por sede ni caja menor.
-      const [yaTiene] = filas<{ id: string }>(
-        await t.query(`SELECT id FROM caja WHERE activa LIMIT 1`),
+      // Las empresas que ya tenían más de una se dejan con una: la principal
+      // de la sede principal (o la que más se usó); las otras sin movimientos
+      // se desactivan. Una con movimientos no se toca: se avisa, porque tiene
+      // plata que hay que llevar a la principal antes.
+      const activas = filas<{
+        id: string;
+        nombre: string;
+        movimientos: number;
+      }>(
+        await t.query(
+          `SELECT c.id, c.nombre,
+                  (SELECT count(*)::int FROM caja_movimiento m WHERE m.caja_id = c.id) AS movimientos
+             FROM caja c
+             LEFT JOIN empresa_sede s ON s.id = c.sede_id
+            WHERE c.activa
+            ORDER BY (c.tipo = 'PRINCIPAL') DESC, s.es_principal DESC NULLS LAST,
+                     movimientos DESC, c.creado_en`,
+        ),
       );
-      if (yaTiene !== undefined) return resultado;
+      if (activas.length > 0) {
+        for (const otra of activas.slice(1)) {
+          if (otra.movimientos > 0) {
+            resultado.avisos.push(
+              `La caja «${otra.nombre}» tiene movimientos: llevá su saldo a «${activas[0].nombre}» y desactivala; se maneja una sola caja.`,
+            );
+            continue;
+          }
+          await t.query('UPDATE caja SET activa = false WHERE id = $1', [
+            otra.id,
+          ]);
+          resultado.cajasDesactivadas.push(otra.nombre);
+        }
+        return resultado;
+      }
 
       const [sede] = await this.nucleo.sedes(ctx, t);
       if (sede === undefined) {

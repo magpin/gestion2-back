@@ -53,7 +53,12 @@ export class PrepararTodoService {
     await paso('Depreciación', () => this.nucleo.corregirDepreciacion(ctx));
     await paso('Tesorería', async () => {
       const r = await this.caja.preparar(ctx);
-      return [...r.cuentasCreadas, ...r.cajasCreadas, ...r.avisos];
+      return [
+        ...r.cuentasCreadas,
+        ...r.cajasCreadas,
+        ...r.cajasDesactivadas.map((c) => `Caja desactivada: ${c}`),
+        ...r.avisos,
+      ];
     });
     await paso(
       'Inventario',

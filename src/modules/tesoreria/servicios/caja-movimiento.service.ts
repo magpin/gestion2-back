@@ -285,6 +285,55 @@ export class CajaMovimientoService {
     );
   }
 
+  /**
+   * El cobro o pago de un documento de contado cuyo asiento ya está hecho: la
+   * factura de contado lleva en su propio asiento el débito (o crédito) a
+   * cada caja y banco, así que acá solo se bloquea la caja, se corre el saldo
+   * y se inserta el movimiento que apunta a ese asiento. Mismo patrón que
+   * `registrarDeTraslado`.
+   */
+  async registrarDocumentoConAsiento(
+    ctx: CtxEmpresa,
+    cajaId: string,
+    datos: {
+      tipo: 'INGRESO' | 'EGRESO';
+      fecha: string;
+      valor: number;
+      concepto: string;
+      documentoTipo: 'FACTURA_VENTA' | 'COMPRA';
+      documentoId: string;
+      terceroId: string;
+      asientoId: string;
+    },
+    t: Tx,
+  ): Promise<MovimientoCajaResumen> {
+    await this.exigirCajaBloqueada(cajaId, t);
+    const actual = (await this.ultimoMovimiento(cajaId, t))?.saldo ?? 0;
+    let nuevoSaldo: number;
+    if (datos.tipo === 'INGRESO') {
+      nuevoSaldo = calcularIngreso(actual, datos.valor);
+    } else {
+      const resultado = calcularEgreso(actual, datos.valor);
+      if (!resultado.ok) throw new BadRequestException(resultado.motivo);
+      nuevoSaldo = resultado.saldo;
+    }
+    return this.insertarMovimiento(
+      t,
+      ctx,
+      randomUUID(),
+      cajaId,
+      datos.tipo,
+      datos.fecha,
+      datos.valor,
+      datos.concepto,
+      datos.documentoTipo,
+      datos.documentoId,
+      datos.terceroId,
+      nuevoSaldo,
+      datos.asientoId,
+    );
+  }
+
   /** La cuenta contable de la caja: el traslado la necesita para su asiento. */
   async cuentaDe(
     ctx: CtxEmpresa,

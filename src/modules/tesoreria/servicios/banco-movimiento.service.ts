@@ -335,6 +335,50 @@ export class BancoMovimientoService {
     );
   }
 
+  /**
+   * El cobro o pago de un documento de contado cuyo asiento ya está hecho.
+   * Espejo del de caja: acá solo se corre el saldo y se inserta.
+   */
+  async registrarDocumentoConAsiento(
+    ctx: CtxEmpresa,
+    cuentaBancariaId: string,
+    datos: {
+      tipo: TipoMovimientoManual;
+      fecha: string;
+      valor: number;
+      concepto: string;
+      documentoTipo: 'FACTURA_VENTA' | 'COMPRA';
+      documentoId: string;
+      terceroId: string;
+      asientoId: string;
+    },
+    t: Tx,
+  ): Promise<MovimientoBancoResumen> {
+    await this.exigirCuentaBloqueada(cuentaBancariaId, t);
+    const actual =
+      (await this.ultimoMovimiento(cuentaBancariaId, t))?.saldo ?? 0;
+    const nuevoSaldo =
+      DIRECCION_MOVIMIENTO_BANCO[datos.tipo] === 'ENTRADA'
+        ? calcularIngresoBanco(actual, datos.valor)
+        : calcularEgresoBanco(actual, datos.valor);
+    return this.insertarMovimiento(
+      t,
+      ctx,
+      randomUUID(),
+      cuentaBancariaId,
+      datos.tipo,
+      datos.fecha,
+      datos.valor,
+      datos.concepto,
+      datos.documentoTipo,
+      datos.documentoId,
+      datos.terceroId,
+      nuevoSaldo,
+      datos.asientoId,
+      null,
+    );
+  }
+
   /** La cuenta contable de la cuenta bancaria, su banco y si es exenta del 4×1000. */
   async cuentaDe(
     ctx: CtxEmpresa,

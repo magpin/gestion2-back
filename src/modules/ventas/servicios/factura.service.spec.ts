@@ -199,9 +199,25 @@ function ventasConCobro(cotizacion: VentaDocumentoDetalle = cotizacionEmitida) {
         pendiente: '0',
       }),
   );
+  // La cuenta y el nombre de cada caja o banco, para el asiento de contado.
+  const mediosDeContado = jest.fn(
+    (_ctx: unknown, pagos: Array<{ medio: string; valor: number }>) =>
+      Promise.resolve(
+        pagos.map((p) =>
+          p.medio === 'CAJA'
+            ? { cuentaId: 'cta-caja', nombre: 'Caja general', valor: p.valor }
+            : {
+                cuentaId: 'cta-banco',
+                nombre: 'Bancolombia ···1234',
+                valor: p.valor,
+              },
+        ),
+      ),
+  );
   const fake = {
     porId: jest.fn(() => Promise.resolve(cotizacion)),
     cobrarEnTx,
+    mediosDeContado,
   } as unknown as ConstructorParameters<typeof FacturaService>[4];
   return { fake, cobrarEnTx };
 }
@@ -1058,9 +1074,9 @@ describe('FacturaService.crear — forma de pago', () => {
     expect(factura.lineas).toHaveLength(1);
   });
 
-  it('de contado acepta el cobro repartido entre caja y banco', async () => {
+  it('de contado repartido entre caja y banco queda en un solo asiento', async () => {
     const { fake, cobrarEnTx } = ventasConCobro();
-    const { servicio } = servicioCon(fake);
+    const { servicio, asentar } = servicioCon(fake);
 
     await servicio.crear(ctx, {
       terceroId: 'ter-1',
@@ -1074,6 +1090,35 @@ describe('FacturaService.crear — forma de pago', () => {
     });
 
     expect(cobrarEnTx).toHaveBeenCalledTimes(1);
+    // El cobro se liga al asiento de la factura en vez de asentar otro.
+    expect((cobrarEnTx.mock.calls[0] as unknown[])[5]).toBe('asiento-1');
+    // La factura (y su costo) es el único asiento: la plata entra directo a
+    // caja y banco, cada renglón dice dónde, y cartera no se toca.
+    expect(asentar).toHaveBeenCalledTimes(1);
+    const asiento = (asentar.mock.calls[0] as unknown[])[1] as {
+      glosa: string;
+      lineas: Array<{ cuentaId: string; debito: number; detalle?: string }>;
+    };
+    expect(asiento.glosa).toMatch(
+      / · de contado, repartida entre Caja general y Bancolombia ···1234$/,
+    );
+    expect(asiento.lineas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          cuentaId: 'cta-caja',
+          debito: 144981,
+          detalle: 'Recibido en Caja general',
+        }),
+        expect.objectContaining({
+          cuentaId: 'cta-banco',
+          debito: 200000,
+          detalle: 'Recibido en Bancolombia ···1234',
+        }),
+      ]),
+    );
+    expect(asiento.lineas.some((l) => l.cuentaId === 'cta-cartera')).toBe(
+      false,
+    );
   });
 
   it('el medio sin valor se lleva lo que falte de la factura', async () => {

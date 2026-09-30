@@ -35,6 +35,7 @@ import {
   type LineaVentaEntrada,
 } from './venta.reglas';
 import { cuentaInactiva } from '../../../common/contabilidad/cuenta-inactiva';
+import { glosaContado } from '../../../common/contabilidad/glosa-contado';
 
 const CAMPOS_LINEA = `id, venta_documento_id, orden, producto_id, cantidad, precio_unitario,
                        iva_tarifa, subtotal, iva_valor, total, costo_unitario,
@@ -782,13 +783,30 @@ export class FacturaService {
     // retenciones que nos practicaron, crédito ingreso por línea, crédito IVA
     // si aplica, y el par costo/inventario por línea — débito costo de venta,
     // crédito inventario, mismo valor los dos.
+    //
+    // De contado la plata no pasa por cartera: el mismo asiento la debita en
+    // cada caja o banco por donde entró, con el renglón diciendo dónde. Un
+    // solo asiento por factura, aunque se reparta entre caja y banco.
+    const mediosContado =
+      dto.formaPago === 'CONTADO'
+        ? await this.ventas.mediosDeContado(ctx, pagos, t)
+        : [];
     const lineasAsiento: LineaAsientoDto[] = [
-      {
-        cuentaId: cuentaCartera.id,
-        terceroId: dto.terceroId,
-        debito: totales.total - totalRetenido,
-        credito: 0,
-      },
+      ...(mediosContado.length > 0
+        ? mediosContado.map((m) => ({
+            cuentaId: m.cuentaId,
+            debito: m.valor,
+            credito: 0,
+            detalle: `Recibido en ${m.nombre}`,
+          }))
+        : [
+            {
+              cuentaId: cuentaCartera.id,
+              terceroId: dto.terceroId,
+              debito: totales.total - totalRetenido,
+              credito: 0,
+            },
+          ]),
       // Un activo: es impuesto nuestro pagado por anticipado, no un menor
       // ingreso. Registrarlo como menor ingreso diría que vendimos menos de lo
       // que vendimos.
@@ -841,7 +859,7 @@ export class FacturaService {
       {
         comprobanteTipoId: comprobante.id,
         fecha: dto.fecha,
-        glosa: `Factura de venta ${numero.numero}`,
+        glosa: `Factura de venta ${numero.numero}${glosaContado(mediosContado.map((m) => m.nombre))}`,
         lineas: lineasAsiento,
       },
       { origenTipo: 'VENTA', origenId: documentoId },
@@ -987,10 +1005,10 @@ export class FacturaService {
       }
     }
 
-    // De contado, el cobro entra en esta misma transacción y por el mismo
-    // camino que un cobro posterior —mismos movimientos de caja o banco, mismo
-    // candado, mismas validaciones—: si la caja está cerrada, la factura no
-    // se emite. Quien factura puede cobrar acá aunque no tenga el rol CAJA:
+    // De contado, el cobro entra en esta misma transacción: los movimientos
+    // de caja o banco quedan ligados al asiento de la factura —que ya lleva la
+    // plata—, con el mismo candado y las mismas validaciones de un cobro
+    // posterior: si la caja está cerrada, la factura no se emite. Quien factura puede cobrar acá aunque no tenga el rol CAJA:
     // es el mostrador, la plata la recibe quien vende.
     if (dto.formaPago === 'CONTADO') {
       const cobrada = await this.ventas.cobrarEnTx(
@@ -998,6 +1016,8 @@ export class FacturaService {
         documento.id,
         { fecha: dto.fecha, pagos },
         t,
+        undefined,
+        asiento.id,
       );
       return { ...cobrada, lineas: lineasInsertadas };
     }

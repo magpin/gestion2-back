@@ -836,10 +836,39 @@ export class VentaDocumentoService {
   }
 
   /**
+   * La cuenta contable y el nombre de cada caja o banco por donde entra una
+   * factura de contado, para que su asiento lleve la plata directo —un
+   * renglón por medio— en vez de pasar por cartera.
+   */
+  async mediosDeContado(
+    ctx: CtxEmpresa,
+    pagos: CobrarDto['pagos'],
+    t: Tx,
+  ): Promise<Array<{ cuentaId: string; nombre: string; valor: number }>> {
+    const medios: Array<{ cuentaId: string; nombre: string; valor: number }> =
+      [];
+    for (const pago of pagos) {
+      const medio = await this.tesoreria.cuentaDelMedio(
+        ctx,
+        pago.medio === 'CAJA'
+          ? { medio: 'CAJA', cajaId: pago.cajaId! }
+          : { medio: 'BANCO', cuentaBancariaId: pago.cuentaBancariaId! },
+        t,
+      );
+      medios.push({ ...medio, valor: pago.valor });
+    }
+    return medios;
+  }
+
+  /**
    * El cuerpo de `cobrar`, sobre una transacción ya abierta. Lo usa también
    * `FacturaService` para la factura de contado: emitirla y cobrarla es un
    * solo acto, y si el cobro falla —una caja cerrada, una cuenta inactiva—
    * la factura tampoco queda.
+   *
+   * Con `asientoId` —la factura de contado— la plata ya quedó en el asiento
+   * de la factura: acá solo se registra cada movimiento de caja o banco
+   * ligado a ese asiento, sin asentar un cobro aparte.
    */
   async cobrarEnTx(
     ctx: CtxEmpresa,
@@ -848,6 +877,7 @@ export class VentaDocumentoService {
     t: Tx,
     /** El documento que agrupa este cobro —«RC-000128»—, para el libro de caja. */
     referencia?: string,
+    asientoId?: string,
   ): Promise<VentaDocumentoResumen> {
     const documento = fila<{
       tipo: string;
@@ -912,10 +942,10 @@ export class VentaDocumentoService {
     // `caja-cartera.md`—: la plata que entra por caja y la que entra por
     // banco se confirman juntas o no entra ninguna.
     //
-    // El `concepto` numera el renglón solo cuando hay más de uno: con un
-    // solo pago el movimiento sale idéntico a como salía antes, y con
-    // varios el libro de caja no muestra dos líneas indistinguibles.
-    for (const [i, pago] of dto.pagos.entries()) {
+    // Con varios renglones el `concepto` dice a dónde fue cada parte —«en
+    // Caja general», «en Bancolombia ···1234»—: el libro no muestra dos
+    // líneas indistinguibles. Con un solo pago sale como siempre.
+    for (const pago of dto.pagos) {
       const medio =
         pago.medio === 'CAJA'
           ? ({ medio: 'CAJA', cajaId: pago.cajaId! } as const)
@@ -924,7 +954,27 @@ export class VentaDocumentoService {
               cuentaBancariaId: pago.cuentaBancariaId!,
             } as const);
       const reparto =
-        dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
+        dto.pagos.length === 1
+          ? ''
+          : ` · en ${(await this.tesoreria.cuentaDelMedio(ctx, medio, t)).nombre}`;
+      if (asientoId !== undefined) {
+        await this.tesoreria.registrarEnAsiento(
+          ctx,
+          {
+            ...medio,
+            fecha: dto.fecha,
+            valor: pago.valor,
+            concepto: `Factura de contado ${numero}${reparto}`,
+            terceroId: documento.tercero_id,
+            documentoTipo: 'FACTURA_VENTA',
+            documentoId: id,
+            asientoId,
+          },
+          'ENTRADA',
+          t,
+        );
+        continue;
+      }
       await this.tesoreria.registrarCobro(
         ctx,
         {

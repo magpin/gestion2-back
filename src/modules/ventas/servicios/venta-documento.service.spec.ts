@@ -210,6 +210,13 @@ function tesoreriaFalso() {
   const fake = {
     registrarCobro,
     registrarDevolucionCobro,
+    cuentaDelMedio: jest.fn((_ctx: unknown, m: { medio: string }) =>
+      Promise.resolve(
+        m.medio === 'CAJA'
+          ? { cuentaId: 'cta-caja', nombre: 'Caja general' }
+          : { cuentaId: 'cta-banco', nombre: 'Bancolombia ···1234' },
+      ),
+    ),
   } as unknown as ConstructorParameters<typeof VentaDocumentoService>[4];
   return { fake, registrarCobro, registrarDevolucionCobro };
 }
@@ -1155,8 +1162,8 @@ describe('VentaDocumentoService.cobrar', () => {
       ],
     });
 
-    // Dos movimientos, uno por renglón, y el concepto los numera para que el
-    // libro de caja no muestre dos líneas indistinguibles.
+    // Dos movimientos, uno por renglón, y el concepto dice a dónde fue cada
+    // parte para que el libro no muestre dos líneas indistinguibles.
     expect(registrarCobro).toHaveBeenCalledTimes(2);
     expect(registrarCobro).toHaveBeenNthCalledWith(
       1,
@@ -1165,7 +1172,7 @@ describe('VentaDocumentoService.cobrar', () => {
         medio: 'CAJA',
         cajaId: 'c-1',
         valor: 19000,
-        concepto: 'Cobro de la factura SETP-000005 (1 de 2)',
+        concepto: 'Cobro de la factura SETP-000005 · en Caja general',
       }),
       expect.anything(),
     );
@@ -1176,7 +1183,7 @@ describe('VentaDocumentoService.cobrar', () => {
         medio: 'BANCO',
         cuentaBancariaId: 'cb-1',
         valor: 100000,
-        concepto: 'Cobro de la factura SETP-000005 (2 de 2)',
+        concepto: 'Cobro de la factura SETP-000005 · en Bancolombia ···1234',
       }),
       expect.anything(),
     );

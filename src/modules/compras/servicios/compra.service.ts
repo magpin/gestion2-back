@@ -39,6 +39,7 @@ import {
 } from './compra.reglas';
 import type { LineaCompraEntrada } from './compra.reglas';
 import { cuentaInactiva } from '../../../common/contabilidad/cuenta-inactiva';
+import { glosaContado } from '../../../common/contabilidad/glosa-contado';
 
 export interface CompraDocumentoResumen {
   id: string;
@@ -689,21 +690,37 @@ export class CompraService {
             });
           }
         }
-        lineasAsiento.push({
-          cuentaId: cuentaProveedores.id,
-          terceroId: dto.terceroId,
-          debito: 0,
-          credito: neto,
-        });
+        // De contado la plata no pasa por Proveedores: el mismo asiento la
+        // acredita en cada caja o banco de donde salió, con el renglón
+        // diciendo de dónde. Un solo asiento por compra, aunque se reparta.
+        const mediosContado =
+          dto.formaPago === 'CONTADO'
+            ? await this.mediosDeContado(ctx, pagos, t)
+            : [];
+        if (mediosContado.length > 0) {
+          for (const m of mediosContado) {
+            lineasAsiento.push({
+              cuentaId: m.cuentaId,
+              debito: 0,
+              credito: m.valor,
+              detalle: `Pagado desde ${m.nombre}`,
+            });
+          }
+        } else {
+          lineasAsiento.push({
+            cuentaId: cuentaProveedores.id,
+            terceroId: dto.terceroId,
+            debito: 0,
+            credito: neto,
+          });
+        }
 
         const asiento = await this.contabilidad.asentar(
           ctx,
           {
             comprobanteTipoId: comprobante.id,
             fecha: dto.fecha,
-            glosa: soporte
-              ? `Documento soporte ${numeroDocumento}`
-              : `Factura de compra ${numeroDocumento}`,
+            glosa: `${soporte ? 'Documento soporte' : 'Factura de compra'} ${numeroDocumento}${glosaContado(mediosContado.map((m) => m.nombre))}`,
             lineas: lineasAsiento,
           },
           { origenTipo: 'COMPRA', origenId: documentoId },
@@ -851,9 +868,10 @@ export class CompraService {
           );
         }
 
-        // De contado, el pago entra en esta misma transacción y por el mismo
-        // camino que un pago posterior: si la caja no alcanza o está cerrada, la
-        // compra no queda registrada a medias.
+        // De contado, el pago entra en esta misma transacción: los movimientos
+        // de caja o banco quedan ligados al asiento de la compra —que ya lleva
+        // la plata—. Si la caja no alcanza o está cerrada, la compra no queda
+        // registrada a medias.
         const resumen =
           dto.formaPago === 'CONTADO'
             ? await this.pagarEnTx(
@@ -861,6 +879,8 @@ export class CompraService {
                 documento.id,
                 { fecha: dto.fecha, pagos },
                 t,
+                undefined,
+                asiento.id,
               )
             : documento;
 
@@ -1318,6 +1338,27 @@ export class CompraService {
     return this.tx.enContexto(ctx, (t) => this.pagarEnTx(ctx, id, dto, t));
   }
 
+  /** Espejo de `VentaDocumentoService.mediosDeContado`: de dónde sale la plata de una compra de contado. */
+  private async mediosDeContado(
+    ctx: CtxEmpresa,
+    pagos: PagarDto['pagos'],
+    t: Tx,
+  ): Promise<Array<{ cuentaId: string; nombre: string; valor: number }>> {
+    const medios: Array<{ cuentaId: string; nombre: string; valor: number }> =
+      [];
+    for (const pago of pagos) {
+      const medio = await this.tesoreria.cuentaDelMedio(
+        ctx,
+        pago.medio === 'CAJA'
+          ? { medio: 'CAJA', cajaId: pago.cajaId! }
+          : { medio: 'BANCO', cuentaBancariaId: pago.cuentaBancariaId! },
+        t,
+      );
+      medios.push({ ...medio, valor: pago.valor });
+    }
+    return medios;
+  }
+
   /**
    * El cuerpo de `pagar`, sobre una transacción ya abierta. Lo usa también
    * `crear` para la compra de contado — ver `VentaDocumentoService.cobrarEnTx`.
@@ -1329,6 +1370,8 @@ export class CompraService {
     t: Tx,
     /** El documento que agrupa este pago —«CE-000077»—, para el libro. */
     referencia?: string,
+    /** La compra de contado: la plata ya va en su asiento, ver `cobrarEnTx`. */
+    asientoId?: string,
   ): Promise<CompraDocumentoResumen> {
     const documento = fila<{
       tercero_id: string;
@@ -1379,8 +1422,8 @@ export class CompraService {
     }
 
     // Un movimiento por renglón, en la misma transacción — espejo de
-    // `cobrar`, y el `concepto` numera el reparto solo si hay más de uno.
-    for (const [i, pago] of dto.pagos.entries()) {
+    // `cobrar`, y con varios el `concepto` dice de dónde salió cada parte.
+    for (const pago of dto.pagos) {
       const medio =
         pago.medio === 'CAJA'
           ? ({ medio: 'CAJA', cajaId: pago.cajaId! } as const)
@@ -1389,7 +1432,27 @@ export class CompraService {
               cuentaBancariaId: pago.cuentaBancariaId!,
             } as const);
       const reparto =
-        dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
+        dto.pagos.length === 1
+          ? ''
+          : ` · desde ${(await this.tesoreria.cuentaDelMedio(ctx, medio, t)).nombre}`;
+      if (asientoId !== undefined) {
+        await this.tesoreria.registrarEnAsiento(
+          ctx,
+          {
+            ...medio,
+            fecha: dto.fecha,
+            valor: pago.valor,
+            concepto: `Compra de contado ${documento.numero_factura_proveedor}${reparto}`,
+            terceroId: documento.tercero_id,
+            documentoTipo: 'COMPRA',
+            documentoId: id,
+            asientoId,
+          },
+          'SALIDA',
+          t,
+        );
+        continue;
+      }
       await this.tesoreria.registrarPago(
         ctx,
         {

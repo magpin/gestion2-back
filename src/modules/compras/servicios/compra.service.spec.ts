@@ -792,7 +792,15 @@ describe('CompraService.crear — forma de pago', () => {
       nucleoFalso().fake,
       inventarioFalso().fake,
       contabilidad,
-      {} as never,
+      {
+        cuentaDelMedio: jest.fn((_ctx: unknown, m: { medio: string }) =>
+          Promise.resolve(
+            m.medio === 'CAJA'
+              ? { cuentaId: 'cta-caja', nombre: 'Caja general' }
+              : { cuentaId: 'cta-banco', nombre: 'Bancolombia ···1234' },
+          ),
+        ),
+      } as never,
       retencionesFalso().fake,
     );
     // El pago en sí ya lo prueba `CompraService.pagar`: acá importa que se
@@ -813,7 +821,7 @@ describe('CompraService.crear — forma de pago', () => {
   const NETO = 119000;
 
   it('de contado, con rol CAJA, paga la compra entera en la misma transacción', async () => {
-    const { servicio, pagarEnTx, tx } = servicioConPago();
+    const { servicio, asentar, pagarEnTx, tx } = servicioConPago();
 
     const compra = await servicio.crear(caja, {
       terceroId: 'ter-1',
@@ -828,11 +836,39 @@ describe('CompraService.crear — forma de pago', () => {
     });
 
     expect(pagarEnTx).toHaveBeenCalledTimes(1);
-    const [, id, dto, t] = pagarEnTx.mock.calls[0];
+    const [, id, dto, t, , asientoId] = pagarEnTx.mock.calls[0];
     expect(id).toBe(compra.id);
     expect(dto.fecha).toBe('2026-09-08');
     expect(dto.pagos).toHaveLength(2);
     expect(t).toBe(tx);
+    // Un solo asiento: la plata sale de la caja y del banco en el asiento de
+    // la compra, sin pasar por Proveedores, y el pago se liga a él.
+    expect(asentar).toHaveBeenCalledTimes(1);
+    const asiento = (asentar.mock.calls[0] as unknown[])[1] as {
+      glosa: string;
+      lineas: Array<{ cuentaId: string; credito: number; detalle?: string }>;
+    };
+    expect(asiento.glosa).toBe(
+      'Factura de compra FP-C01 · de contado, repartida entre Caja general y Bancolombia ···1234',
+    );
+    expect(asiento.lineas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          cuentaId: 'cta-caja',
+          credito: 19000,
+          detalle: 'Pagado desde Caja general',
+        }),
+        expect.objectContaining({
+          cuentaId: 'cta-banco',
+          credito: 100000,
+          detalle: 'Pagado desde Bancolombia ···1234',
+        }),
+      ]),
+    );
+    expect(asiento.lineas.some((l) => l.cuentaId === 'cta-proveedores')).toBe(
+      false,
+    );
+    expect(asientoId).toBe('asiento-1');
     expect(compra.monto_pagado).toBe(String(NETO));
     expect(compra.lineas).toHaveLength(1);
   });
@@ -1430,6 +1466,13 @@ describe('CompraService.pagar', () => {
     );
     const fake = {
       registrarPago,
+      cuentaDelMedio: jest.fn((_ctx: unknown, m: { medio: string }) =>
+        Promise.resolve(
+          m.medio === 'CAJA'
+            ? { cuentaId: 'cta-caja', nombre: 'Caja general' }
+            : { cuentaId: 'cta-banco', nombre: 'Bancolombia ···1234' },
+        ),
+      ),
     } as unknown as ConstructorParameters<typeof CompraService>[4];
     return { fake, registrarPago };
   }
@@ -1670,7 +1713,7 @@ describe('CompraService.pagar', () => {
       expect.objectContaining({
         medio: 'CAJA',
         valor: 14000,
-        concepto: 'Pago de la compra FP-001 (1 de 2)',
+        concepto: 'Pago de la compra FP-001 · desde Caja general',
       }),
       expect.anything(),
     );
@@ -1680,7 +1723,7 @@ describe('CompraService.pagar', () => {
       expect.objectContaining({
         medio: 'BANCO',
         valor: 80000,
-        concepto: 'Pago de la compra FP-001 (2 de 2)',
+        concepto: 'Pago de la compra FP-001 · desde Bancolombia ···1234',
       }),
       expect.anything(),
     );

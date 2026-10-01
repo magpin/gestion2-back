@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { ComprasModule } from '../compras/compras.module';
 import { ContabilidadModule } from '../contabilidad/contabilidad.module';
+import { EstadosFinancierosModule } from '../estados-financieros/estados-financieros.module';
 import { InventarioModule } from '../inventario/inventario.module';
 import { NucleoModule } from '../nucleo/nucleo.module';
 import { ReportesModule } from '../reportes/reportes.module';
@@ -48,6 +49,8 @@ import { PropuestasService } from './servicios/propuestas.service';
     // Para dejar anotado en el asiento de qué propuesta salió.
     ContabilidadModule,
     RevisionModule,
+    // Los resultados por centro de costo.
+    EstadosFinancierosModule,
   ],
   controllers: [ConversacionController],
   providers: [

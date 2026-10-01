@@ -416,6 +416,22 @@ export class TesoreriaApi {
   }
 
   /**
+   * Si algún movimiento de caja o banco quedó ligado a este asiento: es una
+   * factura o compra de contado (`registrarEnAsiento`). Anular ese asiento
+   * reversaría también la plata, que ya se devolvió con su propio asiento o
+   * sigue en caja, y la cuenta contable quedaría distinta del libro de caja.
+   */
+  async hayPlataEnAsiento(asientoId: string, t: Tx): Promise<boolean> {
+    const r: { hay: boolean }[] = await t.query(
+      `SELECT EXISTS (SELECT 1 FROM caja_movimiento WHERE asiento_id = $1)
+           OR EXISTS (SELECT 1 FROM banco_movimiento WHERE asiento_id = $1)
+           AS hay`,
+      [asientoId],
+    );
+    return r[0]?.hay === true;
+  }
+
+  /**
    * Despacha a `CajaMovimientoService` o `BancoMovimientoService` según
    * `medio` — el resto (documento, tercero, contracuenta) es idéntico
    * para los dos, solo cambia el `tipo` que cada servicio entiende

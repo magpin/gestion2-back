@@ -307,14 +307,22 @@ export class CajaArqueoService {
     id: string;
     cuenta_id: string;
     responsable_tercero_id: string | null;
+    centro_costo_id: string | null;
   }> {
+    // El centro de la sede de la caja: ahí va el faltante o el sobrante (D5).
     const caja = fila<{
       id: string;
       cuenta_id: string;
       responsable_tercero_id: string | null;
+      centro_costo_id: string | null;
     }>(
       await t.query(
-        `SELECT id, cuenta_id, responsable_tercero_id FROM caja WHERE id = $1 AND activa FOR UPDATE`,
+        `SELECT id, cuenta_id, responsable_tercero_id,
+                (SELECT c.id FROM empresa_centro_costo c
+                  WHERE c.sede_id = caja.sede_id AND c.activo
+                    AND NOT EXISTS (SELECT 1 FROM empresa_centro_costo h WHERE h.padre_id = c.id)
+                  ORDER BY c.codigo LIMIT 1) AS centro_costo_id
+           FROM caja WHERE id = $1 AND activa FOR UPDATE OF caja`,
         [cajaId],
       ),
     );
@@ -380,7 +388,7 @@ export class CajaArqueoService {
    */
   private async asentarAjuste(
     ctx: CtxEmpresa,
-    caja: { cuenta_id: string },
+    caja: { cuenta_id: string; centro_costo_id?: string | null },
     cuentaAjusteId: string,
     arqueo: { id: string; fecha: string },
     diferencia: number,
@@ -408,6 +416,7 @@ export class CajaArqueoService {
         comprobanteTipoId: comprobante.id,
         fecha: arqueo.fecha,
         glosa: `Ajuste de arqueo (${faltante ? 'faltante' : 'sobrante'}), arqueo ${arqueo.id}`,
+        centroCostoId: caja.centro_costo_id ?? undefined,
         lineas: [
           {
             cuentaId: cuentaAjusteId,

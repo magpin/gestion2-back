@@ -10,6 +10,7 @@ import {
   mesesHasta,
   resultadoDe,
   variacion,
+  resultadosPorCentro,
 } from './estados.reglas';
 
 const mov = (
@@ -214,5 +215,96 @@ describe('períodos', () => {
       anterior: '2026-01',
     });
     expect(mesesHasta('2026-02', 3)).toEqual(['2025-12', '2026-01', '2026-02']);
+  });
+});
+
+describe('resultadosPorCentro', () => {
+  const centros = [
+    { id: 'n', codigo: 'N', nombre: 'Norte', tipo: 'PRODUCTIVO' as const },
+    { id: 's', codigo: 'S', nombre: 'Sur', tipo: 'PRODUCTIVO' as const },
+    {
+      id: 'a',
+      codigo: 'A',
+      nombre: 'Administración',
+      tipo: 'ADMINISTRATIVO' as const,
+    },
+  ];
+  const movs = [
+    {
+      codigo: '413505',
+      nombre: 'Ventas',
+      debito: 0,
+      credito: 1000,
+      centroId: 'n',
+    },
+    {
+      codigo: '413505',
+      nombre: 'Ventas',
+      debito: 0,
+      credito: 600,
+      centroId: 's',
+    },
+    {
+      codigo: '613505',
+      nombre: 'Costo',
+      debito: 400,
+      credito: 0,
+      centroId: 'n',
+    },
+    {
+      codigo: '510506',
+      nombre: 'Sueldos',
+      debito: 300,
+      credito: 0,
+      centroId: 'a',
+    },
+    {
+      codigo: '519530',
+      nombre: 'Útiles',
+      debito: 50,
+      credito: 0,
+      centroId: null,
+    },
+  ];
+
+  it('una columna por centro con movimiento, «Sin centro» al final, y suman el total', () => {
+    const { columnas, total } = resultadosPorCentro(movs, centros, 'CENTRO');
+    expect(columnas.map((c) => c.clave)).toEqual(['n', 's', 'a', 'SIN_CENTRO']);
+    const suma = columnas.reduce(
+      (s, c) => s + c.estado.utilidadAntesDeImpuestos,
+      0,
+    );
+    expect(suma).toBeCloseTo(total.utilidadAntesDeImpuestos);
+    expect(columnas[0].estado.utilidadBruta).toBe(600);
+  });
+
+  it('agrupado por tipo: productivos juntos', () => {
+    const { columnas } = resultadosPorCentro(movs, centros, 'TIPO');
+    expect(columnas.map((c) => c.clave)).toEqual([
+      'PRODUCTIVO',
+      'ADMINISTRATIVO',
+      'SIN_CENTRO',
+    ]);
+    expect(columnas[0].estado.ingresosOperacionales).toBe(1600);
+  });
+
+  it('un centro que no viene en la lista cae en «Sin centro» y no se pierde', () => {
+    const { columnas, total } = resultadosPorCentro(
+      [
+        {
+          codigo: '519530',
+          nombre: 'Útiles',
+          debito: 80,
+          credito: 0,
+          centroId: 'x',
+        },
+      ],
+      centros,
+      'CENTRO',
+    );
+    expect(columnas.map((c) => c.clave)).toEqual(['SIN_CENTRO']);
+    expect(columnas[0].estado.utilidadAntesDeImpuestos).toBe(
+      total.utilidadAntesDeImpuestos,
+    );
   });
 });

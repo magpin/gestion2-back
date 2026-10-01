@@ -11,9 +11,7 @@ import { TxService, type Tx } from '../../../common/db/tx.service';
 import type { BuscarPucDto } from '../dto/catalogo.dto';
 import type {
   AplicarSugerenciaDto,
-  CrearCentroCostoDto,
   CrearCuentaEmpresaDto,
-  EditarCentroCostoDto,
   EditarCuentaEmpresaDto,
   ListarCuentasEmpresaDto,
 } from '../dto/plan-cuentas.dto';
@@ -475,60 +473,7 @@ export class PlanCuentasService {
   }
 
   // ---------------------------------------------------------------------------
-  // Centros de costo
-  // ---------------------------------------------------------------------------
-
-  async centros(ctx: CtxEmpresa): Promise<Array<Record<string, unknown>>> {
-    return this.tx.enContexto(ctx, (t) =>
-      t.query('SELECT * FROM empresa_centro_costo ORDER BY codigo'),
-    );
-  }
-
-  async crearCentro(
-    ctx: CtxEmpresa,
-    dto: CrearCentroCostoDto,
-  ): Promise<Record<string, unknown>> {
-    return this.tx.enContexto(ctx, async (t) => {
-      const [fila] = await t.query<Array<Record<string, unknown>>>(
-        `INSERT INTO empresa_centro_costo (empresa_id, codigo, nombre)
-         VALUES ($1, $2, $3) RETURNING *`,
-        [ctx.empresaId, dto.codigo, dto.nombre],
-      );
-      return fila;
-    });
-  }
-
-  async editarCentro(
-    ctx: CtxEmpresa,
-    id: string,
-    dto: EditarCentroCostoDto,
-  ): Promise<Record<string, unknown>> {
-    return this.tx.enContexto(ctx, async (t) => {
-      const editado = fila<Record<string, unknown>>(
-        await t.query(
-          'UPDATE empresa_centro_costo SET nombre = COALESCE($2, nombre) WHERE id = $1 RETURNING *',
-          [id, dto.nombre ?? null],
-        ),
-      );
-      if (editado === undefined)
-        throw new NotFoundException('El centro de costo no existe');
-      return editado;
-    });
-  }
-
-  async desactivarCentro(ctx: CtxEmpresa, id: string): Promise<void> {
-    await this.tx.enContexto(ctx, async (t) => {
-      const desactivados = filas<{ id: string }>(
-        await t.query(
-          'UPDATE empresa_centro_costo SET activo = false WHERE id = $1 RETURNING id',
-          [id],
-        ),
-      );
-      if (desactivados.length === 0)
-        throw new NotFoundException('El centro de costo no existe');
-    });
-  }
-
+  // Centros de costo: `centros-costo.service.ts`
   // ---------------------------------------------------------------------------
   // Auxiliares desde los formularios (plan de ventas, Fase 5)
   // ---------------------------------------------------------------------------
@@ -1040,6 +985,8 @@ export class PlanCuentasService {
                   ? null
                   : Number(fila.tarifa_ica_por_mil),
             },
+      // Solo se enciende con `CentrosCostoService.fijarManejo`, que exige un
+      // centro por defecto: los automáticos ya tienen a dónde ir.
       manejaCentroCosto: fila.maneja_centro_de_costo === true,
       sedes: (fila.sedes as Array<{ codigo: string; nombre: string }>) ?? [],
       codigosExistentes: (fila.codigos as string[]) ?? [],

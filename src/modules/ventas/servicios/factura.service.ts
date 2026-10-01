@@ -199,12 +199,15 @@ export class FacturaService {
           const lineas = filas<{
             codigo: string;
             nombre: string;
+            centro: string | null;
             debito: string;
             credito: string;
           }>(
             await t.query(
-              `SELECT c.codigo, c.nombre, l.debito, l.credito
+              `SELECT c.codigo, c.nombre, l.debito, l.credito,
+                        cc.codigo || ' · ' || cc.nombre AS centro
                  FROM asiento_linea l JOIN empresa_cuenta c ON c.id = l.cuenta_id
+                 LEFT JOIN empresa_centro_costo cc ON cc.id = l.centro_costo_id
                 WHERE l.asiento_id = $1 ORDER BY l.orden`,
               [doc.asiento_id],
             ),
@@ -255,6 +258,7 @@ export class FacturaService {
               .map((l) => ({
                 codigo: l.codigo,
                 nombre: l.nombre,
+                centro: l.centro,
                 debito: Number(l.debito),
                 credito: Number(l.credito),
               })),
@@ -431,6 +435,8 @@ export class FacturaService {
     return {
       terceroId: cotizacion.tercero_id,
       fecha: opciones.fecha,
+      centroCostoId:
+        opciones.centroCostoId ?? cotizacion.centro_costo_id ?? undefined,
       // Una cotización es solo de productos: la línea de concepto es de la
       // factura (Fase 8). El precio es el cotizado.
       lineas: cotizacion.lineas.map((l) => ({
@@ -912,6 +918,19 @@ export class FacturaService {
       });
     });
 
+    // El centro de costo de la factura (D3, D4: uno por factura): el elegido,
+    // el del usuario, el de la sede de la caja si es de contado, el de por
+    // defecto. El asiento lo pone en el ingreso y en el costo; el inventario y
+    // la cartera son balance y no lo llevan.
+    const centroCostoId = await this.nucleo.centroPropuesto(
+      ctx,
+      {
+        elegido: dto.centroCostoId,
+        cajaId: pagos.find((p) => p.medio === 'CAJA')?.cajaId,
+      },
+      t,
+    );
+
     const asiento = await this.contabilidad.asentar(
       ctx,
       {
@@ -919,6 +938,7 @@ export class FacturaService {
         fecha: dto.fecha,
         glosa: `Factura de venta ${numero.numero}${glosaContado(mediosContado.map((m) => m.nombre))}${anticipos.length > 0 ? ' · con anticipo' : ''}`,
         lineas: lineasAsiento,
+        centroCostoId: centroCostoId ?? undefined,
       },
       { origenTipo: 'VENTA', origenId: documentoId },
       t,
@@ -934,8 +954,9 @@ export class FacturaService {
         `INSERT INTO venta_documento
              (id, empresa_id, tipo, tercero_id, fecha, prefijo, consecutivo,
               resolucion_id, documento_origen_id, subtotal, total_iva, total,
-              asiento_id, creado_por, documento_leido_id, retencion_aviso, vence)
-           VALUES ($1, $2, 'FACTURA', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+              asiento_id, creado_por, documento_leido_id, retencion_aviso, vence,
+              centro_costo_id)
+           VALUES ($1, $2, 'FACTURA', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
            RETURNING ${CAMPOS_DOCUMENTO}`,
         [
           documentoId,
@@ -956,6 +977,7 @@ export class FacturaService {
           dto.formaPago === 'CREDITO'
             ? (dto.vence ?? venceDesdePlazo(dto.fecha, plazo))
             : null,
+          centroCostoId,
         ],
       ),
     );

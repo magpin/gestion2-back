@@ -49,6 +49,22 @@ export class LineaCompraDto {
   productoId?: string;
 
   /**
+   * El centro de costo de este renglón, si es distinto al de la compra (D4:
+   * el arriendo de dos sedes, cada una con su parte).
+   */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
+
+  /**
+   * O repartirlo entre varios centros por porcentajes (fase 8): el renglón
+   * se parte en el asiento, uno por centro.
+   */
+  @IsOptional()
+  @IsUUID()
+  repartoId?: string;
+
+  /**
    * Qué es el gasto: «Arriendo», «Transporte, fletes y acarreos». La cuenta
    * la pone el concepto. Es lo normal desde la Fase 6 del menú nuevo; la
    * cuenta suelta queda para el contador.
@@ -315,6 +331,14 @@ export class CrearCompraDto {
   @IsOptional()
   @Matches(/^[0-9]{5}$/)
   municipioCodigo?: string;
+
+  /**
+   * Dónde se gastó. Sin él, el del usuario, el de la sede de la caja y el de
+   * por defecto. Cada renglón puede cambiarlo.
+   */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
 
   /**
    * `CONTADO` paga la compra entera —el neto, después de retenciones— en la

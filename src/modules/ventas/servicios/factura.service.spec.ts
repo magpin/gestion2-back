@@ -65,9 +65,12 @@ function nucleoFalso(
     responsableIva?: boolean;
     cuentas?: Record<string, { id: string } | null>;
     conceptos?: Record<string, Record<string, unknown>>;
+    /** El centro de costo que propone el núcleo; `null` = la empresa no los maneja. */
+    centro?: string | null;
   } = {},
 ) {
   const {
+    centro = null,
     tercero = clienteActivo,
     responsableIva = true,
     cuentas = { '130505': { id: 'cta-cartera' }, '240805': { id: 'cta-iva' } },
@@ -80,7 +83,9 @@ function nucleoFalso(
     Promise.resolve(cuentas[codigo] ?? null),
   );
   const tomarConsecutivo = jest.fn(() => Promise.resolve(numeroFiscal));
+  const centroPropuesto = jest.fn(() => Promise.resolve(centro));
   const fake = {
+    centroPropuesto,
     buscarTercero: jest.fn(() => Promise.resolve(tercero)),
     esResponsableDeIva: jest.fn(() => Promise.resolve(responsableIva)),
     cuenta,
@@ -89,7 +94,7 @@ function nucleoFalso(
       Promise.resolve(conceptos[id]),
     ),
   } as unknown as ConstructorParameters<typeof FacturaService>[1];
-  return { fake, cuenta, tomarConsecutivo };
+  return { fake, cuenta, tomarConsecutivo, centroPropuesto };
 }
 
 function inventarioFalso(
@@ -135,6 +140,8 @@ function contabilidadFalso(
 const cotizacionEmitida: VentaDocumentoDetalle = {
   id: 'cot-1',
   tipo: 'COTIZACION',
+  centro_costo_id: null,
+  centro_costo_nombre: null,
   tercero_id: 'ter-1',
   tercero_nombre: 'Tercero uno',
   tercero_identificacion: 'NIT 900123456-7',
@@ -1024,12 +1031,14 @@ describe('FacturaService.convertirCotizacion', () => {
 describe('FacturaService.crear — forma de pago', () => {
   function servicioCon(
     ventas: ConstructorParameters<typeof FacturaService>[4],
+    centro: string | null = null,
   ) {
     const { tx } = txFalso();
     const { fake: contabilidad, asentar } = contabilidadFalso();
+    const nucleo = nucleoFalso({ centro });
     const servicio = new FacturaService(
       txServiceFalso(tx),
-      nucleoFalso().fake,
+      nucleo.fake,
       inventarioFalso(),
       contabilidad,
       ventas,
@@ -1039,11 +1048,43 @@ describe('FacturaService.crear — forma de pago', () => {
         ),
       } as never,
     );
-    return { servicio, asentar };
+    return { servicio, asentar, tx, centroPropuesto: nucleo.centroPropuesto };
   }
 
   // 1 x 289900 + 19% = 344981.
   const TOTAL = 344981;
+
+  it('el centro de costo va al asiento y a la factura; de contado propone el de la sede de la caja', async () => {
+    const { fake } = ventasConCobro();
+    const { servicio, asentar, tx, centroPropuesto } = servicioCon(
+      fake,
+      'cc-norte',
+    );
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CONTADO',
+      pagos: [{ medio: 'CAJA', cajaId: 'caja-1', valor: TOTAL }],
+      lineas: [{ productoId: 'p-1', cantidad: 1 }],
+    });
+
+    expect(centroPropuesto).toHaveBeenCalledWith(
+      ctx,
+      { elegido: undefined, cajaId: 'caja-1' },
+      expect.anything(),
+    );
+    const [, dto] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      { centroCostoId?: string },
+    ];
+    expect(dto.centroCostoId).toBe('cc-norte');
+    // La cabecera, no las líneas (`venta_documento_linea`).
+    const insert = (tx.query as jest.Mock).mock.calls.find(([sql]: [string]) =>
+      /INSERT INTO venta_documento\s/.test(sql),
+    ) as [string, unknown[]];
+    expect(insert[1].at(-1)).toBe('cc-norte');
+  });
 
   it('de contado cobra la factura entera en la misma transacción', async () => {
     const { fake, cobrarEnTx } = ventasConCobro();

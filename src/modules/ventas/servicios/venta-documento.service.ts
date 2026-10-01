@@ -42,6 +42,10 @@ export type TipoVentaDocumento =
 export interface VentaDocumentoResumen {
   id: string;
   tipo: string;
+  /** Dónde se vendió. `null` si la empresa no maneja centros o es anterior a ellos. */
+  centro_costo_id: string | null;
+  /** `ADM · Administración`. */
+  centro_costo_nombre: string | null;
   tercero_id: string;
   tercero_nombre: string;
   /** Ya formateada para mostrar: `NIT 900123456-7`, `CC 19400748`. */
@@ -215,6 +219,9 @@ const IDENTIFICACION_TERCERO = `(SELECT concat_ws(' ', x.tipo_documento,
 export const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, vence, estado, prefijo, consecutivo,
                            resolucion_id, documento_origen_id, subtotal, total_iva, total,
                            monto_pagado, asiento_id, historica, retencion_aviso,
+                           centro_costo_id,
+                           (SELECT x.codigo || ' · ' || x.nombre FROM empresa_centro_costo x
+                             WHERE x.id = centro_costo_id) AS centro_costo_nombre,
                            (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
                               FROM tercero x WHERE x.id = tercero_id) AS tercero_nombre,
                            ${IDENTIFICACION_TERCERO} AS tercero_identificacion,
@@ -336,13 +343,16 @@ export class VentaDocumentoService {
         ctx.empresaId,
         t,
       );
+      const centro = dto.centroCostoId
+        ? await this.nucleo.centroDeRenglon(ctx, dto.centroCostoId, t)
+        : null;
 
       const documento = fila<VentaDocumentoResumen>(
         await t.query(
           `INSERT INTO venta_documento
              (empresa_id, tipo, tercero_id, fecha, prefijo, consecutivo,
-              subtotal, total_iva, total, creado_por)
-           VALUES ($1, 'COTIZACION', $2, $3, $4, $5, $6, $7, $8, $9)
+              subtotal, total_iva, total, creado_por, centro_costo_id)
+           VALUES ($1, 'COTIZACION', $2, $3, $4, $5, $6, $7, $8, $9, $10)
            RETURNING ${CAMPOS_DOCUMENTO}`,
           [
             ctx.empresaId,
@@ -354,6 +364,7 @@ export class VentaDocumentoService {
             totales.totalIva,
             totales.total,
             ctx.usuarioId,
+            centro,
           ],
         ),
       );
@@ -425,11 +436,15 @@ export class VentaDocumentoService {
       await this.exigirCotizacionVigente(id, t, 'corregir');
 
       const { lineas, totales } = await this.armarCotizacion(ctx, dto, t);
+      const centro = dto.centroCostoId
+        ? await this.nucleo.centroDeRenglon(ctx, dto.centroCostoId, t)
+        : null;
 
       const documento = fila<VentaDocumentoResumen>(
         await t.query(
           `UPDATE venta_documento
-              SET tercero_id = $2, fecha = $3, subtotal = $4, total_iva = $5, total = $6
+              SET tercero_id = $2, fecha = $3, subtotal = $4, total_iva = $5, total = $6,
+                  centro_costo_id = $7
             WHERE id = $1
             RETURNING ${CAMPOS_DOCUMENTO}`,
           [
@@ -439,6 +454,7 @@ export class VentaDocumentoService {
             totales.subtotal,
             totales.totalIva,
             totales.total,
+            centro,
           ],
         ),
       );
@@ -732,7 +748,20 @@ export class VentaDocumentoService {
         throw new BadRequestException(
           documento.historica
             ? 'Esta factura tiene cobros registrados en el sistema y no se puede anular. Devuelva esos cobros primero.'
-            : 'Esta factura tiene cobros registrados y no se puede anular. Para corregirla, emití una nota crédito.',
+            : 'Esta factura tiene cobros registrados y no se puede anular. Para corregirla, emita una nota crédito.',
+        );
+      }
+      // De contado, la plata va en el mismo asiento de la factura. Aunque el
+      // cobro ya se haya devuelto (`monto_pagado` en 0), anular ese asiento
+      // sacaría la plata de caja o banco por segunda vez y dejaría al cliente
+      // debiendo lo que se le devolvió.
+      if (
+        !documento.historica &&
+        documento.asiento_id !== null &&
+        (await this.tesoreria.hayPlataEnAsiento(documento.asiento_id, t))
+      ) {
+        throw new BadRequestException(
+          'Esta factura se cobró de contado y no se puede anular. Para corregirla, emita una nota crédito.',
         );
       }
 

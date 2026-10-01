@@ -712,9 +712,40 @@ export const ORIGENES: Readonly<Record<ClaveOrigen, Origen>> = {
         clave: 'centroCosto',
         etiqueta: 'Centro de costo',
         tipo: 'TEXTO',
-        sql: 'cc.nombre',
+        // Con el código: dos centros pueden llamarse igual en sedes distintas.
+        sql: `cc.codigo || ' · ' || cc.nombre`,
         filtro: 'LISTA',
         catalogo: 'CENTROS_COSTO',
+        agrupable: true,
+      },
+      {
+        clave: 'centroAgrupador',
+        etiqueta: 'Centro agrupador',
+        tipo: 'TEXTO',
+        sql: `(SELECT p.codigo || ' · ' || p.nombre FROM empresa_centro_costo p
+                WHERE p.id = cc.padre_id)`,
+        filtro: 'LISTA',
+        catalogo: 'CENTROS_COSTO',
+        agrupable: true,
+      },
+      {
+        clave: 'tipoCentro',
+        etiqueta: 'Tipo de centro',
+        tipo: 'TEXTO',
+        sql: `CASE cc.tipo WHEN 'PRODUCTIVO' THEN 'Productivo'
+                         WHEN 'APOYO' THEN 'De apoyo'
+                         WHEN 'ADMINISTRATIVO' THEN 'Administrativo' END`,
+        filtro: 'LISTA',
+        valores: ['Productivo', 'De apoyo', 'Administrativo'],
+        agrupable: true,
+      },
+      {
+        clave: 'sedeCentro',
+        etiqueta: 'Sede del centro',
+        tipo: 'TEXTO',
+        sql: '(SELECT s.nombre FROM empresa_sede s WHERE s.id = cc.sede_id)',
+        filtro: 'LISTA',
+        catalogo: 'SEDES',
         agrupable: true,
       },
       { clave: 'glosa', etiqueta: 'Glosa', tipo: 'TEXTO', sql: 'a.glosa' },

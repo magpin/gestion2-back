@@ -152,6 +152,7 @@ export class KardexService {
         null,
         movimientoId,
         t,
+        dto.centroCostoId ?? null,
       );
 
       return this.insertarMovimiento(
@@ -215,6 +216,7 @@ export class KardexService {
         responsableId,
         movimientoId,
         t,
+        dto.centroCostoId ?? null,
       );
 
       return this.insertarMovimiento(
@@ -713,6 +715,8 @@ export class KardexService {
     responsableId: string | null,
     movimientoId: string,
     t: Tx,
+    /** Dónde va la merma o el sobrante (D5); sin él, el de por defecto. */
+    centroCostoId: string | null = null,
   ): Promise<string> {
     const cuentaAjusteId = await this.configuracion.cuentaDe(ctx, concepto, t);
     if (cuentaAjusteId === null) {
@@ -738,6 +742,7 @@ export class KardexService {
         comprobanteTipoId: comprobante.id,
         fecha,
         glosa: `Ajuste de inventario: ${motivo}`,
+        centroCostoId: centroCostoId ?? undefined,
         lineas: [
           {
             cuentaId: producto.cuenta_inventario_id,

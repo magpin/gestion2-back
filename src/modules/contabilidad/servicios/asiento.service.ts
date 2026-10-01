@@ -12,6 +12,11 @@ import {
   type PaginacionDto,
 } from '../../../common/dto/paginacion.dto';
 import { TxService, type Tx } from '../../../common/db/tx.service';
+import {
+  completarCentros,
+  expandirRepartos,
+  type ParteReparto,
+} from '../../nucleo/servicios/centros-costo.reglas';
 import type { CrearAsientoDto, FiltroAsientosDto } from '../dto/asiento.dto';
 import {
   lineasConValorNegativo,
@@ -102,6 +107,13 @@ export class AsientoService {
       if (filtro.comprobanteTipoId !== undefined) {
         params.push(filtro.comprobanteTipoId);
         condiciones.push(`a.comprobante_tipo_id = $${params.length}`);
+      }
+      if (filtro.centroCostoId !== undefined) {
+        params.push(filtro.centroCostoId);
+        condiciones.push(
+          `EXISTS (SELECT 1 FROM asiento_linea x
+                    WHERE x.asiento_id = a.id AND x.centro_costo_id = $${params.length})`,
+        );
       }
       // Los anulados se ocultan salvo que se pidan: siguen en el libro, pero no
       // son lo que alguien busca al abrir la lista.
@@ -239,6 +251,8 @@ export class AsientoService {
           await this.comprobantes.exigirDigitable(dto.comprobanteTipoId, t);
         }
 
+        const lineas = await this.prepararCentros(dto, origen, t);
+
         const numero = await this.comprobantes.siguienteNumero(
           dto.comprobanteTipoId,
           t,
@@ -275,7 +289,7 @@ export class AsientoService {
 
         // El `orden` lo pone el servidor y no el cliente: es la posición en la
         // que llegaron, y aceptarlo del cliente permitiría dos renglones 3.
-        for (const [i, l] of dto.lineas.entries()) {
+        for (const [i, l] of lineas.entries()) {
           await t.query(
             `INSERT INTO asiento_linea
                (asiento_id, empresa_id, orden, cuenta_id, tercero_id,
@@ -466,6 +480,134 @@ export class AsientoService {
    * renglón está mal. El trigger dispara al COMMIT y para entonces solo sabe que
    * el asiento entero no cuadra.
    */
+  /**
+   * El centro de costo de cada línea, antes de insertarla.
+   *
+   * La línea cuya cuenta exige centro y no lo trae toma el del documento
+   * (`dto.centroCostoId`). En los automáticos (`origen` no nulo), si
+   * tampoco hay, el de por defecto de la empresa (`completarCentros`): un
+   * flujo que no sabe elegir centro no se rompe al encenderlos. El asiento
+   * manual sin centro no se completa: ahí lo elige quien digita.
+   *
+   * Después, lo mismo que vigilan la llave y el trigger de `0123`, dicho para
+   * una persona: que el centro sea de esta empresa (RLS esconde los ajenos) y
+   * que no sea un agrupador.
+   */
+  private async prepararCentros(
+    dto: CrearAsientoDto,
+    origen: Origen | null,
+    t: Tx,
+  ): Promise<CrearAsientoDto['lineas']> {
+    let lineas = await this.expandirRepartos(dto.lineas, t);
+    const delDocumento = dto.centroCostoId ?? null;
+    if (
+      (origen !== null || delDocumento !== null) &&
+      lineas.some((l) => !l.centroCostoId)
+    ) {
+      const exigen = filas<{ id: string }>(
+        await t.query(
+          `SELECT id FROM empresa_cuenta
+            WHERE id = ANY($1::uuid[]) AND exige_centro_costo`,
+          [[...new Set(lineas.map((l) => l.cuentaId))]],
+        ),
+      );
+      if (exigen.length > 0) {
+        const cuentas = new Set(exigen.map((c) => c.id));
+        lineas = completarCentros(lineas, cuentas, delDocumento);
+        if (origen !== null && lineas.some((l) => !l.centroCostoId)) {
+          const porDefecto = fila<{ id: string }>(
+            await t.query(
+              `SELECT id FROM empresa_centro_costo WHERE es_por_defecto AND activo`,
+            ),
+          );
+          lineas = completarCentros(lineas, cuentas, porDefecto?.id ?? null);
+        }
+      }
+    }
+
+    const ids = [
+      ...new Set(
+        lineas
+          .map((l) => l.centroCostoId)
+          .filter((id): id is string => typeof id === 'string' && id !== ''),
+      ),
+    ];
+    if (ids.length === 0) return lineas;
+    const centros = filas<{
+      id: string;
+      codigo: string;
+      nombre: string;
+      agrupa: boolean;
+    }>(
+      await t.query(
+        `SELECT c.id, c.codigo, c.nombre,
+                EXISTS (SELECT 1 FROM empresa_centro_costo h
+                         WHERE h.padre_id = c.id) AS agrupa
+           FROM empresa_centro_costo c
+          WHERE c.id = ANY($1::uuid[])`,
+        [ids],
+      ),
+    );
+    if (centros.length < ids.length) {
+      throw new BadRequestException(
+        'Uno de los centros de costo no existe en esta empresa.',
+      );
+    }
+    const agrupador = centros.find((c) => c.agrupa);
+    if (agrupador !== undefined) {
+      throw new BadRequestException(
+        `El centro de costo ${agrupador.codigo} (${agrupador.nombre}) agrupa otros y no recibe movimientos. Use uno de los que agrupa.`,
+      );
+    }
+    return lineas;
+  }
+
+  /**
+   * Las líneas con `repartoId`, partidas en una por centro según los
+   * porcentajes del reparto (activo). Las demás quedan igual.
+   */
+  private async expandirRepartos(
+    lineas: CrearAsientoDto['lineas'],
+    t: Tx,
+  ): Promise<CrearAsientoDto['lineas']> {
+    const ids = [
+      ...new Set(
+        lineas
+          .map((l) => l.repartoId)
+          .filter((id): id is string => typeof id === 'string' && id !== ''),
+      ),
+    ];
+    if (ids.length === 0) return lineas;
+    const partes = filas<{
+      reparto_id: string;
+      centro_costo_id: string;
+      porcentaje: string;
+    }>(
+      await t.query(
+        `SELECT l.reparto_id, l.centro_costo_id, l.porcentaje
+           FROM centro_costo_reparto_linea l
+           JOIN centro_costo_reparto r ON r.id = l.reparto_id AND r.activo
+          WHERE l.reparto_id = ANY($1::uuid[])
+          ORDER BY l.reparto_id, l.orden`,
+        [ids],
+      ),
+    );
+    const porReparto = new Map<string, ParteReparto[]>();
+    for (const p of partes) {
+      porReparto.set(p.reparto_id, [
+        ...(porReparto.get(p.reparto_id) ?? []),
+        { centroCostoId: p.centro_costo_id, porcentaje: Number(p.porcentaje) },
+      ]);
+    }
+    try {
+      return expandirRepartos(lineas, porReparto);
+    } catch (e) {
+      throw new BadRequestException(
+        e instanceof Error ? e.message : 'No se pudo repartir la línea.',
+      );
+    }
+  }
+
   private validarLineas(dto: CrearAsientoDto): void {
     if (dto.lineas.length < 2) {
       throw new BadRequestException(

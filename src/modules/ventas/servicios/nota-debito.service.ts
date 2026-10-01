@@ -249,6 +249,7 @@ export class NotaDebitoService {
           fecha: dto.fecha,
           glosa: `Nota débito ${numero.numero} — factura ${numeroFactura}: ${dto.motivo}`,
           lineas: lineasAsiento,
+          centroCostoId: factura.centro_costo_id ?? undefined,
         },
         { origenTipo: 'VENTA', origenId: documentoId },
         t,
@@ -259,8 +260,8 @@ export class NotaDebitoService {
           `INSERT INTO venta_documento
              (id, empresa_id, tipo, tercero_id, fecha, prefijo, consecutivo,
               resolucion_id, documento_origen_id, subtotal, total_iva, total,
-              asiento_id, creado_por)
-           VALUES ($1, $2, 'NOTA_DEBITO', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+              asiento_id, creado_por, centro_costo_id)
+           VALUES ($1, $2, 'NOTA_DEBITO', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
            RETURNING ${CAMPOS_DOCUMENTO}`,
           [
             documentoId,
@@ -276,6 +277,7 @@ export class NotaDebitoService {
             totales.total,
             asiento.id,
             ctx.usuarioId,
+            factura.centro_costo_id,
           ],
         ),
       );

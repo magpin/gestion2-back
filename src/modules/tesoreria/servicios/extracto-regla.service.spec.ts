@@ -54,9 +54,15 @@ describe('ExtractoReglaService.crear', () => {
     expect(creada.palabras).toEqual(['GMF', '4X1000']);
   });
 
+  it('acepta una cuenta que exige centro de costo: la regla lleva el suyo o va al de por defecto', async () => {
+    const { servicio } = servicioCon({ exige_centro_costo: true });
+    await expect(
+      servicio.crear(ctx, { ...DTO, centroCostoId: 'cc-1' }),
+    ).resolves.toBeDefined();
+  });
+
   it.each([
     ['exige_tercero', 'tercero'],
-    ['exige_centro_costo', 'centro de costo'],
     ['exige_base_gravable', 'base gravable'],
   ])(
     'rechaza sin crear una cuenta con %s: la regla registra sin él',

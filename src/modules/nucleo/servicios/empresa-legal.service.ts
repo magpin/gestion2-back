@@ -641,8 +641,7 @@ export class EmpresaLegalService {
                 mes_cierre_fiscal            = COALESCE($4, mes_cierre_fiscal),
                 metodo_valoracion_inventario = COALESCE($5, metodo_valoracion_inventario),
                 decimales_valor              = COALESCE($6, decimales_valor),
-                decimales_cantidad           = COALESCE($7, decimales_cantidad),
-                maneja_centro_de_costo       = COALESCE($8, maneja_centro_de_costo)
+                decimales_cantidad           = COALESCE($7, decimales_cantidad)
           WHERE empresa_id = $1
           RETURNING *`,
           [
@@ -653,7 +652,6 @@ export class EmpresaLegalService {
             dto.metodoValoracionInventario ?? null,
             dto.decimalesValor ?? null,
             dto.decimalesCantidad ?? null,
-            dto.manejaCentroDeCosto ?? null,
           ],
         ),
       );

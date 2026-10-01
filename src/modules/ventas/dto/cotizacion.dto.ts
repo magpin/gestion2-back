@@ -40,6 +40,11 @@ export class CrearCotizacionDto {
   @IsUUID()
   terceroId!: string;
 
+  /** Dónde se va a vender. La factura que salga de la cotización lo hereda. */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
+
   @EsFechaCalendario()
   fecha!: string;
 
@@ -58,6 +63,11 @@ export class CrearCotizacionDto {
 export class ConvertirCotizacionDto {
   @EsFechaCalendario()
   fecha!: string;
+
+  /** Cambia el centro de la cotización; sin él, la factura hereda el suyo. */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
 
   /**
    * "Sé que no hay existencia y la emito igual".

@@ -34,7 +34,7 @@ const ENCLITICOS = new Set(
    copialo dejalo actualizalo preguntale guardalo buscalo contale escribila subile ponela
    cambialo aparealo armalo preguntalo explicale hablalo causalo subila abrila hacelo fijale
    mandame preguntame contame contámelo pedíselo pedírselo decile decime mostrame avisame
-   probalo revisala cargalo sacalo`
+   probalo revisala cargalo sacalo descartala descartalo anotala anotalo`
     .split(/\s+/)
     .filter(Boolean),
 );

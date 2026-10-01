@@ -15,6 +15,9 @@ import {
   mesDe,
   mesesHasta,
   resultadoDe,
+  resultadosPorCentro,
+  type CentroDeColumna,
+  type ColumnaResultados,
   type Actividad,
   type AsientoDeCaja,
   type BalanceGeneral,
@@ -47,6 +50,31 @@ export interface Resultados {
   };
   /** La utilidad antes de impuestos de los últimos seis meses, hasta el elegido. */
   porMes: Array<{ mes: string; utilidad: number }>;
+}
+
+export interface ResultadosPorCentro {
+  periodo: Periodo;
+  agrupar: 'CENTRO' | 'TIPO';
+  columnas: ColumnaResultados[];
+  total: EstadoResultados;
+}
+
+/**
+ * Qué parte del libro mira el estado de resultados: todo (`undefined`), el id
+ * de un centro de costo o lo que quedó sin centro (`SIN`).
+ */
+export type FiltroCentro = string | undefined;
+
+/** El pedazo de WHERE de `FiltroCentro`, con su parámetro en la posición `n`. */
+function condicionCentro(
+  centro: FiltroCentro,
+  n: number,
+): { sql: string; params: string[] } {
+  if (centro === undefined) return { sql: '', params: [] };
+  if (centro === 'SIN') {
+    return { sql: 'AND l.centro_costo_id IS NULL', params: [] };
+  }
+  return { sql: `AND l.centro_costo_id = $${n}`, params: [centro] };
 }
 
 export interface Balance {
@@ -91,13 +119,15 @@ export class EstadosFinancierosService {
     mes: string,
     comparar?: string,
     tx?: Tx,
+    /** Solo un centro de costo, o lo que quedó sin centro (`SIN`). */
+    centro?: FiltroCentro,
   ): Promise<Resultados> {
     return this.tx.enContexto(
       ctx,
       async (t) => {
         const periodo = await this.periodo(mes, t);
         const actual = estadoDeResultados(
-          await this.movimientos(periodo.desde, periodo.hasta, t),
+          await this.movimientos(periodo.desde, periodo.hasta, t, centro),
         );
         let comparado: Resultados['comparado'] = null;
         if (comparar !== undefined) {
@@ -105,7 +135,7 @@ export class EstadosFinancierosService {
           comparado = {
             periodo: otro,
             estado: estadoDeResultados(
-              await this.movimientos(otro.desde, otro.hasta, t),
+              await this.movimientos(otro.desde, otro.hasta, t, centro),
             ),
           };
         }
@@ -113,6 +143,7 @@ export class EstadosFinancierosService {
         // Los seis meses en una sola consulta: por mes y cuenta.
         const meses = mesesHasta(mes, 6);
         const desde = mesDe(meses[0]).desde;
+        const delCentro = condicionCentro(centro, 3);
         const crudas = filas<{
           mes: string;
           codigo: string;
@@ -126,8 +157,9 @@ export class EstadosFinancierosService {
              ${LIBRO}
               AND a.fecha BETWEEN $1 AND $2
               AND c.codigo ~ '^[4-7]'
+              ${delCentro.sql}
             GROUP BY 1, 2, 3`,
-            [desde, periodo.hasta],
+            [desde, periodo.hasta, ...delCentro.params],
           ),
         );
         const porMes = meses.map((m) => ({
@@ -315,7 +347,9 @@ export class EstadosFinancierosService {
     desde: string,
     hasta: string,
     t: Tx,
+    centro?: FiltroCentro,
   ): Promise<MovimientoCuenta[]> {
+    const delCentro = condicionCentro(centro, 3);
     return filas<{
       codigo: string;
       nombre: string;
@@ -327,10 +361,54 @@ export class EstadosFinancierosService {
            ${LIBRO}
             AND a.fecha BETWEEN $1 AND $2
             AND c.codigo ~ '^[4-7]'
+            ${delCentro.sql}
           GROUP BY c.codigo, c.nombre`,
-        [desde, hasta],
+        [desde, hasta, ...delCentro.params],
       ),
     ).map(aMovimiento);
+  }
+
+  /**
+   * El estado de resultados del mes en columnas: una por centro de costo (o
+   * por tipo de centro), «Sin centro» y el total. Sale de las líneas de
+   * asiento, no de `saldo_cuenta_periodo`, que no tiene centro.
+   */
+  async resultadosPorCentro(
+    ctx: CtxEmpresa,
+    mes: string,
+    agrupar: 'CENTRO' | 'TIPO',
+  ): Promise<ResultadosPorCentro> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const periodo = await this.periodo(mes, t);
+      const movs = filas<{
+        codigo: string;
+        nombre: string;
+        centro_id: string | null;
+        debito: string;
+        credito: string;
+      }>(
+        await t.query(
+          `SELECT c.codigo, c.nombre, l.centro_costo_id AS centro_id,
+                  sum(l.debito) AS debito, sum(l.credito) AS credito
+             ${LIBRO}
+              AND a.fecha BETWEEN $1 AND $2
+              AND c.codigo ~ '^[4-7]'
+            GROUP BY c.codigo, c.nombre, l.centro_costo_id`,
+          [periodo.desde, periodo.hasta],
+        ),
+      ).map((f) => ({ ...aMovimiento(f), centroId: f.centro_id }));
+      // Todos, activos o no: un centro desactivado sigue teniendo su historia.
+      const centros = filas<CentroDeColumna>(
+        await t.query(
+          `SELECT id, codigo, nombre, tipo FROM empresa_centro_costo ORDER BY codigo`,
+        ),
+      );
+      return {
+        periodo,
+        agrupar,
+        ...resultadosPorCentro(movs, centros, agrupar),
+      };
+    });
   }
 
   /** El balance al corte: saldos de balance, y los resultados sin cerrar por año. */

@@ -105,6 +105,14 @@ export class CrearFacturaDto {
   @IsUUID()
   terceroId!: string;
 
+  /**
+   * Dónde se vendió. Sin él, el del usuario, el de la sede de la caja y el de
+   * por defecto, en ese orden. Se ignora si la empresa no maneja centros.
+   */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
+
   @EsFechaCalendario()
   fecha!: string;
 

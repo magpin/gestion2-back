@@ -23,6 +23,7 @@ import { EmpresaService } from './servicios/empresa.service';
 import { EstadoConfiguracionService } from './servicios/estado-configuracion.service';
 import { GeografiaService } from './servicios/geografia.service';
 import { ConceptosService } from './servicios/conceptos.service';
+import { CentrosCostoService } from './servicios/centros-costo.service';
 import { PlanCuentasService } from './servicios/plan-cuentas.service';
 import { ResolucionService } from './servicios/resolucion.service';
 import { TenantService } from './servicios/tenant.service';
@@ -68,6 +69,7 @@ import { UsuarioService } from './servicios/usuario.service';
     GeografiaService,
     CatalogoService,
     PlanCuentasService,
+    CentrosCostoService,
     ConceptosService,
     TenantService,
     ProvisionGuard,

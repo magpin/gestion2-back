@@ -4,7 +4,9 @@ import type { Tx } from '../../../common/db/tx.service';
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import { hoyEnColombia } from '../../../common/fecha';
+import { EstadosFinancierosService } from '../../estados-financieros/estados-financieros.service';
 import { InventarioApi } from '../../inventario/inventario.api';
+import { NucleoApi } from '../../nucleo/nucleo.api';
 import type { ClaveOrigen } from '../../reportes/reglas/catalogo';
 import { aMano } from '../../reportes/reglas/rango';
 import { ArmadorService } from '../../reportes/servicios/armador.service';
@@ -14,7 +16,14 @@ import { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import type { HerramientasDelTurno } from '../proveedores/conversador.puerto';
 import {
   BUSCAR,
+  CENTROS,
+  centrosParaModelo,
   coincidencias,
+  herramientasDeCentros,
+  RESULTADOS_CENTRO,
+  resultadoDeCentroParaModelo,
+  resultadosPorCentroParaModelo,
+  ROLES_RESULTADOS,
   definicionDesde,
   existenciasParaModelo,
   EXISTENCIAS,
@@ -88,6 +97,8 @@ export class ConsultasService {
     private readonly propuestas: PropuestasService,
     private readonly revision: RevisionApi,
     private readonly retenciones: RetencionesApi,
+    private readonly nucleo: NucleoApi,
+    private readonly estados: EstadosFinancierosService,
   ) {}
 
   /**
@@ -107,6 +118,7 @@ export class ConsultasService {
     // (paso 7). Proponer no registra nada: verifica en seco.
     const definiciones = [
       ...herramientasPara(ctx.roles),
+      ...herramientasDeCentros(ctx.roles),
       ...herramientasDeAccion(ctx.roles),
     ];
     const ofrecidas = new Set(definiciones.map((d) => d.name));
@@ -212,6 +224,61 @@ export class ConsultasService {
         hasta: texto(e.hasta),
       });
       return { texto: retencionesParaModelo(filas), filas: filas.length };
+    }
+
+    if (nombre === CENTROS) {
+      const datos = await this.nucleo.centrosParaConsulta(ctx);
+      return { texto: centrosParaModelo(datos), filas: datos.centros.length };
+    }
+
+    if (nombre === RESULTADOS_CENTRO) {
+      if (!ctx.roles.some((r) => ROLES_RESULTADOS.includes(r)))
+        throw new NoPermitida();
+      const mes =
+        typeof e.mes === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(e.mes)
+          ? e.mes
+          : hoyEnColombia().slice(0, 7);
+      const pedido = typeof e.centro === 'string' ? e.centro.trim() : '';
+      if (pedido !== '') {
+        // Por código o por nombre, como lo diga quien pregunta.
+        let filtro: string = 'SIN';
+        let nombreCentro = 'Sin centro';
+        if (pedido.toUpperCase() !== 'SIN') {
+          const { centros } = await this.nucleo.centrosParaConsulta(ctx);
+          const igual = (a: string) =>
+            a.localeCompare(pedido, 'es', { sensitivity: 'base' }) === 0;
+          const centro = centros.find(
+            (c) => igual(c.codigo) || igual(c.nombre),
+          );
+          if (centro === undefined) {
+            return {
+              texto: JSON.stringify({
+                aviso: `No hay un centro de costo «${pedido}». Consulte la lista con ${CENTROS}.`,
+              }),
+              filas: 0,
+            };
+          }
+          filtro = centro.id;
+          nombreCentro = `${centro.codigo} · ${centro.nombre}`;
+        }
+        const r = await this.estados.resultados(
+          ctx,
+          mes,
+          undefined,
+          undefined,
+          filtro,
+        );
+        return {
+          texto: resultadoDeCentroParaModelo(nombreCentro, r),
+          filas: 1,
+        };
+      }
+      const agrupar = e.agrupar === 'TIPO' ? 'TIPO' : 'CENTRO';
+      const r = await this.estados.resultadosPorCentro(ctx, mes, agrupar);
+      return {
+        texto: resultadosPorCentroParaModelo(r),
+        filas: r.columnas.length,
+      };
     }
 
     if (nombre === REVISAR) {

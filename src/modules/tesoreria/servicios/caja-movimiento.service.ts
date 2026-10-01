@@ -131,6 +131,7 @@ export class CajaMovimientoService {
       valor: dto.valor,
       concepto: dto.concepto,
       contraCuentaId: dto.contraCuentaId,
+      centroCostoId: dto.centroCostoId ?? null,
       origenTipo: null,
       origenId: null,
       terceroId: null,
@@ -152,6 +153,7 @@ export class CajaMovimientoService {
       valor: dto.valor,
       concepto: dto.concepto,
       contraCuentaId: dto.contraCuentaId,
+      centroCostoId: dto.centroCostoId ?? null,
       origenTipo: null,
       origenId: null,
       terceroId: null,
@@ -654,6 +656,8 @@ export class CajaMovimientoService {
       contraCuentaId: string | null;
       /** O, en su lugar, las líneas contrarias ya armadas. */
       contrapartidas?: Contrapartida[];
+      /** El centro de un movimiento manual cuya contracuenta es de resultado. */
+      centroCostoId?: string | null;
       origenTipo: 'FACTURA_VENTA' | 'COMPRA' | null;
       origenId: string | null;
       terceroId: string | null;
@@ -725,6 +729,7 @@ export class CajaMovimientoService {
       contraCuentaId: string | null;
       contrapartidas?: Contrapartida[];
       terceroId?: string | null;
+      centroCostoId?: string | null;
     },
     tipo: 'INGRESO' | 'EGRESO',
     movimientoId: string,
@@ -747,6 +752,7 @@ export class CajaMovimientoService {
         comprobanteTipoId: comprobante.id,
         fecha: dto.fecha,
         glosa: dto.concepto,
+        centroCostoId: dto.centroCostoId ?? undefined,
         lineas: [
           {
             cuentaId: caja.cuenta_id,

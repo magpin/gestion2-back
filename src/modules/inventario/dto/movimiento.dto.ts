@@ -30,7 +30,12 @@ export class CargaInicialDto {
 }
 
 /** Misma forma que la carga inicial: fecha, cantidad, costo, motivo. */
-export class EntradaAjusteDto extends CargaInicialDto {}
+export class EntradaAjusteDto extends CargaInicialDto {
+  /** Dónde va la merma o el sobrante; sin él, el centro por defecto. */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
+}
 
 export class SalidaAjusteDto {
   @EsFechaCalendario()
@@ -57,6 +62,11 @@ export class SalidaAjusteDto {
   @IsOptional()
   @IsUUID()
   responsableTerceroId?: string;
+
+  /** Dónde va la merma o el sobrante; sin él, el centro por defecto. */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
 }
 
 export class FiltroMovimientosDto extends PaginacionDto {

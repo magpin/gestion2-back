@@ -22,6 +22,7 @@ import { ConceptosService } from './servicios/conceptos.service';
 import { EmpresaService } from './servicios/empresa.service';
 import { EmpresaLegalService } from './servicios/empresa-legal.service';
 import { EstadoConfiguracionService } from './servicios/estado-configuracion.service';
+import { CentrosCostoService } from './servicios/centros-costo.service';
 import type { EstadoConfiguracion } from './servicios/estado-configuracion.reglas';
 import {
   PlanCuentasService,
@@ -58,7 +59,52 @@ export class NucleoApi {
     private readonly resoluciones: ResolucionService,
     private readonly terceros: TerceroService,
     private readonly conceptos: ConceptosService,
+    private readonly centrosCosto: CentrosCostoService,
   ) {}
+
+  /**
+   * El centro de costo de un documento nuevo (D3): el elegido —que se valida—,
+   * el del usuario, el de la sede y el de por defecto. `null` si la empresa
+   * no maneja centros. Ver `CentrosCostoService.propuesto`.
+   */
+  centroPropuesto(
+    ctx: CtxEmpresa,
+    datos: {
+      elegido?: string | null;
+      sedeId?: string | null;
+      /** La caja por donde entra o sale la plata: su sede propone el centro. */
+      cajaId?: string | null;
+    },
+    tx?: Tx,
+  ): Promise<string | null> {
+    return this.centrosCosto.propuesto(ctx, datos, tx);
+  }
+
+  /**
+   * Los centros de costo, si están encendidos y los repartos: lo que María
+   * lee para contestar sobre centros. Solo lectura.
+   */
+  async centrosParaConsulta(ctx: CtxEmpresa) {
+    const [maneja, centros, repartos] = await Promise.all([
+      this.centrosCosto.maneja(ctx),
+      this.centrosCosto.listar(ctx),
+      this.centrosCosto.listarRepartos(ctx),
+    ]);
+    return { maneja, centros, repartos };
+  }
+
+  /**
+   * Un centro elegido para un renglón: activo, de esta empresa y sin hijos.
+   * Si la empresa no maneja centros, se descarta (`null`).
+   */
+  async centroDeRenglon(
+    ctx: CtxEmpresa,
+    centroCostoId: string | null | undefined,
+    tx?: Tx,
+  ): Promise<string | null> {
+    if (!centroCostoId) return null;
+    return this.centrosCosto.propuesto(ctx, { elegido: centroCostoId }, tx);
+  }
 
   /**
    * Un concepto de ingreso o egreso, con su cuenta. Lo usan Tesorería, Compras

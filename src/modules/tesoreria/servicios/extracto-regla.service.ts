@@ -21,10 +21,11 @@ export interface ReglaExtractoResumen {
   contra_cuenta_id: string;
   concepto: string;
   activa: boolean;
+  centro_costo_id: string | null;
 }
 
 const CAMPOS = `id, cuenta_bancaria_id, nombre, palabras, tipo_linea,
-                contra_cuenta_id, concepto, activa`;
+                contra_cuenta_id, concepto, activa, centro_costo_id`;
 
 /**
  * Las reglas del extracto: "las líneas que dicen GMF son 4×1000 y van contra
@@ -67,8 +68,8 @@ export class ExtractoReglaService {
         await t.query(
           `INSERT INTO extracto_regla
              (empresa_id, cuenta_bancaria_id, nombre, palabras, tipo_linea,
-              contra_cuenta_id, concepto, creado_por)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+              contra_cuenta_id, concepto, creado_por, centro_costo_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
            RETURNING ${CAMPOS}`,
           [
             ctx.empresaId,
@@ -79,6 +80,7 @@ export class ExtractoReglaService {
             dto.contraCuentaId,
             dto.concepto.trim(),
             ctx.usuarioId,
+            dto.centroCostoId ?? null,
           ],
         ),
       );
@@ -106,7 +108,8 @@ export class ExtractoReglaService {
                   palabras         = coalesce($3, palabras),
                   contra_cuenta_id = coalesce($4, contra_cuenta_id),
                   concepto         = coalesce($5, concepto),
-                  activa           = coalesce($6, activa)
+                  activa           = coalesce($6, activa),
+                  centro_costo_id  = CASE WHEN $7 THEN $8::uuid ELSE centro_costo_id END
             WHERE id = $1
           RETURNING ${CAMPOS}`,
           [
@@ -116,6 +119,8 @@ export class ExtractoReglaService {
             dto.contraCuentaId ?? null,
             dto.concepto?.trim() ?? null,
             dto.activa ?? null,
+            dto.centroCostoId !== undefined,
+            dto.centroCostoId ?? null,
           ],
         ),
       );
@@ -128,21 +133,20 @@ export class ExtractoReglaService {
 
   /**
    * La contra cuenta recibe asientos: tiene que existir, estar activa y ser
-   * auxiliar. Y no puede exigir tercero, centro de costo ni base gravable: una
-   * regla registra sus líneas sin ninguno de los tres, y el trigger del
-   * asiento (`0022_asiento.sql`) la rechazaría el día que se use, no hoy.
+   * auxiliar. Y no puede exigir tercero ni base gravable: una regla registra
+   * sus líneas sin ninguno de los dos, y el trigger del asiento
+   * (`0022_asiento.sql`) la rechazaría el día que se use, no hoy. El centro
+   * de costo sí: lo lleva la regla, y si no, va al de por defecto.
    */
   private async exigirContraCuenta(cuentaId: string, t: Tx): Promise<void> {
     const cuenta = fila<{
       activa: boolean;
       es_auxiliar: boolean;
       exige_tercero: boolean;
-      exige_centro_costo: boolean;
       exige_base_gravable: boolean;
     }>(
       await t.query(
-        `SELECT activa, es_auxiliar, exige_tercero, exige_centro_costo,
-                exige_base_gravable
+        `SELECT activa, es_auxiliar, exige_tercero, exige_base_gravable
            FROM empresa_cuenta WHERE id = $1`,
         [cuentaId],
       ),
@@ -157,11 +161,9 @@ export class ExtractoReglaService {
     }
     const exige = cuenta.exige_tercero
       ? 'tercero'
-      : cuenta.exige_centro_costo
-        ? 'centro de costo'
-        : cuenta.exige_base_gravable
-          ? 'base gravable'
-          : null;
+      : cuenta.exige_base_gravable
+        ? 'base gravable'
+        : null;
     if (exige !== null) {
       throw new BadRequestException(
         `La cuenta de la regla exige ${exige}, y una regla registra sus líneas sin él. Elija otra auxiliar.`,

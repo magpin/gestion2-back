@@ -160,6 +160,11 @@ export class RegistrarCompraLeidaDto {
   @IsOptional()
   @IsBoolean()
   zomacEnFactura?: boolean;
+
+  /** Dónde se gastó; sin él, el que proponga el sistema. */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
 }
 
 /** El concepto de retención de renta de un renglón del papel. */

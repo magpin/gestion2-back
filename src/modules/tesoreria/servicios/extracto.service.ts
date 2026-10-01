@@ -461,9 +461,11 @@ export class ExtractoService {
         tipo_linea: 'DEBITO' | 'CREDITO';
         contra_cuenta_id: string;
         concepto: string;
+        centro_costo_id: string | null;
       }>(
         await t.query(
-          `SELECT id, nombre, palabras, tipo_linea, contra_cuenta_id, concepto
+          `SELECT id, nombre, palabras, tipo_linea, contra_cuenta_id, concepto,
+                  centro_costo_id
              FROM extracto_regla
             WHERE activa
               AND (cuenta_bancaria_id IS NULL OR cuenta_bancaria_id = $1)
@@ -503,6 +505,7 @@ export class ExtractoService {
               reglaId: r.id,
               nombre: r.nombre,
               contraCuentaId: r.contra_cuenta_id,
+              centroCostoId: r.centro_costo_id,
               concepto: r.concepto,
               lineaIds,
               total: redondear(total).toFixed(2),
@@ -629,6 +632,7 @@ export class ExtractoService {
             contraCuentaId: dto.contraCuentaId,
             terceroId: dto.terceroId ?? null,
             referencia: linea.referencia,
+            centroCostoId: dto.centroCostoId ?? null,
           },
           t,
         );
@@ -691,6 +695,7 @@ export class ExtractoService {
           contraCuentaId: dto.contraCuentaId,
           terceroId: dto.terceroId ?? null,
           referencia: null,
+          centroCostoId: dto.centroCostoId ?? null,
         },
         t,
       );

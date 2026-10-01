@@ -757,6 +757,13 @@ describe('VentaDocumentoService.anular', () => {
     return { fake, anular };
   }
 
+  /** `hay`: la factura es de contado y su asiento lleva la plata. */
+  function tesoreriaAnularFalso(hay = false) {
+    return {
+      hayPlataEnAsiento: jest.fn(() => Promise.resolve(hay)),
+    } as unknown as ConstructorParameters<typeof VentaDocumentoService>[4];
+  }
+
   function txAnularFalso(
     documento:
       { tipo: string; estado: string; asiento_id: string | null } | undefined,
@@ -798,7 +805,7 @@ describe('VentaDocumentoService.anular', () => {
         revertirPorAnulacion: revertir,
       } as unknown as ConstructorParameters<typeof VentaDocumentoService>[2],
       contabilidad,
-      {} as never, // TesoreriaApi: no la usa anular.,
+      tesoreriaAnularFalso(),
       retencionesVentaFalsas(),
     );
 
@@ -828,6 +835,36 @@ describe('VentaDocumentoService.anular', () => {
     expect(consultas[0]).toContain('FOR UPDATE');
   });
 
+  it('rechaza anular una factura de contado aunque el cobro ya se haya devuelto', async () => {
+    // `monto_pagado` en 0 tras la devolución, pero la plata entró en el
+    // asiento de la factura: anularlo la sacaría de caja por segunda vez.
+    const { tx, actualizaciones } = txAnularFalso({
+      tipo: 'FACTURA',
+      estado: 'EMITIDA',
+      asiento_id: 'asiento-1',
+    });
+    const { fake: contabilidad, anular: anularAsiento } = contabilidadFalso();
+    const tesoreria = tesoreriaAnularFalso(true);
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      inventarioFalso(),
+      contabilidad,
+      tesoreria,
+      retencionesVentaFalsas(),
+    );
+
+    await expect(servicio.anular(ctx, 'fv-1', 'motivo')).rejects.toThrow(
+      /se cobró de contado/,
+    );
+    expect(
+      (tesoreria as unknown as { hayPlataEnAsiento: jest.Mock })
+        .hayPlataEnAsiento,
+    ).toHaveBeenCalledWith('asiento-1', tx);
+    expect(anularAsiento).not.toHaveBeenCalled();
+    expect(actualizaciones).toHaveLength(0);
+  });
+
   it('rechaza anular una factura con una nota viva, y la nombra', async () => {
     const { tx, actualizaciones } = txAnularFalso(
       { tipo: 'FACTURA', estado: 'EMITIDA', asiento_id: 'asiento-1' },
@@ -840,7 +877,7 @@ describe('VentaDocumentoService.anular', () => {
       nucleoFalso(),
       inventarioFalso(),
       contabilidad,
-      {} as never, // TesoreriaApi: no la usa anular.
+      tesoreriaAnularFalso(),
       { anularAutorretencion } as never,
     );
 
@@ -868,7 +905,7 @@ describe('VentaDocumentoService.anular', () => {
       nucleoFalso(),
       inventarioFalso(),
       contabilidadFalso().fake,
-      {} as never, // TesoreriaApi: no la usa anular.
+      tesoreriaAnularFalso(),
       retencionesVentaFalsas(),
     );
 
@@ -893,7 +930,7 @@ describe('VentaDocumentoService.anular', () => {
         ),
       } as unknown as ConstructorParameters<typeof VentaDocumentoService>[2],
       contabilidadFalso().fake,
-      {} as never, // TesoreriaApi: no la usa anular.
+      tesoreriaAnularFalso(),
       retencionesVentaFalsas(),
     );
 
@@ -917,7 +954,7 @@ describe('VentaDocumentoService.anular', () => {
       nucleoFalso(),
       inventarioFalso(),
       contabilidadFalso().fake,
-      {} as never, // TesoreriaApi: no la usa anular.,
+      tesoreriaAnularFalso(),
       retencionesVentaFalsas(),
     );
 
@@ -937,7 +974,7 @@ describe('VentaDocumentoService.anular', () => {
       nucleoFalso(),
       inventarioFalso(),
       contabilidadFalso().fake,
-      {} as never, // TesoreriaApi: no la usa anular.,
+      tesoreriaAnularFalso(),
       retencionesVentaFalsas(),
     );
 
@@ -953,7 +990,7 @@ describe('VentaDocumentoService.anular', () => {
       nucleoFalso(),
       inventarioFalso(),
       contabilidadFalso().fake,
-      {} as never, // TesoreriaApi: no la usa anular.,
+      tesoreriaAnularFalso(),
       retencionesVentaFalsas(),
     );
 

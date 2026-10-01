@@ -118,6 +118,8 @@ export class LibrosService {
     cuentaId: string,
     desde: string,
     hasta: string,
+    /** Solo las líneas de este centro de costo; el saldo corrido, del centro. */
+    centroCostoId?: string,
   ): Promise<{ cuenta: Record<string, unknown>; movimientos: Movimiento[] }> {
     return this.tx.enContexto(ctx, async (t) => {
       const cuenta = fila<Record<string, unknown>>(
@@ -137,6 +139,7 @@ export class LibrosService {
                   coalesce(te.razon_social,
                            btrim(concat_ws(' ', te.primer_nombre, te.primer_apellido)))
                     AS tercero_nombre,
+                  cc.codigo || ' · ' || cc.nombre AS centro_costo_nombre,
                   sum(CASE WHEN $4 = 'DEBITO' THEN l.debito - l.credito
                            ELSE l.credito - l.debito END)
                     OVER (ORDER BY a.fecha, a.numero, l.orden
@@ -145,11 +148,13 @@ export class LibrosService {
              FROM asiento_linea l
              JOIN asiento a ON a.id = l.asiento_id
              LEFT JOIN tercero te ON te.id = l.tercero_id
+             LEFT JOIN empresa_centro_costo cc ON cc.id = l.centro_costo_id
             WHERE l.cuenta_id = $1
               AND a.fecha BETWEEN $2 AND $3
               AND a.estado = 'REGISTRADO'
+              AND ($5::uuid IS NULL OR l.centro_costo_id = $5)
             ORDER BY a.fecha DESC, a.numero DESC, l.orden DESC`,
-          [cuentaId, desde, hasta, cuenta.naturaleza],
+          [cuentaId, desde, hasta, cuenta.naturaleza, centroCostoId ?? null],
         ),
       );
 
@@ -169,20 +174,24 @@ export class LibrosService {
     terceroId: string,
     desde: string,
     hasta: string,
+    centroCostoId?: string,
   ): Promise<Array<Record<string, unknown>>> {
     return this.tx.enContexto(ctx, async (t) =>
       filas<Record<string, unknown>>(
         await t.query(
           `SELECT a.fecha, a.numero, a.glosa, l.detalle, l.debito, l.credito,
-                  cu.codigo AS cuenta_codigo, cu.nombre AS cuenta_nombre
+                  cu.codigo AS cuenta_codigo, cu.nombre AS cuenta_nombre,
+                  cc.codigo || ' · ' || cc.nombre AS centro_costo_nombre
              FROM asiento_linea l
              JOIN asiento a ON a.id = l.asiento_id
              JOIN empresa_cuenta cu ON cu.id = l.cuenta_id
+             LEFT JOIN empresa_centro_costo cc ON cc.id = l.centro_costo_id
             WHERE l.tercero_id = $1
               AND a.fecha BETWEEN $2 AND $3
               AND a.estado = 'REGISTRADO'
+              AND ($4::uuid IS NULL OR l.centro_costo_id = $4)
             ORDER BY a.fecha DESC, a.numero DESC, l.orden DESC`,
-          [terceroId, desde, hasta],
+          [terceroId, desde, hasta, centroCostoId ?? null],
         ),
       ),
     );

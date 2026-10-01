@@ -84,6 +84,11 @@ export class RegistrarMovimientoBancoDto {
   @IsUUID()
   contraCuentaId!: string;
 
+  /** Si la contracuenta es de ingreso, costo o gasto: dónde. */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
+
   /** Número de cheque, de aprobación o de transacción: con él cruza la conciliación. */
   @IsOptional()
   @IsString()

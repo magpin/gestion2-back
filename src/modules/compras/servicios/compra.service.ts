@@ -43,6 +43,10 @@ import { glosaContado } from '../../../common/contabilidad/glosa-contado';
 
 export interface CompraDocumentoResumen {
   id: string;
+  /** Dónde se gastó. `null` sin centros de costo. */
+  centro_costo_id: string | null;
+  /** `ADM · Administración`. */
+  centro_costo_nombre: string | null;
   /** FACTURA, o una de las dos notas — ver migración `0039`. */
   tipo: 'FACTURA' | 'NOTA_CREDITO' | 'NOTA_DEBITO';
   /** Quién emitió el documento: el proveedor (factura electrónica) o la empresa (soporte). */
@@ -92,6 +96,11 @@ export interface CompraDocumentoResumen {
 
 export interface CompraDocumentoLineaResumen {
   id: string;
+  /** El centro del renglón cuando es distinto al de la compra; si no, `null`. */
+  centro_costo_id: string | null;
+  centro_costo_nombre: string | null;
+  /** El reparto con que se partió el renglón entre centros, si se repartió. */
+  reparto_id: string | null;
   compra_documento_id: string;
   orden: number;
   /** Nulo en una línea de gasto: ahí lo que se compró lo dice `detalle`. */
@@ -185,6 +194,9 @@ export const CAMPOS_DOCUMENTO = `id, tipo, documento_origen_id,
                            numero_factura_proveedor, estado, clase_documento, transmision, cufe,
                            subtotal, total_iva, total, total_retenciones, neto_a_pagar,
                            monto_pagado, asiento_id, retencion_decision, retencion_motivo,
+                           centro_costo_id,
+                           (SELECT x.codigo || ' · ' || x.nombre FROM empresa_centro_costo x
+                             WHERE x.id = centro_costo_id) AS centro_costo_nombre,
                            (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
                               FROM tercero x WHERE x.id = tercero_id) AS tercero_nombre,
                            ${IDENTIFICACION_TERCERO} AS tercero_identificacion,
@@ -195,7 +207,9 @@ export const CAMPOS_DOCUMENTO = `id, tipo, documento_origen_id,
 
 const CAMPOS_LINEA = `id, compra_documento_id, orden, producto_id, cuenta_id, detalle, cantidad,
                        costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable, iva_base,
-                       concepto_id,
+                       concepto_id, centro_costo_id, reparto_id,
+                       (SELECT x.codigo || ' · ' || x.nombre FROM empresa_centro_costo x
+                         WHERE x.id = centro_costo_id) AS centro_costo_nombre,
                        (SELECT x.nombre FROM concepto_movimiento x WHERE x.id = concepto_id) AS concepto_nombre,
                        (SELECT x.codigo FROM producto x WHERE x.id = producto_id) AS producto_codigo,
                        (SELECT x.nombre FROM producto x WHERE x.id = producto_id) AS producto_nombre,
@@ -324,12 +338,15 @@ export class CompraService {
           const asiento = filas<{
             codigo: string;
             nombre: string;
+            centro: string | null;
             debito: string;
             credito: string;
           }>(
             await t.query(
-              `SELECT c.codigo, c.nombre, l.debito, l.credito
+              `SELECT c.codigo, c.nombre, l.debito, l.credito,
+                      cc.codigo || ' · ' || cc.nombre AS centro
                FROM asiento_linea l JOIN empresa_cuenta c ON c.id = l.cuenta_id
+               LEFT JOIN empresa_centro_costo cc ON cc.id = l.centro_costo_id
               WHERE l.asiento_id = $1 ORDER BY l.orden`,
               [compra.asiento_id],
             ),
@@ -367,6 +384,7 @@ export class CompraService {
             asiento: asiento.map((l) => ({
               codigo: l.codigo,
               nombre: l.nombre,
+              centro: l.centro,
               debito: Number(l.debito),
               credito: Number(l.credito),
             })),
@@ -634,6 +652,31 @@ export class CompraService {
         // ya prorrateado adentro si corresponde), débito IVA descontable si
         // aplica, crédito retención por concepto si hay, crédito proveedores
         // por el neto — ver decisión 6 del plan.
+        // El centro de la compra (D3) y el de cada renglón que diga otro
+        // (D4). El asiento pone el de la compra en los renglones de gasto que
+        // no traen el suyo; el inventario es balance y no lo lleva.
+        const centroCompra = await this.nucleo.centroPropuesto(
+          ctx,
+          {
+            elegido: dto.centroCostoId,
+            cajaId: pagos.find((p) => p.medio === 'CAJA')?.cajaId,
+          },
+          t,
+        );
+        const centroDe: Array<string | null> = [];
+        for (const l of dto.lineas) {
+          if (l.centroCostoId && l.repartoId) {
+            throw new BadRequestException(
+              'Un renglón va a un centro o se reparte entre varios, no las dos cosas.',
+            );
+          }
+          centroDe.push(
+            l.centroCostoId
+              ? await this.nucleo.centroDeRenglon(ctx, l.centroCostoId, t)
+              : null,
+          );
+        }
+
         const lineasAsiento: LineaAsientoDto[] = [];
         lineas.forEach((l, i) => {
           lineasAsiento.push({
@@ -642,6 +685,10 @@ export class CompraService {
             credito: 0,
             // El concepto va en su línea: la vista de Gastos suma por él.
             ...(conceptoDe[i] !== null && { conceptoId: conceptoDe[i] }),
+            ...(centroDe[i] !== null && { centroCostoId: centroDe[i] }),
+            ...(dto.lineas[i].repartoId && {
+              repartoId: dto.lineas[i].repartoId,
+            }),
           });
         });
         if (cuentaIvaId !== null) {
@@ -722,6 +769,7 @@ export class CompraService {
             fecha: dto.fecha,
             glosa: `${soporte ? 'Documento soporte' : 'Factura de compra'} ${numeroDocumento}${glosaContado(mediosContado.map((m) => m.nombre))}`,
             lineas: lineasAsiento,
+            centroCostoId: centroCompra ?? undefined,
           },
           { origenTipo: 'COMPRA', origenId: documentoId },
           t,
@@ -739,8 +787,9 @@ export class CompraService {
               subtotal, total_iva, total, total_retenciones, neto_a_pagar,
               asiento_id, creado_por, documento_leido_id,
               retencion_decision, retencion_motivo, retencion_impresa, vence,
-              descuento_pp_pct, descuento_pp_hasta, clase_documento, transmision, cufe)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+              descuento_pp_pct, descuento_pp_hasta, clase_documento, transmision, cufe,
+              centro_costo_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
            RETURNING ${CAMPOS_DOCUMENTO}`,
             [
               documentoId,
@@ -769,6 +818,7 @@ export class CompraService {
               soporte ? 'DOCUMENTO_SOPORTE' : 'FACTURA_ELECTRONICA',
               soporte ? 'SIN_TRANSMITIR' : null,
               soporte ? null : (dto.cufe?.trim() ?? null),
+              centroCompra,
             ],
           ),
         );
@@ -784,8 +834,8 @@ export class CompraService {
               `INSERT INTO compra_documento_linea
                (empresa_id, compra_documento_id, orden, producto_id, cuenta_id, detalle,
                 cantidad, costo_unitario, iva_tarifa, subtotal, iva_valor, total, iva_descontable,
-                iva_base, concepto_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+                iva_base, concepto_id, centro_costo_id, reparto_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
              RETURNING ${CAMPOS_LINEA}`,
               [
                 ctx.empresaId,
@@ -805,6 +855,8 @@ export class CompraService {
                 l.ivaDescontable,
                 l.ivaBase,
                 conceptoDe[i],
+                centroDe[i],
+                dto.lineas[i].repartoId ?? null,
               ],
             ),
           );
@@ -1239,6 +1291,14 @@ export class CompraService {
       if (Number(documento.monto_pagado) > 0) {
         throw new BadRequestException(
           'Esta compra tiene pagos registrados y no se puede anular. Registre la devolución del proveedor como un ingreso aparte.',
+        );
+      }
+      // De contado, la plata salió en el mismo asiento de la compra. Aunque el
+      // pago ya se haya devuelto, anular ese asiento la devolvería a caja o
+      // banco por segunda vez.
+      if (await this.tesoreria.hayPlataEnAsiento(documento.asiento_id, t)) {
+        throw new BadRequestException(
+          'Esta compra se pagó de contado y no se puede anular. Para corregirla, registre una nota crédito del proveedor.',
         );
       }
 

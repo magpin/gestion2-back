@@ -48,6 +48,11 @@ export interface ResumenGastos {
   variacion: number | null;
   grupos: GrupoGasto[];
   ultimos: GastoReciente[];
+  /**
+   * Cuánto se gastó en cada centro de costo, de mayor a menor; `id` en
+   * `null` es lo que quedó sin centro. Vacío si nada lleva centro.
+   */
+  porCentro: Array<{ id: string | null; nombre: string; total: number }>;
 }
 
 const NOMBRE_TERCERO = `coalesce(nullif(btrim(t.razon_social), ''),
@@ -62,6 +67,7 @@ const NOMBRE_TERCERO = `coalesce(nullif(btrim(t.razon_social), ''),
 const LINEAS = `
   SELECT l.id, a.id AS asiento_id, a.numero AS asiento_numero, a.fecha, a.origen_tipo, a.origen_id,
          c.id AS concepto_id, c.nombre AS concepto, c.grupo, l.tercero_id,
+         l.centro_costo_id,
          (l.debito - l.credito) AS valor
     FROM asiento_linea l
     JOIN asiento a ON a.id = l.asiento_id
@@ -160,9 +166,37 @@ export class GastosService {
           ),
         ).map(aReciente);
 
+        const centros = filas<{
+          id: string | null;
+          nombre: string | null;
+          total: string;
+        }>(
+          await t.query(
+            `SELECT x.centro_costo_id AS id,
+                    (SELECT cc.codigo || ' · ' || cc.nombre FROM empresa_centro_costo cc
+                      WHERE cc.id = x.centro_costo_id) AS nombre,
+                    sum(x.valor) AS total
+               FROM (${LINEAS}) x
+              GROUP BY x.centro_costo_id`,
+            [desde, hasta],
+          ),
+        );
+        // Sin ningún centro, no hay reparto que mostrar.
+        const porCentro = centros.some((c) => c.id !== null)
+          ? centros
+              .map((c) => ({
+                id: c.id,
+                nombre: c.nombre ?? 'Sin centro',
+                total: redondear(Number(c.total)),
+              }))
+              .filter((c) => c.total !== 0)
+              .sort((a, b) => b.total - a.total)
+          : [];
+
         return {
           mes,
           total,
+          porCentro,
           registros: porConcepto.reduce((s, f) => s + Number(f.registros), 0),
           anterior: { mes: anterior, total: redondear(totalAnterior) },
           variacion: variacion(total, totalAnterior),

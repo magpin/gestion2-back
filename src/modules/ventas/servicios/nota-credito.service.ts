@@ -226,6 +226,8 @@ export class NotaCreditoService {
             fecha: dto.fecha,
             glosa: `Nota crédito ${numero.numero} — factura ${numeroFactura}: ${dto.motivo}`,
             lineas: lineasAsiento,
+            // La devolución reversa el ingreso y el costo donde se vendió.
+            centroCostoId: factura.centro_costo_id ?? undefined,
           },
           { origenTipo: 'VENTA', origenId: documentoId },
           t,
@@ -236,8 +238,8 @@ export class NotaCreditoService {
             `INSERT INTO venta_documento
              (id, empresa_id, tipo, tercero_id, fecha, prefijo, consecutivo,
               resolucion_id, documento_origen_id, subtotal, total_iva, total,
-              asiento_id, creado_por)
-           VALUES ($1, $2, 'NOTA_CREDITO', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+              asiento_id, creado_por, centro_costo_id)
+           VALUES ($1, $2, 'NOTA_CREDITO', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
            RETURNING ${CAMPOS_DOCUMENTO}`,
             [
               documentoId,
@@ -253,6 +255,7 @@ export class NotaCreditoService {
               total,
               asiento.id,
               ctx.usuarioId,
+              factura.centro_costo_id,
             ],
           ),
         );

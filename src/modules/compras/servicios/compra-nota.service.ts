@@ -232,6 +232,15 @@ export class CompraNotaService {
             ...(origenes[i].concepto_id
               ? { conceptoId: origenes[i].concepto_id }
               : {}),
+            // Y el mismo centro que el renglón devuelto, si tenía uno propio;
+            // si no, el de la compra (`guardar`).
+            ...(origenes[i].centro_costo_id
+              ? { centroCostoId: origenes[i].centro_costo_id }
+              : {}),
+            // Y si se repartió, se devuelve repartido igual.
+            ...(origenes[i].reparto_id
+              ? { repartoId: origenes[i].reparto_id }
+              : {}),
           });
         });
         if (cuentaIvaId !== null) {
@@ -254,6 +263,7 @@ export class CompraNotaService {
             cuentaId: l.cuenta_id,
             detalle: l.detalle,
             conceptoId: l.concepto_id ?? null,
+            centroCostoId: l.centro_costo_id ?? null,
           })),
           origenes.map((l) => l.id),
           lineasAsiento,
@@ -618,6 +628,7 @@ export class CompraNotaService {
       cuentaId: string;
       detalle: string | null;
       conceptoId?: string | null;
+      centroCostoId?: string | null;
     }>,
     lineaOrigenIds: Array<string | null>,
     lineasAsiento: LineaAsientoDto[],
@@ -643,6 +654,8 @@ export class CompraNotaService {
         fecha: dto.fecha,
         glosa: `${etiqueta} de compra ${dto.numeroNotaProveedor} — factura ${compra.numero_factura_proveedor}: ${dto.motivo}`,
         lineas: lineasAsiento,
+        // La nota corrige el gasto donde se registró la compra.
+        centroCostoId: compra.centro_costo_id ?? undefined,
       },
       { origenTipo: 'COMPRA', origenId: documentoId },
       t,
@@ -653,8 +666,8 @@ export class CompraNotaService {
         `INSERT INTO compra_documento
            (id, empresa_id, tipo, tercero_id, fecha, numero_factura_proveedor,
             documento_origen_id, subtotal, total_iva, total, total_retenciones,
-            neto_a_pagar, asiento_id, creado_por)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+            neto_a_pagar, asiento_id, creado_por, centro_costo_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
          RETURNING ${CAMPOS_DOCUMENTO}`,
         [
           documentoId,
@@ -671,6 +684,7 @@ export class CompraNotaService {
           calculo.neto,
           asiento.id,
           ctx.usuarioId,
+          compra.centro_costo_id,
         ],
       ),
     );
@@ -686,8 +700,8 @@ export class CompraNotaService {
           `INSERT INTO compra_documento_linea
              (empresa_id, compra_documento_id, orden, producto_id, cuenta_id, detalle,
               cantidad, costo_unitario, iva_tarifa, subtotal, iva_valor, total,
-              iva_descontable, linea_origen_id, iva_base, concepto_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+              iva_descontable, linea_origen_id, iva_base, concepto_id, centro_costo_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
            RETURNING ${CAMPOS_LINEA}`,
           [
             ctx.empresaId,
@@ -706,6 +720,7 @@ export class CompraNotaService {
             lineaOrigenIds[i],
             l.ivaBase,
             renglones[i].conceptoId ?? null,
+            renglones[i].centroCostoId ?? null,
           ],
         ),
       );

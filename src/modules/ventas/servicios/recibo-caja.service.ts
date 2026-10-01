@@ -600,9 +600,10 @@ export class ReciboCajaService {
         'La empresa no tiene el comprobante de diario sembrado.',
       );
     }
-    const factura = fila<{ numero: string }>(
+    const factura = fila<{ numero: string; centro_costo_id: string | null }>(
       await t.query(
-        `SELECT prefijo || '-' || lpad(consecutivo::text, 6, '0') AS numero
+        `SELECT prefijo || '-' || lpad(consecutivo::text, 6, '0') AS numero,
+                centro_costo_id
            FROM venta_documento WHERE id = $1`,
         [datos.facturaId],
       ),
@@ -613,6 +614,8 @@ export class ReciboCajaService {
         comprobanteTipoId: comprobante.id,
         fecha: datos.fecha,
         glosa: `${datos.referencia} · Descuento por pronto pago de la factura ${factura?.numero ?? ''}`,
+        // El descuento es un menor ingreso de donde se vendió (D5).
+        centroCostoId: factura?.centro_costo_id ?? undefined,
         lineas: [
           {
             cuentaId: concepto.cuenta.id,

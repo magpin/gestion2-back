@@ -176,6 +176,7 @@ export class BancoMovimientoService {
       valor: dto.valor,
       concepto: dto.concepto,
       contraCuentaId: dto.contraCuentaId,
+      centroCostoId: dto.centroCostoId ?? null,
       origenTipo: null,
       origenId: null,
       terceroId: null,
@@ -199,6 +200,8 @@ export class BancoMovimientoService {
       contraCuentaId: string;
       terceroId: string | null;
       referencia: string | null;
+      /** Si la contra cuenta es de resultado: a qué centro va. */
+      centroCostoId?: string | null;
     },
     t: Tx,
   ): Promise<MovimientoBancoResumen> {
@@ -612,6 +615,8 @@ export class BancoMovimientoService {
       concepto: string;
       contraCuentaId: string | null;
       contrapartidas?: Contrapartida[];
+      /** El centro de un movimiento manual cuya contracuenta es de resultado. */
+      centroCostoId?: string | null;
       origenTipo: 'FACTURA_VENTA' | 'COMPRA' | null;
       origenId: string | null;
       terceroId: string | null;
@@ -679,6 +684,7 @@ export class BancoMovimientoService {
       contraCuentaId: string | null;
       contrapartidas?: Contrapartida[];
       terceroId?: string | null;
+      centroCostoId?: string | null;
     },
     direccion: 'ENTRADA' | 'SALIDA',
     movimientoId: string,
@@ -701,6 +707,7 @@ export class BancoMovimientoService {
         comprobanteTipoId: comprobante.id,
         fecha: dto.fecha,
         glosa: dto.concepto,
+        centroCostoId: dto.centroCostoId ?? undefined,
         lineas: [
           {
             cuentaId: cuenta.cuenta_id,

@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { join } from 'node:path';
 import { config as cargarEnv } from 'dotenv';
 import { DataSource } from 'typeorm';
+import '../common/db/tipos-pg';
 
 cargarEnv();
 

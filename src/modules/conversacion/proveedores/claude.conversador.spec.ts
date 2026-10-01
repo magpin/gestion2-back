@@ -186,7 +186,7 @@ describe('ClaudeConversador — cómo termina', () => {
     });
     expect(resultado).toMatchObject({
       estado: 'RECHAZADO',
-      motivo: textoQue(/No puedo ayudarte/),
+      motivo: textoQue(/No puedo ayudarle/),
     });
     expect(resultado).not.toHaveProperty('texto');
   });
@@ -409,7 +409,7 @@ describe('ClaudeConversador — con herramientas', () => {
   it('sin herramientas para el rol no manda ninguna', async () => {
     const { conversador } = await conHerramientas(
       {
-        respuesta: respuesta({ texto: 'Con tu rol no puedo consultar datos.' }),
+        respuesta: respuesta({ texto: 'Con su rol no puedo consultar datos.' }),
       },
       [],
     );

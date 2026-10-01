@@ -7,9 +7,42 @@ import {
   type PaginacionDto,
 } from '../../../common/dto/paginacion.dto';
 import { fila } from '../../../common/db/filas';
+import { hoyEnColombia } from '../../../common/fecha';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import type { CrearTerceroDto, EditarTerceroDto } from '../dto/tercero.dto';
 import { exigirTipoDocumento } from './validaciones-catalogo';
+
+/**
+ * Hoy en Colombia, en SQL. `current_date` depende de la zona de la sesión:
+ * con la base en UTC, a las 7 de la noche de Bogotá ya es mañana, y el alta
+ * dejaba la primera versión del perfil con fecha futura (bug #7 de la
+ * revisión del 27-09).
+ */
+const HOY_SQL = `(now() AT TIME ZONE 'America/Bogota')::date`;
+
+/**
+ * Los datos tributarios de hoy, del perfil con historia (plan motor de
+ * retenciones, Fase 7): `tercero` ya no los tiene. Salen con los nombres de
+ * las columnas viejas, que es lo que leen la ficha y los documentos.
+ */
+const PERFIL_VIGENTE = `LEFT JOIN LATERAL (
+    SELECT p.es_responsable_iva AS responsable_iva, p.declarante_renta,
+           p.es_agente_ret_renta AS es_agente_retenedor,
+           p.es_autorretenedor_renta AS es_autorretenedor,
+           p.es_gran_contribuyente, (p.regimen_renta = 'SIMPLE') AS regimen_simple
+      FROM tercero_perfil_tributario p
+     WHERE p.tercero_id = t.id AND p.vigencia_desde <= ${HOY_SQL}
+     ORDER BY p.vigencia_desde DESC
+     LIMIT 1) pv ON true`;
+
+/** Lo tributario que se puede tocar desde la ficha del tercero. */
+interface CalidadesFicha {
+  responsableIva?: boolean;
+  esAgenteRetenedor?: boolean;
+  esAutorretenedor?: boolean;
+  esGranContribuyente?: boolean;
+  regimenSimple?: boolean;
+}
 
 export interface TerceroResumen {
   id: string;
@@ -19,9 +52,14 @@ export interface TerceroResumen {
   nombre: string;
   esCliente: boolean;
   esProveedor: boolean;
+  esEmpleado: boolean;
+  /** Plazo habitual como cliente y como proveedor, en días (PC25); `null` si no se dijo. */
+  diasPlazoCliente: number | null;
+  diasPlazoProveedor: number | null;
   responsableIva: boolean;
   /** Si declara renta. Decide la tarifa de retefuente en los conceptos que tienen dos. */
   declaranteRenta: boolean;
+  tipoPersona: 'NATURAL' | 'JURIDICA';
   activo: boolean;
 }
 
@@ -43,10 +81,9 @@ export class TerceroService {
            (empresa_id, tipo_persona, tipo_documento, numero_documento, dv,
             razon_social, primer_nombre, segundo_nombre, primer_apellido, segundo_apellido,
             nombre_comercial, email, telefono, direccion, municipio_codigo,
-            es_cliente, es_proveedor, responsable_iva, es_agente_retenedor,
-            es_autorretenedor, es_gran_contribuyente, regimen_simple)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
-         RETURNING *`,
+            es_cliente, es_proveedor, es_empleado, dias_plazo_cliente, dias_plazo_proveedor)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+         RETURNING id`,
         [
           ctx.empresaId,
           dto.tipoPersona,
@@ -65,11 +102,29 @@ export class TerceroService {
           dto.municipioCodigo ?? null,
           dto.esCliente ?? false,
           dto.esProveedor ?? false,
+          dto.esEmpleado ?? false,
+          dto.diasPlazoCliente ?? null,
+          dto.diasPlazoProveedor ?? null,
+        ],
+      );
+
+      // Su primera versión del perfil, desde hoy. Sin aprobador: es la
+      // automática, y Datos tributarios la reemplaza con la fecha de su RUT.
+      await t.query(
+        `INSERT INTO tercero_perfil_tributario
+           (empresa_id, tercero_id, tipo_persona, regimen_renta, declarante_renta,
+            es_responsable_iva, es_gran_contribuyente, es_autorretenedor_renta,
+            es_agente_ret_renta, vigencia_desde, fuente)
+         VALUES ($1, $2, $3, $4, true, $5, $6, $7, $8, ${HOY_SQL}, 'MANUAL')`,
+        [
+          ctx.empresaId,
+          fila.id,
+          dto.tipoPersona,
+          dto.regimenSimple === true ? 'SIMPLE' : 'ORDINARIO',
           dto.responsableIva ?? false,
-          dto.esAgenteRetenedor ?? false,
-          dto.esAutorretenedor ?? false,
           dto.esGranContribuyente ?? false,
-          dto.regimenSimple ?? false,
+          dto.esAutorretenedor ?? false,
+          dto.esAgenteRetenedor ?? false,
         ],
       );
 
@@ -79,7 +134,7 @@ export class TerceroService {
         fila.id as string,
         dto.responsabilidadesDian ?? [],
       );
-      return this.resumir(fila);
+      return (await this.buscarTercero(ctx, fila.id as string, t))!;
     });
   }
 
@@ -93,6 +148,7 @@ export class TerceroService {
     filtro: {
       esCliente?: boolean;
       esProveedor?: boolean;
+      esEmpleado?: boolean;
       incluirInactivos?: boolean;
       soloInactivos?: boolean;
     },
@@ -115,6 +171,9 @@ export class TerceroService {
       if (filtro.esProveedor === true) {
         condiciones.push('es_proveedor');
       }
+      if (filtro.esEmpleado === true) {
+        condiciones.push('es_empleado');
+      }
       if (p.q !== undefined && p.q.trim() !== '') {
         params.push(`%${p.q.trim()}%`);
         condiciones.push(
@@ -136,8 +195,8 @@ export class TerceroService {
       const filas = await t.query<Array<Record<string, unknown>>>(
         `SELECT id, tipo_documento, numero_documento, dv, razon_social,
                 primer_nombre, segundo_nombre, primer_apellido, segundo_apellido,
-                es_cliente, es_proveedor, responsable_iva, declarante_renta, activo
-           FROM tercero ${where}
+                es_cliente, es_proveedor, es_empleado, dias_plazo_cliente, dias_plazo_proveedor, responsable_iva, declarante_renta, activo
+           FROM tercero t ${PERFIL_VIGENTE} ${where}
           ORDER BY coalesce(razon_social, primer_apellido || ' ' || primer_nombre)
           LIMIT $${params.length - 1} OFFSET $${params.length}`,
         params,
@@ -154,13 +213,14 @@ export class TerceroService {
   async porId(ctx: CtxEmpresa, id: string): Promise<Record<string, unknown>> {
     return this.tx.enContexto(ctx, async (t) => {
       const [fila] = await t.query<Array<Record<string, unknown>>>(
-        `SELECT t.*, m.nombre AS municipio_nombre,
+        `SELECT t.*, pv.*, m.nombre AS municipio_nombre,
                 COALESCE(
                   (SELECT array_agg(r.codigo ORDER BY r.codigo)
                      FROM tercero_responsabilidad_fiscal r WHERE r.tercero_id = t.id),
                   ARRAY[]::text[]
                 ) AS responsabilidades_dian
            FROM tercero t
+           ${PERFIL_VIGENTE}
            LEFT JOIN municipio m ON m.codigo = t.municipio_codigo
           WHERE t.id = $1`,
         [id],
@@ -198,13 +258,11 @@ export class TerceroService {
             municipio_codigo      = COALESCE($11, municipio_codigo),
             es_cliente            = COALESCE($12, es_cliente),
             es_proveedor          = COALESCE($13, es_proveedor),
-            responsable_iva       = COALESCE($14, responsable_iva),
-            es_agente_retenedor   = COALESCE($15, es_agente_retenedor),
-            es_autorretenedor     = COALESCE($16, es_autorretenedor),
-            es_gran_contribuyente = COALESCE($17, es_gran_contribuyente),
-            regimen_simple        = COALESCE($18, regimen_simple)
+            es_empleado           = COALESCE($14, es_empleado),
+            dias_plazo_cliente    = COALESCE($15, dias_plazo_cliente),
+            dias_plazo_proveedor  = COALESCE($16, dias_plazo_proveedor)
           WHERE id = $1
-          RETURNING *`,
+          RETURNING id`,
           [
             id,
             dto.razonSocial ?? null,
@@ -219,11 +277,9 @@ export class TerceroService {
             dto.municipioCodigo ?? null,
             dto.esCliente ?? null,
             dto.esProveedor ?? null,
-            dto.responsableIva ?? null,
-            dto.esAgenteRetenedor ?? null,
-            dto.esAutorretenedor ?? null,
-            dto.esGranContribuyente ?? null,
-            dto.regimenSimple ?? null,
+            dto.esEmpleado ?? null,
+            dto.diasPlazoCliente ?? null,
+            dto.diasPlazoProveedor ?? null,
           ],
         ),
       );
@@ -238,8 +294,118 @@ export class TerceroService {
           dto.responsabilidadesDian,
         );
       }
-      return this.resumir(editado);
+      await this.perfilDesdeFicha(t, id, dto);
+      return (await this.buscarTercero(ctx, id, t))!;
     });
+  }
+
+  /**
+   * Un cambio de calidad tributaria en la ficha abre una versión del perfil
+   * desde hoy, con lo demás que el perfil sabe (ZOMAC, CIIU…). Si la versión
+   * de hoy empezó hoy, se corrige: no se abre una de un día. Para decir desde
+   * cuándo rige de verdad está Datos tributarios.
+   *
+   * Se compara con la versión que rige hoy —la que muestra la ficha—, no con
+   * la abierta: si hay una con fecha futura, la abierta es esa, y cerrarla
+   * ayer rompía `ck_perfil_vigencia` (error 500, bug #7 de la revisión del
+   * 27-09). La futura no se toca: la versión nueva dura hasta el día antes.
+   */
+  private async perfilDesdeFicha(
+    t: Tx,
+    terceroId: string,
+    c: CalidadesFicha,
+  ): Promise<void> {
+    type Version = {
+      id: string;
+      desde: string;
+      hasta: string | null;
+      responsable_iva: boolean;
+      es_agente_retenedor: boolean;
+      es_autorretenedor: boolean;
+      es_gran_contribuyente: boolean;
+      regimen_simple: boolean;
+    };
+    const hoy = hoyEnColombia();
+    const versiones = await t.query<Version[]>(
+      `SELECT id, vigencia_desde::text AS desde, vigencia_hasta::text AS hasta,
+              es_responsable_iva AS responsable_iva,
+              es_agente_ret_renta AS es_agente_retenedor,
+              es_autorretenedor_renta AS es_autorretenedor,
+              es_gran_contribuyente, (regimen_renta = 'SIMPLE') AS regimen_simple
+         FROM tercero_perfil_tributario
+        WHERE tercero_id = $1
+        ORDER BY vigencia_desde
+        FOR UPDATE`,
+      [terceroId],
+    );
+    const deHoy = [...versiones]
+      .reverse()
+      .find((x) => x.desde <= hoy && (x.hasta === null || x.hasta >= hoy));
+    const futura = versiones.find((x) => x.desde > hoy);
+    // Sin versión que rija hoy, la nueva sale de la futura (o de la última).
+    const v = deHoy ?? futura ?? versiones[versiones.length - 1];
+    if (v === undefined) return;
+    const nuevo = {
+      responsable_iva: c.responsableIva ?? v.responsable_iva,
+      es_agente_retenedor: c.esAgenteRetenedor ?? v.es_agente_retenedor,
+      es_autorretenedor: c.esAutorretenedor ?? v.es_autorretenedor,
+      es_gran_contribuyente: c.esGranContribuyente ?? v.es_gran_contribuyente,
+      regimen_simple: c.regimenSimple ?? v.regimen_simple,
+    };
+    const igual = (Object.keys(nuevo) as Array<keyof typeof nuevo>).every(
+      (k) => nuevo[k] === v[k],
+    );
+    if (igual) return;
+
+    const valores = [
+      nuevo.regimen_simple,
+      nuevo.responsable_iva,
+      nuevo.es_gran_contribuyente,
+      nuevo.es_autorretenedor,
+      nuevo.es_agente_retenedor,
+    ];
+    if (deHoy !== undefined && deHoy.desde === hoy) {
+      await t.query(
+        `UPDATE tercero_perfil_tributario
+            SET regimen_renta = CASE WHEN $2 THEN 'SIMPLE'
+                                     WHEN regimen_renta = 'SIMPLE' THEN 'ORDINARIO'
+                                     ELSE regimen_renta END,
+                es_responsable_iva = $3, es_gran_contribuyente = $4,
+                es_autorretenedor_renta = $5, es_agente_ret_renta = $6
+          WHERE id = $1`,
+        [v.id, ...valores],
+      );
+      return;
+    }
+    if (deHoy !== undefined) {
+      await t.query(
+        `UPDATE tercero_perfil_tributario SET vigencia_hasta = $2::date - 1
+          WHERE id = $1`,
+        [deHoy.id, hoy],
+      );
+    }
+    // Hasta el día antes de la futura, si la hay; si no, abierta.
+    const hasta = futura?.desde ?? null;
+    await t.query(
+      `INSERT INTO tercero_perfil_tributario
+         (empresa_id, tercero_id, tipo_persona, regimen_renta, declarante_renta,
+          es_responsable_iva, es_gran_contribuyente, es_autorretenedor_renta,
+          es_entidad_publica, es_agente_ret_renta, es_autorretenedor_especial,
+          es_agente_ret_iva, agente_iva_numeral, es_zomac, zomac_tamano,
+          ciiu_principal, ciiu_secundarios, contrato_dos_o_mas_trabajadores,
+          vigencia_desde, vigencia_hasta, fuente)
+       SELECT empresa_id, tercero_id, tipo_persona,
+              CASE WHEN $2 THEN 'SIMPLE'
+                   WHEN regimen_renta = 'SIMPLE' THEN 'ORDINARIO'
+                   ELSE regimen_renta END,
+              declarante_renta, $3, $4, $5,
+              es_entidad_publica, $6, es_autorretenedor_especial,
+              es_agente_ret_iva, agente_iva_numeral, es_zomac, zomac_tamano,
+              ciiu_principal, ciiu_secundarios, contrato_dos_o_mas_trabajadores,
+              $7::date, $8::date - 1, 'MANUAL'
+         FROM tercero_perfil_tributario WHERE id = $1`,
+      [v.id, ...valores, hoy, hasta],
+    );
   }
 
   async desactivar(ctx: CtxEmpresa, id: string): Promise<void> {
@@ -278,8 +444,8 @@ export class TerceroService {
       const filas = await t.query<Array<Record<string, unknown>>>(
         `SELECT id, tipo_documento, numero_documento, dv, razon_social,
                 primer_nombre, segundo_nombre, primer_apellido, segundo_apellido,
-                es_cliente, es_proveedor, responsable_iva, declarante_renta, activo
-           FROM tercero
+                es_cliente, es_proveedor, es_empleado, dias_plazo_cliente, dias_plazo_proveedor, responsable_iva, declarante_renta, activo
+           FROM tercero t ${PERFIL_VIGENTE}
           WHERE activo AND numero_documento LIKE $1
           ORDER BY numero_documento
           LIMIT 20`,
@@ -300,8 +466,9 @@ export class TerceroService {
         const [fila] = await t.query<Array<Record<string, unknown>>>(
           `SELECT id, tipo_documento, numero_documento, dv, razon_social,
                   primer_nombre, segundo_nombre, primer_apellido, segundo_apellido,
-                  es_cliente, es_proveedor, responsable_iva, declarante_renta, activo
-             FROM tercero WHERE id = $1`,
+                  es_cliente, es_proveedor, es_empleado, dias_plazo_cliente, dias_plazo_proveedor, responsable_iva, declarante_renta,
+                  activo, tipo_persona
+             FROM tercero t ${PERFIL_VIGENTE} WHERE id = $1`,
           [id],
         );
         return fila === undefined ? null : this.resumir(fila);
@@ -356,11 +523,25 @@ export class TerceroService {
       nombre,
       esCliente: f.es_cliente as boolean,
       esProveedor: f.es_proveedor as boolean,
+      esEmpleado: (f.es_empleado as boolean | undefined) ?? false,
+      diasPlazoCliente:
+        (f.dias_plazo_cliente as number | null | undefined) ?? null,
+      diasPlazoProveedor:
+        (f.dias_plazo_proveedor as number | null | undefined) ?? null,
       responsableIva: f.responsable_iva as boolean,
       // `true` cuando la consulta no lo trae: los listados no lo piden, y
       // asumir "declarante" retiene de menos —que se corrige— en vez de
       // retener de más, que hay que devolver.
       declaranteRenta: (f.declarante_renta as boolean | undefined) ?? true,
+      // La ley de retenciones distingue persona natural y jurídica (honorarios,
+      // comisiones). Si la consulta no lo trae, se deduce del documento: el NIT
+      // de 9 dígitos que empieza en 8 o 9 es de persona jurídica.
+      tipoPersona:
+        (f.tipo_persona as 'NATURAL' | 'JURIDICA' | undefined) ??
+        (f.tipo_documento === 'NIT' &&
+        /^[89]\d{8}$/.test(String(f.numero_documento))
+          ? 'JURIDICA'
+          : 'NATURAL'),
       activo: f.activo as boolean,
     };
   }

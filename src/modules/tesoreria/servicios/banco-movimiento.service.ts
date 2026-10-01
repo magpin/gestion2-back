@@ -18,6 +18,19 @@ import type {
   TIPOS_MOVIMIENTO_BANCO_MANUAL,
 } from '../dto/banco-movimiento.dto';
 import { calcularEgresoBanco, calcularIngresoBanco } from './banco.reglas';
+import { exigirContraCuenta } from './caja-movimiento.service';
+import type { Contrapartida } from './contrapartida';
+
+/** El tipo que deshace a otro: lo que entró sale por el mismo camino, y al revés. */
+const CONTRARIO: Record<TipoMovimientoManual, TipoMovimientoManual> = {
+  CONSIGNACION: 'RETIRO',
+  RETIRO: 'CONSIGNACION',
+  TRANSFERENCIA_ENTRANTE: 'TRANSFERENCIA_SALIENTE',
+  TRANSFERENCIA_SALIENTE: 'TRANSFERENCIA_ENTRANTE',
+  NOTA_DEBITO: 'NOTA_CREDITO',
+  NOTA_CREDITO: 'NOTA_DEBITO',
+  CHEQUE: 'CONSIGNACION',
+};
 
 export interface MovimientoBancoResumen {
   id: string;
@@ -109,35 +122,42 @@ export class BancoMovimientoService {
     ctx: CtxEmpresa,
     cuentaBancariaId: string,
     dto: CargaInicialBancoDto,
+    /** Desde el arranque (`SaldosInicialesService`): el id y el asiento de apertura ya están armados. */
+    apertura?: { id: string; asientoId: string },
+    tx?: Tx,
   ): Promise<MovimientoBancoResumen> {
-    return this.tx.enContexto(ctx, async (t) => {
-      await this.exigirCuentaBloqueada(cuentaBancariaId, t);
-      const ultimo = await this.ultimoMovimiento(cuentaBancariaId, t);
-      if (ultimo !== null) {
-        throw new BadRequestException(
-          'Esta cuenta bancaria ya tiene movimientos; el saldo inicial ya se cargó.',
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        await this.exigirCuentaBloqueada(cuentaBancariaId, t);
+        const ultimo = await this.ultimoMovimiento(cuentaBancariaId, t);
+        if (ultimo !== null) {
+          throw new BadRequestException(
+            'Esta cuenta bancaria ya tiene movimientos; el saldo inicial ya se cargó.',
+          );
+        }
+
+        const saldo = calcularIngresoBanco(0, dto.valor);
+
+        return this.insertarMovimiento(
+          t,
+          ctx,
+          apertura?.id ?? randomUUID(),
+          cuentaBancariaId,
+          'SALDO_INICIAL',
+          dto.fecha,
+          dto.valor,
+          dto.concepto,
+          null,
+          null,
+          null,
+          saldo,
+          apertura?.asientoId ?? null,
+          null,
         );
-      }
-
-      const saldo = calcularIngresoBanco(0, dto.valor);
-
-      return this.insertarMovimiento(
-        t,
-        ctx,
-        randomUUID(),
-        cuentaBancariaId,
-        'SALDO_INICIAL',
-        dto.fecha,
-        dto.valor,
-        dto.concepto,
-        null,
-        null,
-        null,
-        saldo,
-        null,
-        null,
-      );
-    });
+      },
+      tx,
+    );
   }
 
   /**
@@ -233,6 +253,244 @@ export class BancoMovimientoService {
         referencia: null,
       },
       t,
+    );
+  }
+
+  /**
+   * Un movimiento por concepto, con las contrapartidas ya armadas —la llama
+   * `MovimientoConceptoService`—. Espejo del de caja.
+   */
+  async registrarConContrapartidas(
+    ctx: CtxEmpresa,
+    cuentaBancariaId: string,
+    datos: {
+      tipo: TipoMovimientoManual;
+      fecha: string;
+      valor: number;
+      concepto: string;
+      terceroId: string | null;
+      contrapartidas: Contrapartida[];
+    },
+    t?: Tx,
+  ): Promise<MovimientoBancoResumen> {
+    return this.moverBanco(
+      ctx,
+      cuentaBancariaId,
+      {
+        tipo: datos.tipo,
+        fecha: datos.fecha,
+        valor: datos.valor,
+        concepto: datos.concepto,
+        contraCuentaId: null,
+        contrapartidas: datos.contrapartidas,
+        origenTipo: null,
+        origenId: null,
+        terceroId: datos.terceroId,
+        referencia: null,
+      },
+      t,
+    );
+  }
+
+  /**
+   * Un lado de un traslado —la llama `TrasladoService`—. Espejo del de caja:
+   * el asiento ya está hecho, acá solo se corre el saldo y se inserta.
+   */
+  async registrarDeTraslado(
+    ctx: CtxEmpresa,
+    cuentaBancariaId: string,
+    datos: {
+      id: string;
+      tipo: TipoMovimientoManual;
+      fecha: string;
+      valor: number;
+      concepto: string;
+      trasladoId: string;
+      asientoId: string;
+    },
+    t: Tx,
+  ): Promise<MovimientoBancoResumen> {
+    await this.exigirCuentaBloqueada(cuentaBancariaId, t);
+    const actual =
+      (await this.ultimoMovimiento(cuentaBancariaId, t))?.saldo ?? 0;
+    const nuevoSaldo =
+      DIRECCION_MOVIMIENTO_BANCO[datos.tipo] === 'ENTRADA'
+        ? calcularIngresoBanco(actual, datos.valor)
+        : calcularEgresoBanco(actual, datos.valor);
+    return this.insertarMovimiento(
+      t,
+      ctx,
+      datos.id,
+      cuentaBancariaId,
+      datos.tipo,
+      datos.fecha,
+      datos.valor,
+      datos.concepto,
+      'TRASLADO',
+      datos.trasladoId,
+      null,
+      nuevoSaldo,
+      datos.asientoId,
+      null,
+    );
+  }
+
+  /**
+   * El cobro o pago de un documento de contado cuyo asiento ya está hecho.
+   * Espejo del de caja: acá solo se corre el saldo y se inserta.
+   */
+  async registrarDocumentoConAsiento(
+    ctx: CtxEmpresa,
+    cuentaBancariaId: string,
+    datos: {
+      tipo: TipoMovimientoManual;
+      fecha: string;
+      valor: number;
+      concepto: string;
+      documentoTipo: 'FACTURA_VENTA' | 'COMPRA';
+      documentoId: string;
+      terceroId: string;
+      asientoId: string;
+    },
+    t: Tx,
+  ): Promise<MovimientoBancoResumen> {
+    await this.exigirCuentaBloqueada(cuentaBancariaId, t);
+    const actual =
+      (await this.ultimoMovimiento(cuentaBancariaId, t))?.saldo ?? 0;
+    const nuevoSaldo =
+      DIRECCION_MOVIMIENTO_BANCO[datos.tipo] === 'ENTRADA'
+        ? calcularIngresoBanco(actual, datos.valor)
+        : calcularEgresoBanco(actual, datos.valor);
+    return this.insertarMovimiento(
+      t,
+      ctx,
+      randomUUID(),
+      cuentaBancariaId,
+      datos.tipo,
+      datos.fecha,
+      datos.valor,
+      datos.concepto,
+      datos.documentoTipo,
+      datos.documentoId,
+      datos.terceroId,
+      nuevoSaldo,
+      datos.asientoId,
+      null,
+    );
+  }
+
+  /** La cuenta contable de la cuenta bancaria, su banco y si es exenta del 4×1000. */
+  async cuentaDe(
+    ctx: CtxEmpresa,
+    cuentaBancariaId: string,
+    t: Tx,
+  ): Promise<{
+    cuentaId: string;
+    nombre: string;
+    banco: string;
+    exentaGmf: boolean;
+  }> {
+    const c = fila<{
+      cuenta_id: string;
+      banco: string;
+      numero_cuenta: string;
+      exenta_gmf: boolean;
+    }>(
+      await t.query(
+        'SELECT cuenta_id, banco, numero_cuenta, exenta_gmf FROM cuenta_bancaria WHERE id = $1 AND activa',
+        [cuentaBancariaId],
+      ),
+    );
+    if (c === undefined)
+      throw new NotFoundException('Cuenta bancaria no encontrada o inactiva');
+    return {
+      cuentaId: c.cuenta_id,
+      nombre: `${c.banco} ${c.numero_cuenta}`,
+      banco: c.banco,
+      exentaGmf: c.exenta_gmf,
+    };
+  }
+
+  /**
+   * Deshace un movimiento con su contrario: mismo valor, tipo opuesto, y el
+   * asiento con las líneas del original invertidas. El libro de banco no se
+   * edita —el saldo corrido de lo posterior ya lo contó—, como el de caja.
+   */
+  async registrarContrario(
+    ctx: CtxEmpresa,
+    cuentaBancariaId: string,
+    movimientoId: string,
+    datos: { fecha: string; motivo: string },
+    t: Tx,
+  ): Promise<MovimientoBancoResumen> {
+    await this.exigirCuentaBloqueada(cuentaBancariaId, t);
+    const original = fila<MovimientoBancoResumen>(
+      await t.query(
+        `SELECT ${CAMPOS} FROM banco_movimiento WHERE id = $1 AND cuenta_bancaria_id = $2`,
+        [movimientoId, cuentaBancariaId],
+      ),
+    );
+    if (original === undefined || original.asiento_id === null) {
+      throw new NotFoundException('Movimiento no encontrado en esta cuenta.');
+    }
+    const lineas = await this.contabilidad.lineasInvertidasDe(
+      ctx,
+      original.asiento_id,
+      t,
+    );
+    if (lineas === null) {
+      throw new BadRequestException(
+        'El asiento de este movimiento está anulado: no hay nada que deshacer en la contabilidad.',
+      );
+    }
+    const tipo = CONTRARIO[original.tipo as TipoMovimientoManual];
+    const valor = Number(original.valor);
+    const actual =
+      (await this.ultimoMovimiento(cuentaBancariaId, t))?.saldo ?? 0;
+    const direccion = DIRECCION_MOVIMIENTO_BANCO[tipo];
+    const nuevoSaldo =
+      direccion === 'ENTRADA'
+        ? calcularIngresoBanco(actual, valor)
+        : calcularEgresoBanco(actual, valor);
+
+    const comprobante = await this.contabilidad.tipoComprobantePorCodigo(
+      ctx,
+      CODIGO_COMPROBANTE[direccion],
+      t,
+    );
+    if (comprobante === null) {
+      throw new BadRequestException(
+        'La empresa no tiene el comprobante sembrado.',
+      );
+    }
+    const id = randomUUID();
+    const concepto = `Anulación de: ${original.concepto}`;
+    const asiento = await this.contabilidad.asentar(
+      ctx,
+      {
+        comprobanteTipoId: comprobante.id,
+        fecha: datos.fecha,
+        glosa: `${concepto} — ${datos.motivo}`,
+        lineas,
+      },
+      { origenTipo: 'MOVIMIENTO_BANCO', origenId: id },
+      t,
+    );
+    return this.insertarMovimiento(
+      t,
+      ctx,
+      id,
+      cuentaBancariaId,
+      tipo,
+      datos.fecha,
+      valor,
+      concepto,
+      null,
+      null,
+      original.tercero_id,
+      nuevoSaldo,
+      asiento.id,
+      null,
     );
   }
 
@@ -352,7 +610,8 @@ export class BancoMovimientoService {
       fecha: string;
       valor: number;
       concepto: string;
-      contraCuentaId: string;
+      contraCuentaId: string | null;
+      contrapartidas?: Contrapartida[];
       origenTipo: 'FACTURA_VENTA' | 'COMPRA' | null;
       origenId: string | null;
       terceroId: string | null;
@@ -417,7 +676,8 @@ export class BancoMovimientoService {
       fecha: string;
       concepto: string;
       valor: number;
-      contraCuentaId: string;
+      contraCuentaId: string | null;
+      contrapartidas?: Contrapartida[];
       terceroId?: string | null;
     },
     direccion: 'ENTRADA' | 'SALIDA',
@@ -447,15 +707,17 @@ export class BancoMovimientoService {
             debito: direccion === 'ENTRADA' ? dto.valor : 0,
             credito: direccion === 'SALIDA' ? dto.valor : 0,
           },
-          {
-            cuentaId: dto.contraCuentaId,
-            debito: direccion === 'SALIDA' ? dto.valor : 0,
-            credito: direccion === 'ENTRADA' ? dto.valor : 0,
-            // Un cobro o pago va contra Clientes/Proveedores, y esas cuentas
-            // exigen tercero: sin él el libro no sabe quién pagó ni a quién.
-            // Un movimiento manual no lo trae y su contracuenta no lo pide.
-            terceroId: dto.terceroId ?? undefined,
-          },
+          ...(dto.contrapartidas ?? [
+            {
+              cuentaId: exigirContraCuenta(dto.contraCuentaId),
+              debito: direccion === 'SALIDA' ? dto.valor : 0,
+              credito: direccion === 'ENTRADA' ? dto.valor : 0,
+              // Un cobro o pago va contra Clientes/Proveedores, y esas cuentas
+              // exigen tercero: sin él el libro no sabe quién pagó ni a quién.
+              // Un movimiento manual no lo trae y su contracuenta no lo pide.
+              terceroId: dto.terceroId ?? undefined,
+            },
+          ]),
         ],
       },
       { origenTipo: 'MOVIMIENTO_BANCO', origenId: movimientoId },
@@ -492,7 +754,7 @@ export class BancoMovimientoService {
     fecha: string,
     valor: number,
     concepto: string,
-    origenTipo: 'FACTURA_VENTA' | 'COMPRA' | null,
+    origenTipo: 'FACTURA_VENTA' | 'COMPRA' | 'TRASLADO' | null,
     origenId: string | null,
     terceroId: string | null,
     saldoValor: number,

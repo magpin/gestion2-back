@@ -200,7 +200,7 @@ export class ConversacionController {
       // mandar, así que se dice con un evento.
       enviar({
         tipo: 'ERROR',
-        motivo: 'No pude guardar la respuesta. Recargá la conversación.',
+        motivo: 'No pude guardar la respuesta. Recargue la conversación.',
       });
     } finally {
       res.end();

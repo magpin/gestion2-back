@@ -1,0 +1,487 @@
+código;CIIU;tipo;tarifa_por_mil;descripción
+1011;1011;industrial (grupo 101);4,14;Procesamiento y conservación de carne y productos cárnicos
+1012;1012;industrial (grupo 101);4,14;Procesamiento y conservación de pescados, crustáceos y moluscos
+10201;1020;industrial (grupo 101);4,14;Procesamiento y conservación de frutas, legumbres, hortalizas y tubérculos (excepto elaboración de jugos de frutas)
+10202;1020;industrial (grupo 103);11,04;Elaboración de jugos de frutas
+1030;1030;industrial (grupo 101);4,14;Elaboración de aceites y grasas de origen vegetal y animal
+10401;1040;industrial (grupo 101);4,14;Elaboración de productos lácteos (excepto bebidas)
+10402;1040;industrial (grupo 103);11,04;Elaboración de bebidas lácteas
+1051;1051;industrial (grupo 101);4,14;Elaboración de productos de molinería
+1052;1052;industrial (grupo 101);4,14;Elaboración de almidones y productos derivados del almidón
+1061;1061;servicios (grupo 304);9,66;Trilla de café
+1062;1062;industrial (grupo 101);4,14;Descafeinado, tostión y molienda del café
+1063;1063;industrial (grupo 101);4,14;Elaboración de otros derivados del café
+1071;1071;industrial (grupo 101);4,14;Elaboración y refinación de azúcar
+1072;1072;industrial (grupo 101);4,14;Elaboración de panela
+1081;1081;industrial (grupo 101);4,14;Elaboración de productos de panadería
+1082;1082;industrial (grupo 101);4,14;Elaboración de cacao, chocolate y productos de confitería
+1083;1083;industrial (grupo 101);4,14;Elaboración de macarrones, fideos, alcuzcuz y productos farináceos similares
+1084;1084;industrial (grupo 101);4,14;Elaboración de comidas y platos preparados
+1089;1089;industrial (grupo 101);4,14;Elaboración de otros productos alimenticios n.c.p.
+1090;1090;industrial (grupo 101);4,14;Elaboración de alimentos preparados para animales
+1101;1101;industrial (grupo 103);11,04;Destilación, rectificación y mezcla de bebidas alcohólicas
+1102;1102;industrial (grupo 103);11,04;Elaboración de bebidas fermentadas no destiladas
+1103;1103;industrial (grupo 103);11,04;Producción de malta, elaboración de cervezas y otras bebidas malteadas
+1104;1104;industrial (grupo 103);11,04;Elaboración de bebidas no alcohólicas, producción de aguas minerales y de otras aguas embotelladas
+1200;1200;industrial (grupo 103);11,04;Elaboración de productos de tabaco
+1311;1311;industrial (grupo 103);11,04;Preparación e hilatura de fibras textiles
+1312;1312;industrial (grupo 103);11,04;Tejeduría de productos textiles
+1313;1313;industrial (grupo 103);11,04;Acabado de productos textiles
+1391;1391;industrial (grupo 103);11,04;Fabricación de tejidos de punto y ganchillo
+1392;1392;industrial (grupo 103);11,04;Confección de artículos con materiales textiles, excepto prendas de vestir
+1393;1393;industrial (grupo 103);11,04;Fabricación de tapetes y alfombras para pisos
+1394;1394;industrial (grupo 103);11,04;Fabricación de cuerdas, cordeles, cables, bramantes y redes
+1399;1399;industrial (grupo 103);11,04;Fabricación de otros artículos textiles n.c.p.
+1410;1410;industrial (grupo 101);4,14;Confección de prendas de vestir, excepto prendas de piel
+14201;1420;industrial (grupo 101);4,14;Fabricación de prendas de vestir de piel
+14202;1420;industrial (grupo 103);11,04;Fabricación de artículos de piel (excepto prendas de vestir)
+14301;1430;industrial (grupo 101);4,14;Fabricación de prendas de vestir de punto y ganchillo
+14302;1430;industrial (grupo 103);11,04;Fabricación de artículos de punto y ganchillo (excepto prendas de vestir)
+1511;1511;industrial (grupo 103);11,04;Curtido y recurtido de cueros; recurtido y teñido de pieles.
+1512;1512;industrial (grupo 103);11,04;Fabricación de artículos de viaje, bolsos de mano y artículos similares elaborados en cuero, y fabricación de artículos de talabartería y guarnicionería.
+1513;1513;industrial (grupo 103);11,04;Fabricación de artículos de viaje, bolsos de mano y artículos similares; artículos de talabartería y guarnicionería elaborados en otros materiales
+1521;1521;industrial (grupo 101);4,14;Fabricación de calzado de cuero y piel, con cualquier tipo de suela
+1522;1522;industrial (grupo 101);4,14;Fabricación de otros tipos de calzado, excepto calzado de cuero y piel
+1523;1523;industrial (grupo 103);11,04;Fabricación de partes del calzado
+161;0161;servicios (grupo 304);9,66;Actividades de apoyo a la agricultura
+1610;1610;industrial (grupo 103);11,04;Aserrado, acepillado e impregnación de la madera
+162;0162;servicios (grupo 304);9,66;Actividades de apoyo a la ganadería
+1620;1620;industrial (grupo 103);11,04;Fabricación de hojas de madera para enchapado; fabricación de tableros contrachapados, tableros laminados, tableros de partículas y otros tableros y paneles
+1630;1630;industrial (grupo 103);11,04;Fabricación de partes y piezas de madera, de carpintería y ebanistería para la construcción y para edificios
+164;0164;servicios (grupo 304);9,66;Tratamiento de semillas para propagación
+1640;1640;industrial (grupo 103);11,04;Fabricación de recipientes de madera
+1690;1690;industrial (grupo 103);11,04;Fabricación de otros productos de madera; fabricación de artículos de corcho, cestería y espartería
+1701;1701;industrial (grupo 103);11,04;Fabricación de pulpas (pastas) celulósicas; papel y cartón
+1702;1702;industrial (grupo 103);11,04;Fabricación de papel y cartón ondulado (corrugado); fabricación de envases, empaques y de embalajes de papel y cartón.
+1709;1709;industrial (grupo 103);11,04;Fabricación de otros artículos de papel y cartón
+1811;1811;servicios (grupo 304);9,66;Actividades de impresión
+1812;1812;servicios (grupo 304);9,66;Actividades de servicios relacionados con la impresión
+1820;1820;servicios (grupo 304);9,66;Producción de copias a partir de grabaciones originales
+1910;1910;industrial (grupo 103);11,04;Fabricación de productos de hornos de coque
+1921;1921;industrial (grupo 103);11,04;Fabricación de productos de la refinación del petróleo
+1922;1922;industrial (grupo 103);11,04;Actividad de mezcla de combustibles
+2011;2011;industrial (grupo 103);11,04;Fabricación de sustancias y productos químicos básicos
+2012;2012;industrial (grupo 103);11,04;Fabricación de abonos y compuestos inorgánicos nitrogenados
+2013;2013;industrial (grupo 103);11,04;Fabricación de plásticos en formas primarias
+2014;2014;industrial (grupo 103);11,04;Fabricación de caucho sintético en formas primarias
+2021;2021;industrial (grupo 103);11,04;Fabricación de plaguicidas y otros productos químicos de uso agropecuario
+2022;2022;industrial (grupo 103);11,04;Fabricación de pinturas, barnices y revestimientos similares, tintas para impresión y masillas
+2023;2023;industrial (grupo 103);11,04;Fabricación de jabones y detergentes, preparados para limpiar y pulir; perfumes y preparados de tocador
+2029;2029;industrial (grupo 103);11,04;Fabricación de otros productos químicos n.c.p.
+2030;2030;industrial (grupo 103);11,04;Fabricación de fibras sintéticas y artificiales
+2100;2100;industrial (grupo 103);12,14;Fabricación de productos farmacéuticos, sustancias químicas medicinales y productos botánicos de uso farmacéutico
+2211;2211;industrial (grupo 103);11,04;Fabricación de llantas y neumáticos de caucho
+2212;2212;industrial (grupo 103);11,04;Reencauche de llantas usadas
+2219;2219;industrial (grupo 103);11,04;Fabricación de formas básicas de caucho y otros productos de caucho n.c.p.
+2221;2221;industrial (grupo 103);11,04;Fabricación de formas básicas de plástico
+2229;2229;industrial (grupo 103);11,04;Fabricación de artículos de plástico n.c.p.
+2310;2310;industrial (grupo 103);11,04;Fabricación de vidrio y productos de vidrio
+2391;2391;industrial (grupo 103);11,04;Fabricación de productos refractarios
+2392;2392;industrial (grupo 103);11,04;Fabricación de materiales de arcilla para la construcción
+2393;2393;industrial (grupo 103);11,04;Fabricación de otros productos de cerámica y porcelana
+2394;2394;industrial (grupo 103);11,04;Fabricación de cemento, cal y yeso 11,04
+2395;2395;industrial (grupo 103);11,04;Fabricación de artículos de hormigón, cemento y yeso
+2396;2396;industrial (grupo 103);11,04;Corte, tallado y acabado de la piedra
+2399;2399;industrial (grupo 103);11,04;Fabricación de otros productos minerales no metálicos n.c.p.
+240;0240;servicios (grupo 304);9,66;Servicios de apoyo a la silvicultura
+2410;2410;industrial (grupo 102);6,9;Industrias básicas de hierro y de acero
+2421;2421;industrial (grupo 103);11,04;Industrias básicas de metales preciosos
+2429;2429;industrial (grupo 103);11,04;Industrias básicas de otros metales no ferrosos
+2431;2431;industrial (grupo 102);6,9;Fundición de hierro y de acero
+2432;2432;industrial (grupo 103);11,04;Fundición de metales no ferrosos
+2511;2511;industrial (grupo 103);11,04;Fabricación de productos metálicos para uso estructural
+2512;2512;industrial (grupo 103);11,04;Fabricación de tanques, depósitos y recipientes de metal, excepto los utilizados para el envase o transporte de mercancías
+2513;2513;industrial (grupo 103);11,04;Fabricación de generadores de vapor, excepto calderas de agua caliente para calefacción central
+2520;2520;industrial (grupo 103);11,04;Fabricación de armas y municiones
+2591;2591;industrial (grupo 103);11,04;Forja, prensado, estampado y laminado de metal; pulvimetalurgia
+2592;2592;servicios (grupo 304);9,66;Tratamiento y revestimiento de metales; mecanizado
+2593;2593;industrial (grupo 103);11,04;Fabricación de artículos de cuchillería, herramientas de mano y artículos de ferretería
+2599;2599;industrial (grupo 103);11,04;Fabricación de otros productos elaborados de metal n.c.p.
+2610;2610;industrial (grupo 103);11,04;Fabricación de componentes y tableros electrónicos
+2620;2620;industrial (grupo 103);11,04;Fabricación de computadoras y de equipo periférico
+2630;2630;industrial (grupo 103);11,04;Fabricación de equipos de comunicación
+2640;2640;industrial (grupo 103);11,04;Fabricación de aparatos electrónicos de consumo
+2651;2651;industrial (grupo 103);11,04;Fabricación de equipo de medición, prueba, navegación y control
+2652;2652;industrial (grupo 103);11,04;Fabricación de relojes
+2660;2660;industrial (grupo 103);11,04;Fabricación de equipo de irradiación y equipo electrónico de uso médico y terapéutico
+2670;2670;industrial (grupo 103);11,04;Fabricación de instrumentos ópticos y equipo fotográfico
+2680;2680;industrial (grupo 103);11,04;Fabricación de soportes magnéticos y ópticos
+2711;2711;industrial (grupo 103);11,04;Fabricación de motores, generadores y transformadores eléctricos.
+2712;2712;industrial (grupo 103);11,04;Fabricación de aparatos de distribución y control de la energía eléctrica
+2720;2720;industrial (grupo 103);11,04;Fabricación de pilas, baterías y acumuladores eléctricos
+2731;2731;industrial (grupo 103);11,04;Fabricación de hilos y cables eléctricos y de fibra óptica
+2732;2732;industrial (grupo 103);11,04;Fabricación de dispositivos de cableado
+2740;2740;industrial (grupo 103);11,04;Fabricación de equipos eléctricos de iluminación
+2750;2750;industrial (grupo 103);11,04;Fabricación de aparatos de uso domestico
+2790;2790;industrial (grupo 103);11,04;Fabricación de otros tipos de equipo eléctrico n.c.p.
+2811;2811;industrial (grupo 103);11,04;Fabricación de motores, turbinas, y partes para motores de combustión interna
+2812;2812;industrial (grupo 103);11,04;Fabricación de equipos de potencia hidráulica y neumática
+2813;2813;industrial (grupo 103);11,04;Fabricación de otras bombas, compresores, grifos y válvulas
+2814;2814;industrial (grupo 103);11,04;Fabricación de cojinetes, engranajes, trenes de engranajes y piezas de transmisión
+2815;2815;industrial (grupo 103);11,04;Fabricación de hornos, hogares y quemadores industriales
+2816;2816;industrial (grupo 103);11,04;Fabricación de equipo de elevación y manipulación
+2817;2817;industrial (grupo 103);11,04;Fabricación de maquinaria y equipo de oficina (excepto computadoras y equipo periférico)
+2818;2818;industrial (grupo 103);11,04;Fabricación de herramientas manuales con motor
+2819;2819;industrial (grupo 103);11,04;Fabricación de otros tipos de maquinaria y equipo de uso general n.c.p.
+2821;2821;industrial (grupo 103);11,04;Fabricación de maquinaria agropecuaria y forestal
+2822;2822;industrial (grupo 103);11,04;Fabricación de máquinas formadoras de metal y de máquinas herramienta
+2823;2823;industrial (grupo 103);11,04;Fabricación de maquinaria para la metalurgia
+2824;2824;industrial (grupo 103);11,04;Fabricación de maquinaria para explotación de minas y canteras y para obras de construcción
+2825;2825;industrial (grupo 103);11,04;Fabricación de maquinaria para la elaboración de alimentos, bebidas y tabaco
+2826;2826;industrial (grupo 103);11,04;Fabricación de maquinaria para la elaboración de productos textiles, prendas de vestir y cueros
+2829;2829;industrial (grupo 103);11,04;Fabricación de otros tipos de maquinaria y equipo de uso especial n.c.p.
+2910;2910;industrial (grupo 102);6,9;Fabricación de vehículos automotores y sus motores
+2920;2920;industrial (grupo 102);6,9;Fabricación de carrocerías para vehículos automotores; fabricación de remolques y semirremolques
+2930;2930;industrial (grupo 102);6,9;Fabricación de partes, piezas (autopartes) y accesorios (lujos) para vehículos automotores
+3011;3011;industrial (grupo 102);6,9;Construcción de barcos y de estructuras flotantes
+3012;3012;industrial (grupo 102);6,9;Construcción de embarcaciones de recreo y deporte
+3020;3020;industrial (grupo 102);6,9;Fabricación de locomotoras y de material rodante para ferrocarriles
+3030;3030;industrial (grupo 102);6,9;Fabricación de aeronaves, naves espaciales y de maquinaria conexa
+3040;3040;industrial (grupo 102);6,9;Fabricación de vehículos militares de combate
+3091;3091;industrial (grupo 102);6,9;Fabricación de motocicletas
+3092;3092;industrial (grupo 102);6,9;Fabricación de bicicletas y de sillas de ruedas para personas con discapacidad
+3099;3099;industrial (grupo 102);6,9;Fabricación de otros tipos de equipo de transporte n.c.p.
+3110;3110;industrial (grupo 103);11,04;Fabricación de muebles
+3120;3120;industrial (grupo 103);11,04;Fabricación de colchones y somieres
+3210;3210;industrial (grupo 103);11,04;Fabricación de joyas, bisutería y artículos conexos
+3220;3220;industrial (grupo 103);11,04;Fabricación de instrumentos musicales
+3230;3230;industrial (grupo 103);11,04;Fabricación de artículos y equipo para la práctica del deporte (excepto prendas de vestir y calzado)
+3240;3240;industrial (grupo 103);11,04;Fabricación de juegos, juguetes y rompecabezas
+3250;3250;industrial (grupo 103);11,04;Fabricación de instrumentos, aparatos y materiales médicos y odontológicos (incluido mobiliario)
+3290;3290;industrial (grupo 103);11,04;Otras industrias manufactureras n.c.p.
+3311;3311;servicios (grupo 304);9,66;Mantenimiento y reparación especializado de productos elaborados en metal
+3312;3312;servicios (grupo 304);9,66;Mantenimiento y reparación especializado de maquinaria y equipo
+3313;3313;servicios (grupo 304);9,66;Mantenimiento y reparación especializado de equipo electrónico y óptico
+3314;3314;servicios (grupo 304);9,66;Mantenimiento y reparación especializado de equipo eléctrico
+3315;3315;servicios (grupo 304);9,66;Mantenimiento y reparación especializado de equipo de transporte, excepto los vehículos automotores, motocicletas y bicicletas
+3319;3319;servicios (grupo 304);9,66;Mantenimiento y reparación de otros tipos de equipos y sus componentes n.c.p.
+3320;3320;servicios (grupo 304);9,66;Instalación especializada de maquinaria y equipo industrial
+3511;3511;industrial (grupo 103);11,04;Generación de energía eléctrica
+3512;3512;industrial (grupo 103);11,04;Transmisión de energía eléctrica
+3513;3513;servicios (grupo 304);9,66;Distribución de energía eléctrica
+3514;3514;comercial (grupo 204);11,04;Comercialización de energía eléctrica
+35201;3520;industrial (grupo 103);11,04;Producción de gas
+35202;3520;servicios (grupo 304);9,66;Distribución de combustibles gaseosos por tuberías
+3530;3530;servicios (grupo 304);9,66;Suministro de vapor y aire acondicionado
+36001;3600;industrial (grupo 103);11,04;Captación y tratamiento de agua
+36002;3600;servicios (grupo 304);9,66;Distribución de agua
+3700;3700;servicios (grupo 304);9,66;Evacuación y tratamiento de aguas residuales
+3811;3811;servicios (grupo 304);9,66;Recolección de desechos no peligrosos
+3812;3812;servicios (grupo 304);9,66;Recolección de desechos peligrosos
+3821;3821;industrial (grupo 103);11,04;Tratamiento y disposición de desechos no peligrosos
+3822;3822;industrial (grupo 103);11,04;Tratamiento y disposición de desechos peligrosos
+3830;3830;industrial (grupo 103);11,04;Recuperación de materiales
+39001;3900;servicios (grupo 304);9,66;Actividades de saneamiento ambiental y otros servicios de gestión de desechos (excepto los servicios prestados por contratistas de construcción, constructores y urbanizadores)
+39002;3900;servicios (grupo 302);6,9;Actividades de saneamiento ambiental y otros servicios de gestión de desechos prestados por contratistas de construcción, constructores y urbanizadores
+4111;4111;servicios (grupo 302);6,9;Construcción de edificios residenciales
+4112;4112;servicios (grupo 302);6,9;Construcción de edificios no residenciales
+4210;4210;servicios (grupo 302);7,6;Construcción de carreteras y vías de ferrocarril
+4220;4220;servicios (grupo 302);7,6;Construcción de proyectos de servicio público
+4290;4290;servicios (grupo 302);7,6;Construcción de otras obras de ingeniería civil
+4311;4311;servicios (grupo 302);6,9;Demolición
+4312;4312;servicios (grupo 302);6,9;Preparación del terreno
+4321;4321;servicios (grupo 302);6,9;Instalaciones eléctricas de la construcción
+4322;4322;servicios (grupo 302);6,9;Instalaciones de fontanería, calefacción y aire acondicionado de la construcción
+4329;4329;servicios (grupo 302);6,9;Otras instalaciones especializadas de la construcción
+4330;4330;servicios (grupo 302);7,6;Terminación y acabado de edificios y obras de ingeniería civil
+4390;4390;servicios (grupo 302);7,6;Otras actividades especializadas para la construcción de edificios y obras de ingeniería civil
+4511;4511;comercial (grupo 202);6,9;Comercio de vehículos automotores nuevos
+4512;4512;comercial (grupo 202);6,9;Comercio de vehículos automotores usados
+4520;4520;servicios (grupo 304);9,66;Mantenimiento y reparación de vehículos automotores.
+4530;4530;comercial (grupo 204);11,04;Comercio de partes, piezas (autopartes) y accesorios (lujos) para vehículos automotores
+45411;4541;comercial (grupo 202);6,9;Comercio de motocicletas
+45412;4541;comercial (grupo 204);11,04;Comercio de partes, piezas y accesorios de motocicletas
+4542;4542;servicios (grupo 304);9,66;Mantenimiento y reparación de motocicletas y de sus partes y piezas
+4610;4610;servicios (grupo 304);9,66;Comercio al por mayor a cambio de una retribución o por contrata
+46201;4620;comercial (grupo 201);4,14;Comercio al por mayor de materias primas agrícolas en bruto (alimentos)
+46202;4620;comercial (grupo 204);11,04;Comercio al por mayor de materias primas pecuarias y animales vivos
+4631;4631;comercial (grupo 201);4,14;Comercio al por mayor de productos alimenticios
+46321;4632;comercial (grupo 204);11,04;Comercio al por mayor de bebidas y tabaco (diferentes a licores y cigarrillos)
+46322;4632;comercial (grupo 203);13,8;Comercio al por mayor de licores y cigarrillos
+4641;4641;comercial (grupo 204);11,04;Comercio al por mayor de productos textiles y productos confeccionados para uso doméstico
+4642;4642;comercial (grupo 204);11,04;Comercio al por mayor de prendas de vestir
+4643;4643;comercial (grupo 204);11,04;Comercio al por mayor de calzado
+4644;4644;comercial (grupo 204);11,04;Comercio al por mayor de aparatos y equipo de uso doméstico
+46451;4645;comercial (grupo 201);4,14;Comercio al por mayor de productos farmacéuticos y medicinales
+46452;4645;comercial (grupo 204);11,04;Comercio al por mayor de productos cosméticos y de tocador (excepto productos farmacéuticos y medicinales)
+46491;4649;comercial (grupo 204);11,04;Comercio al por mayor de otros utensilios domésticos n.c.p. (excepto joyas)
+46492;4649;comercial (grupo 203);13,8;Venta de joyas
+4651;4651;comercial (grupo 204);11,04;Comercio al por mayor de computadores, equipo periférico y programas de informática
+4652;4652;comercial (grupo 204);11,04;Comercio al por mayor de equipo, partes y piezas electrónicos y de telecomunicaciones
+4653;4653;comercial (grupo 204);11,04;Comercio al por mayor de maquinaria y equipo agropecuarios
+4659;4659;comercial (grupo 204);11,04;Comercio al por mayor de otros tipos de maquinaria y equipo n.c.p.
+46611;4661;comercial (grupo 204);11,04;Comercio al por mayor de combustibles sólidos, líquidos, gaseosos y productos conexos (excepto combustibles derivados del petróleo)
+46612;4661;comercial (grupo 203);13,8;Comercio al por mayor de combustibles derivados del petróleo
+4662;4662;comercial (grupo 204);11,04;Comercio al por mayor de metales y productos metalíferos
+46631;4663;comercial (grupo 202);6,9;Comercio al por mayor de materiales de construcción
+46632;4663;comercial (grupo 204);11,04;Comercio al por mayor de artículos de ferretería, pinturas, productos de vidrio, equipo y materiales de fontanería y calefacción
+4664;4664;comercial (grupo 204);11,04;Comercio al por mayor de productos químicos básicos, cauchos y plásticos en formas primarias y productos químicos de uso agropecuario
+4665;4665;comercial (grupo 204);11,04;Comercio al por mayor de desperdicios, desechos y chatarra
+4669;4669;comercial (grupo 204);11,04;Comercio al por mayor de otros productos n.c.p.
+4690;4690;comercial (grupo 204);11,04;Comercio al por mayor no especializado
+47111;4711;comercial (grupo 201);4,14;Comercio al por menor en establecimientos no especializados con surtido compuesto principalmente por alimentos, bebidas no alcohólicas o tabaco (excepto cigarrillos)
+47112;4711;comercial (grupo 203);13,8;Comercio al por menor en establecimientos no especializados con surtido compuesto principalmente por licores y cigarrillos
+47191;4719;comercial (grupo 204);11,04;Comercio al por menor en establecimientos no especializados, con surtido compuesto principalmente por productos de bebidas alcohólicas y cigarrillos
+47192;4719;comercial (grupo 201);4,14;Comercio al por menor en establecimientos no especializados, con surtido compuesto principalmente por drogas, medicamentos, textos escolares, libros y cuadernos.
+4721;4721;comercial (grupo 201);4,14;Comercio al por menor de productos agrícolas para el consumo en establecimientos especializados
+4722;4722;comercial (grupo 201);4,14;Comercio al por menor de leche, productos lácteos y huevos, en establecimientos especializados
+4723;4723;comercial (grupo 201);4,14;Comercio al por menor de carnes (incluye aves de corral), productos cárnicos, pescados y productos de mar, en establecimientos especializados
+47241;4724;comercial (grupo 204);11,04;Comercio al por menor de bebidas y productos del tabaco, en establecimientos especializados (excepto licores y cigarrillos)
+47242;4724;comercial (grupo 203);13,8;Comercio al por menor de licores y cigarrillos
+4729;4729;comercial (grupo 201);4,14;Comercio al por menor de otros productos alimenticios n.c.p., en establecimientos especializados
+4731;4731;comercial (grupo 203);13,8;Comercio al por menor de combustible para automotores
+4732;4732;comercial (grupo 204);11,04;Comercio al por menor de lubricantes (aceites, grasas), aditivos y productos de limpieza para vehículos automotores
+4741;4741;comercial (grupo 204);11,04;Comercio al por menor de computadores, equipos periféricos, programas de informática y equipos de telecomunicaciones en establecimientos especializados
+4742;4742;comercial (grupo 204);11,04;Comercio al por menor de equipos y aparatos de sonido y de video, en establecimientos especializados
+4751;4751;comercial (grupo 204);11,04;Comercio al por menor de productos textiles en establecimientos especializados
+47521;4752;comercial (grupo 202);6,9;Comercio al por menor de materiales de construcción
+47522;4752;comercial (grupo 204);11,04;Comercio al por menor de artículos de ferretería, pinturas y productos de vidrio en establecimientos especializados (excepto materiales de construcción)
+4753;4753;comercial (grupo 204);11,04;Comercio al por menor de tapices, alfombras y recubrimientos para paredes y pisos en establecimientos especializados
+4754;4754;comercial (grupo 204);11,04;Comercio al por menor de electrodomésticos y gasodomésticos de uso doméstico, muebles y equipos de iluminación en establecimientos especializados
+4755;4755;comercial (grupo 204);11,04;Comercio al por menor de artículos y utensilios de uso doméstico en establecimientos especializados
+4759;4759;comercial (grupo 204);11,04;Comercio al por menor de otros artículos domésticos en establecimientos especializados
+47611;4761;comercial (grupo 201);4,14;Comercio al por menor y al por mayor de libros, textos escolares y cuadernos
+47612;4761;comercial (grupo 204);11,04;Comercio al por menor de periódicos, materiales y artículos de papelería y escritorio, en establecimientos especializados (excepto libros, textos escolares y cuadernos)
+4762;4762;comercial (grupo 204);11,04;Comercio al por menor de artículos deportivos, en establecimientos especializados
+4769;4769;comercial (grupo 204);11,04;Comercio al por menor de otros artículos culturales y de entretenimiento n.c.p. en establecimientos especializados
+4771;4771;comercial (grupo 204);11,04;Comercio al por menor de prendas de vestir y sus accesorios (incluye artículos de piel) en establecimientos especializados
+4772;4772;comercial (grupo 204);11,04;Comercio al por menor de todo tipo de calzado y artículos de cuero y sucedáneos del cuero en establecimientos especializados.
+47731;4773;comercial (grupo 201);4,14;Comercio al por menor de productos farmacéuticos y medicinales en establecimientos especializados
+47732;4773;comercial (grupo 204);11,04;Comercio al por menor de productos cosméticos y artículos de tocador en establecimientos especializados (excepto productos farmacéuticos y medicinales)
+4774;4774;comercial (grupo 204);11,04;Comercio al por menor de otros productos nuevos en establecimientos especializados
+4775;4775;comercial (grupo 204);11,04;Comercio al por menor de artículos de segunda mano
+47811;4781;comercial (grupo 201);4,14;Comercio al por menor de alimentos en puestos de venta móviles
+47812;4781;comercial (grupo 204);11,04;Comercio al por menor de bebidas y tabaco en puestos de venta móviles (excepto licores y cigarrillos)
+47813;4781;comercial (grupo 203);13,8;Comercio al por menor de cigarrillos y licores en puestos de venta móviles
+4782;4782;comercial (grupo 204);11,04;Comercio al por menor de productos textiles, prendas de vestir y calzado, en puestos de venta móviles
+4789;4789;comercial (grupo 204);11,04;Comercio al por menor de otros productos en puestos de venta móviles
+47911;4791;comercial (grupo 201);4,14;Comercio al por menor de alimentos y productos agrícolas en bruto; venta de textos escolares y libros (incluye cuadernos escolares); venta de drogas y medicamentos realizado a través de internet
+47912;4791;comercial (grupo 202);6,9;Comercio al por menor y al por mayor de madera y materiales para construcción; venta de automotores (incluidas motocicletas) realizado a través de internet
+47913;4791;comercial (grupo 203);13,8;Comercio al por menor de cigarrillos y licores; venta de combustibles derivados del petróleo y venta de joyas realizado a través de internet
+47914;4791;comercial (grupo 204);11,04;Comercio al por menor de demás productos n.c.p. realizado a través de internet
+47921;4792;comercial (grupo 201);4,14;Comercio al por menor de alimentos y productos agrícolas en bruto; venta de textos escolares y libros (incluye cuadernos escolares); venta de drogas y medicamentos realizado a través de casas de venta o por correo
+47922;4792;comercial (grupo 202);6,9;Comercio al por menor y al por mayor de madera y materiales para construcción; venta de automotores (incluidas motocicletas) realizado a través de casas de venta o por correo
+47923;4792;comercial (grupo 203);13,8;Comercio al por menor de cigarrillos y licores; venta de combustibles derivados del petróleo y venta de joyas realizado a través de casas de venta o por correo
+47924;4792;comercial (grupo 204);11,04;Comercio al por menor de demás productos n.c.p. realizado a través de casas de venta o por correo
+47991;4799;comercial (grupo 201);4,14;Otros tipos de comercio al por menor no realizado en establecimientos, puestos de venta o mercados de textos escolares y libros (incluye cuadernos escolares); venta de drogas y medicamentos
+47992;4799;comercial (grupo 202);6,9;Otros tipos de comercio al por menor no realizado en establecimientos, puestos de venta o mercados de materiales para construcción; venta de automotores (incluidas motocicletas)
+47993;4799;comercial (grupo 203);13,8;Otros tipos de comercio al por menor no realizado en establecimientos, puestos de venta o mercados de cigarrillos y licores; venta de combustibles derivados del petróleo y venta de joyas
+47994;4799;comercial (grupo 204);11,04;Otros tipos de comercio al por menor no realizado en establecimientos, puestos de venta o mercados de demás productos n.c.p.
+4911;4911;servicios (grupo 301);4,14;Transporte férreo de pasajeros
+4912;4912;servicios (grupo 301);4,14;Transporte férreo de carga
+4921;4921;servicios (grupo 301);4,14;Transporte de pasajeros
+4922;4922;servicios (grupo 301);4,14;Transporte mixto
+4923;4923;servicios (grupo 301);4,14;Transporte de carga por carretera
+4930;4930;servicios (grupo 301);4,14;Transporte por tuberías
+5011;5011;servicios (grupo 301);4,14;Transporte de pasajeros marítimo y de cabotaje
+5012;5012;servicios (grupo 301);4,14;Transporte de carga marítimo y de cabotaje
+5021;5021;servicios (grupo 301);4,14;Transporte fluvial de pasajeros
+5022;5022;servicios (grupo 301);4,14;Transporte fluvial de carga
+510;0510;industrial (grupo 103);11,04;Extracción de hulla (carbón de piedra)
+5111;5111;servicios (grupo 301);4,14;Transporte aéreo nacional de pasajeros
+5112;5112;servicios (grupo 301);4,14;Transporte aéreo internacional de pasajeros
+5121;5121;servicios (grupo 301);4,14;Transporte aéreo nacional de carga
+5122;5122;servicios (grupo 301);4,14;Transporte aéreo internacional de carga
+520;0520;industrial (grupo 103);11,04;Extracción de carbón lignito
+5210;5210;servicios (grupo 304);9,66;Almacenamiento y depósito
+5221;5221;servicios (grupo 304);9,66;Actividades de estaciones, vías y servicios complementarios para el transporte terrestre
+5222;5222;servicios (grupo 301);4,14;Actividades de puertos y servicios complementarios para el transporte acuático
+5223;5223;servicios (grupo 304);9,66;Actividades de aeropuertos, servicios de navegación aérea y demás actividades conexas al transporte aéreo
+5224;5224;servicios (grupo 304);9,66;Manipulación de carga
+5229;5229;servicios (grupo 304);9,66;Otras actividades complementarias al transporte
+5310;5310;servicios (grupo 304);9,66;Actividades postales nacionales
+5320;5320;servicios (grupo 304);9,66;Actividades de mensajería
+5330;5330;servicios (grupo 304);11,04;Servicio de pedido, compra, distribución y entrega de productos a través de plataformas o aplicaciones de contacto y que utilizan una red de domiciliarios
+5511;5511;servicios (grupo 303);13,8;Alojamiento en hoteles
+5512;5512;servicios (grupo 303);13,8;Alojamiento en aparta- hoteles
+5513;5513;servicios (grupo 303);13,8;Alojamiento en centros vacacionales
+5514;5514;servicios (grupo 303);13,8;Alojamiento rural
+5519;5519;servicios (grupo 303);13,8;Otros tipos de alojamientos para visitantes
+5520;5520;servicios (grupo 303);13,8;Actividades de zonas de camping y parques para vehículos recreacionales
+5530;5530;servicios (grupo 303);13,8;Servicio de estancia por horas
+5590;5590;servicios (grupo 303);13,8;Otros tipos de alojamiento n.c.p.
+5611;5611;servicios (grupo 303);13,8;Expendio a la mesa de comidas preparadas
+5612;5612;servicios (grupo 303);13,8;Expendio por autoservicio de comidas preparadas
+5613;5613;servicios (grupo 303);13,8;Expendio de comidas preparadas en cafeterías
+5619;5619;servicios (grupo 303);13,8;Otros tipos de expendio de comidas preparadas n.c.p.
+5621;5621;servicios (grupo 303);13,8;Catering para eventos
+5629;5629;servicios (grupo 303);13,8;Actividades de otros servicios de comidas
+5630;5630;servicios (grupo 303);13,8;Expendio de bebidas alcohólicas para el consumo dentro del establecimiento
+58111;5811;servicios (grupo 301);4,14;Servicio de edición de libros
+58112;5811;industrial (grupo 104);8;Edición y publicación de libros
+58113;5811;industrial (grupo 101);4,14;Edición y publicación de libros (Tarifa especial para los contribuyentes que cumplen condiciones del Acuerdo 98 de 2003)
+5812;5812;industrial (grupo 103);11,04;Edición de directorios y listas de correo
+5813;5813;servicios (grupo 301);4,14;Edición de periódicos, revistas y otras publicaciones periódicas
+5819;5819;industrial (grupo 103);11,04;Otros trabajos de edición
+5820;5820;industrial (grupo 103);11,04;Edición de programas de informática (software)
+5911;5911;industrial (grupo 103);11,04;Actividades de producción de películas cinematográficas, videos, programas, anuncios y comerciales de televisión (excepto programación de televisión)
+5912;5912;industrial (grupo 103);11,04;Actividades de postproducción de películas cinematográficas, videos, programas, anuncios y comerciales de televisión (excepto programación de televisión)
+5913;5913;servicios (grupo 304);9,66;Actividades de distribución de películas cinematográficas, videos, programas, anuncios y comerciales de televisión
+5914;5914;servicios (grupo 302);6,9;Actividades de exhibición de películas cinematográficas y videos
+5920;5920;industrial (grupo 103);11,04;Actividades de grabación de sonido y edición de música
+6010;6010;servicios (grupo 301);4,14;Actividades de programación y transmisión en el servicio de radiodifusión sonora
+60201;6020;servicios (grupo 301);4,14;Actividades de programación de televisión
+60202;6020;servicios (grupo 304);9,66;Actividades de transmisión de televisión
+610;0610;industrial (grupo 103);11,04;Extracción de petróleo crudo
+6110;6110;servicios (grupo 304);10,62;Actividades de telecomunicaciones alámbricas
+6120;6120;servicios (grupo 304);10,62;Actividades de telecomunicaciones inalámbricas
+6130;6130;servicios (grupo 304);9,66;Actividades de telecomunicación satelital
+6190;6190;servicios (grupo 304);9,66;Otras actividades de telecomunicaciones
+620;0620;industrial (grupo 103);11,04;Extracción de gas natural
+6201;6201;servicios (grupo 304);9,66;Actividades de desarrollo de sistemas informáticos (planificación, análisis, diseño, programación, pruebas)
+6202;6202;servicios (grupo 302);6,9;Actividades de consultoría informática y actividades de administración de instalaciones informáticas
+6209;6209;servicios (grupo 304);9,66;Otras actividades de tecnologías de información y actividades de servicios informáticos
+6311;6311;servicios (grupo 304);9,66;Procesamiento de datos, alojamiento (host- ing) y actividades relacionadas
+6312;6312;servicios (grupo 304);9,66;Portales Web
+6391;6391;servicios (grupo 304);9,66;Actividades de agencias de noticias
+6399;6399;servicios (grupo 304);9,66;Otras actividades de servicio de información n.c.p.
+6411;6411;financiera (grupo 401);13,1;Banca Central
+6412;6412;financiera (grupo 401);13,1;Bancos comerciales
+6421;6421;financiera (grupo 401);13,1;Actividades de las corporaciones financieras
+6422;6422;financiera (grupo 401);13,1;Actividades de las compañías de financia- miento
+6423;6423;financiera (grupo 401);13,1;Banca de segundo piso
+6424;6424;financiera (grupo 401);13,1;Actividades de las cooperativas financieras
+6431;6431;financiera (grupo 401);13,1;Fideicomisos, fondos y entidades financieras similares
+6491;6491;financiera (grupo 401);13,1;Leasing financiero (arrendamiento financiero)
+6492;6492;financiera (grupo 401);13,1;Actividades financieras de fondos de empleados y otras formas asociativas del sector solidario
+6493;6493;financiera (grupo 401);13,1;Actividades de compra de cartera o factoring
+6494;6494;financiera (grupo 401);13,1;Otras actividades de distribución de fondos
+6495;6495;financiera (grupo 401);13,1;Instituciones especiales oficiales
+6496;6496;financiera (grupo 401);13,1;Capitalización
+64991;6499;financiera (grupo 401);13,1;Otras actividades de servicio financiero, excepto las de seguros y pensiones n.c.p.
+64992;6499;comercial (grupo 204);11,04;Actividades comerciales de las casas de empeño o compraventa
+64993;6499;servicios (grupo 303);13,8;Servicios de las casas de empeño o compraventas
+6511;6511;financiera (grupo 401);13,1;Seguros generales
+6512;6512;financiera (grupo 401);13,1;Seguros de vida
+6513;6513;financiera (grupo 401);13,1;Reaseguros
+6515;6515;financiera (grupo 401);11,04;Seguros de salud
+6521;6521;financiera (grupo 401);13,1;Servicios de seguros sociales de salud
+6522;6522;financiera (grupo 401);13,1;Servicios de seguros sociales en riesgos laborales
+6523;6523;financiera (grupo 401);11,04;Servicios de seguros sociales en riesgos familia
+6532;6532;financiera (grupo 401);13,1;Régimen de ahorro con solidaridad (RAIS)
+66111;6611;financiera (grupo 401);13,1;Administración de mercados financieros (excepto actividades de las bolsas de valores)
+66112;6611;servicios (grupo 304);9,66;Actividades de las bolsas de valores
+6612;6612;servicios (grupo 304);9,66;Corretaje de valores y de contratos de productos básicos
+6613;6613;servicios (grupo 304);9,66;Otras actividades relacionadas con el mercado de valores
+6614;6614;financiera (grupo 401);13,1;Actividades de las sociedades de intermediación cambiaria y de servicios financieros especiales
+6615;6615;financiera (grupo 401);13,1;Actividades de los profesionales de compra y venta de divisas
+6619;6619;financiera (grupo 401);13,1;Otras actividades auxiliares de las actividades de servicios financieros n.c.p.
+6621;6621;financiera (grupo 401);13,1;Actividades de agentes y corredores de seguros
+6629;6629;servicios (grupo 304);9,66;Evaluación de riesgos y daños, y otras actividades de servicios auxiliares
+6630;6630;financiera (grupo 401);13,1;Actividades de administración de fondos
+6810;6810;servicios (grupo 304);9,66;Actividades inmobiliarias realizadas con bienes propios o arrendados
+6820;6820;servicios (grupo 304);9,66;Actividades inmobiliarias realizadas a cambio de una retribución o por contrata
+69101;6910;servicios (grupo 302);8,66;Actividades jurídicas como consultoría profesional
+69102;6910;servicios (grupo 304);7,66;Actividades jurídicas en el ejercicio de una profesión liberal
+69201;6920;servicios (grupo 302);8,66;Actividades de contabilidad, teneduría de libros, auditoría financiera y asesoría tributaria como consultoría profesional
+69202;6920;servicios (grupo 304);7,66;Actividades de contabilidad, teneduría de libros, auditoría financiera y asesoría tributaria en el ejercicio de una profesión liberal
+70101;7010;servicios (grupo 302);8,66;Actividades de administración empresarial como consultoría profesional
+70102;7010;servicios (grupo 304);7,66;Actividades de administración empresarial en el ejercicio de una profesión liberal
+70201;7020;servicios (grupo 302);8,66;Actividades de consultoría de gestión
+70202;7020;servicios (grupo 304);7,66;Actividades de gestión en el ejercicio de una profesión liberal
+710;0710;industrial (grupo 103);11,04;Extracción de minerales de hierro
+71111;7111;servicios (grupo 302);8,66;Actividades de arquitectura
+71112;7111;servicios (grupo 304);7,66;Actividades de arquitectura en ejercicio de una profesión liberal
+71121;7112;servicios (grupo 302);8,66;Actividades de ingeniería y otras actividades conexas de consultoría técnica
+71122;7112;servicios (grupo 304);7,66;Actividades de ingeniería y otras actividades conexas de consultoría técnica en ejercicio de una profesión liberal
+71201;7120;servicios (grupo 302);8,66;Ensayos y análisis técnicos como consultoría profesional
+71202;7120;servicios (grupo 304);7,66;Ensayos y análisis técnicos como consultoría profesional en el ejercicio de una profesión liberal
+721;0721;industrial (grupo 103);11,04;Extracción de minerales de uranio y de torio
+72101;7210;servicios (grupo 302);8,66;Investigaciones y desarrollo experimental en el campo de las ciencias naturales y la ingeniería como consultoría profesional
+72102;7210;servicios (grupo 304);7,66;Investigaciones y desarrollo experimental en el campo de las ciencias naturales y la ingeniería en el ejercicio de una profesión liberal
+722;0722;industrial (grupo 103);11,04;Extracción de oro y otros metales preciosos
+72201;7220;servicios (grupo 302);8,66;Investigaciones y desarrollo experimental en el campo de las ciencias sociales y las humanidades como consultoría profesional
+72202;7220;servicios (grupo 304);7,66;Investigaciones y desarrollo experimental en el campo de las ciencias sociales y las humanidades en el ejercicio de una profesión liberal
+723;0723;industrial (grupo 103);11,04;Extracción de minerales de níquel
+729;0729;industrial (grupo 103);11,04;Extracción de otros minerales metalíferos no ferrosos n.c.p.
+7310;7310;servicios (grupo 304);9,66;Publicidad
+73201;7320;servicios (grupo 302);8,66;Estudios de mercado y realización de encuestas de opinión pública como consultoría profesional
+73202;7320;servicios (grupo 304);7,66;Estudios de mercado y realización de encuestas de opinión pública en el ejercicio de una profesión liberal
+74101;7410;servicios (grupo 302);8,66;Actividades especializadas de diseño como consultoría profesional
+74102;7410;servicios (grupo 304);7,66;Actividades especializadas de diseño en el ejercicio de una profesión liberal
+7420;7420;servicios (grupo 304);9,66;Actividades de fotografía
+74901;7490;servicios (grupo 302);8,66;Otras actividades profesionales, científicas y técnicas n.c.p. como consultoría profesional (incluye actividades de periodistas)
+74902;7490;servicios (grupo 304);7,66;Otras actividades profesionales, científicas y técnicas n.c.p. en el ejercicio de una profesión liberal
+7500;7500;servicios (grupo 304);9,66;Actividades veterinarias
+7710;7710;servicios (grupo 304);9,66;Alquiler y arrendamiento de vehículos automotores
+7721;7721;servicios (grupo 304);9,66;Alquiler y arrendamiento de equipo recreativo y deportivo
+7722;7722;servicios (grupo 304);9,66;Alquiler de videos y discos
+7729;7729;servicios (grupo 304);9,66;Alquiler y arrendamiento de otros efectos personales y enseres domésticos n.c.p.
+7730;7730;servicios (grupo 304);9,66;Alquiler y arrendamiento de otros tipos de maquinaria, equipo y bienes tangibles n.c.p.
+7740;7740;servicios (grupo 304);9,66;Arrendamiento de propiedad intelectual y productos similares, excepto obras protegidas por derechos de autor
+7810;7810;servicios (grupo 304);9,66;Actividades de agencias de gestión y colocación de empleo
+7820;7820;servicios (grupo 304);9,66;Actividades de empresas de servicios temporales
+7830;7830;servicios (grupo 304);9,66;Otras actividades de provisión de talento humano
+7911;7911;servicios (grupo 304);9,66;Actividades de las agencias de viaje
+7912;7912;servicios (grupo 304);9,66;Actividades de operadores turísticos
+7990;7990;servicios (grupo 304);9,66;Otros servicios de reserva y actividades relacionadas
+8010;8010;servicios (grupo 303);13,8;Actividades de seguridad privada
+8020;8020;servicios (grupo 303);13,8;Actividades de servicios de sistemas de seguridad
+8030;8030;servicios (grupo 303);13,8;Actividades de detectives e investigadores privados
+811;0811;industrial (grupo 103);11,04;Extracción de piedra, arena, arcillas comunes, yeso y anhidrita
+8110;8110;servicios (grupo 304);9,66;Actividades combinadas de apoyo a instalaciones
+812;0812;industrial (grupo 103);11,04;Extracción de arcillas de uso industrial, caliza, caolín y bentonitas
+8121;8121;servicios (grupo 304);9,66;Limpieza general interior de edificios
+8129;8129;servicios (grupo 304);9,66;Otras actividades de limpieza de edificios e instalaciones industriales
+8130;8130;servicios (grupo 304);9,66;Actividades de paisajismo y servicios de mantenimiento conexos
+820;0820;industrial (grupo 103);11,04;Extracción de esmeraldas, piedras preciosas y semipreciosas
+8211;8211;servicios (grupo 304);9,66;Actividades combinadas de servicios administrativos de oficina
+8219;8219;servicios (grupo 304);9,66;Fotocopiado, preparación de documentos y otras actividades especializadas de apoyo a oficina
+8220;8220;servicios (grupo 304);9,66;Actividades de centros de llamadas (Call center)
+8230;8230;servicios (grupo 304);9,66;Organización de convenciones y eventos comerciales
+8291;8291;servicios (grupo 304);9,66;Actividades de agencias de cobranza y oficinas de calificación crediticia
+8292;8292;servicios (grupo 304);9,66;Actividades de envase y empaque
+8299;8299;servicios (grupo 304);9,66;Otras actividades de servicio de apoyo a las empresas n.c.p.
+8511;8511;servicios (grupo 305);7;Educación de la primera infancia
+8512;8512;servicios (grupo 305);7;Educación preescolar
+8513;8513;servicios (grupo 305);7;Educación básica primaria
+8521;8521;servicios (grupo 305);7;Educación básica secundaria
+8522;8522;servicios (grupo 305);7;Educación media académica
+8523;8523;servicios (grupo 305);7;Educación media técnica
+85232/8551;8523;servicios (grupo 304);9,66;Educación de formación laboral
+8530;8530;servicios (grupo 305);7;Establecimientos que combinan diferentes niveles de educación inicial, preescolar, básica primaria, básica secundaria y media
+8541;8541;servicios (grupo 304);9,66;Educación técnica profesional
+8542;8542;servicios (grupo 304);9,66;Educación tecnológica
+8543;8543;servicios (grupo 304);9,66;Educación de instituciones universitarias o de escuelas tecnológicas
+8544;8544;servicios (grupo 304);9,66;Educación de universidades
+8551;8551;servicios (grupo 304);9,66;Formación para el trabajo
+8552;8552;servicios (grupo 304);9,66;Enseñanza deportiva y recreativa
+8553;8553;servicios (grupo 304);9,66;Enseñanza cultural
+8559;8559;servicios (grupo 304);9,66;Otros tipos de educación n.c.p.
+85591;8559;servicios (grupo 304);9,66;Educación académica no formal (excepto programas de educación básica primaria, básica secundaria y media no gradual con fines de validación) 9,66 ,9,66
+85592;8559;servicios (grupo 304);9,66;Educación académica no formal impartida mediante programas de educación básica primaria, básica secundaria y media no gradual con fines de validación
+8560;8560;servicios (grupo 304);9,66;Actividades de apoyo a la educación
+8610;8610;servicios (grupo 304);9,66;Actividades de hospitales y clínicas, con internación
+86211;8621;servicios (grupo 304);9,66;Actividades de la práctica médica, sin internación (excepto actividades de promoción y prevención que realicen las entidades e instituciones promotoras y prestadoras de servicios de salud de naturaleza pública o privada, con recursos que provengan del Sistema General de Seguridad Social en Salud.)
+86221;8622;servicios (grupo 304);9,66;Actividades de la práctica odontológica, sin internación (excepto actividades de promoción y prevención que realicen las entidades e instituciones promotoras y prestadoras de servicios de salud de naturaleza pública o privada, con recursos que provengan del Sistema General de Seguridad Social en Salud.)
+86911;8691;servicios (grupo 304);9,66;Actividades de apoyo diagnóstico (excepto actividades de promoción y prevención que realicen las entidades e instituciones promotoras y prestadoras de servicios de salud de naturaleza pública o privada, con recursos que provengan del Sistema General de Seguridad Social en Salud.)
+86921;8692;servicios (grupo 304);9,66;Actividades de apoyo terapéutico (excepto actividades de promoción y prevención que realicen las entidades e instituciones promotoras y prestadoras de servicios de salud de naturaleza pública o privada, con recursos que provengan del Sistema General de Seguridad Social en Salud.)
+86991;8699;servicios (grupo 304);9,66;Otras actividades de atención de la salud humana (excepto actividades de promoción y prevención que realicen las entidades e instituciones promotoras y prestadoras de servicios de salud de naturaleza pública o privada, con recursos que provengan del Sistema General de Seguridad Social en Salud.)
+87101;8710;servicios (grupo 304);9,66;Actividades de atención residencial medical- izada de tipo general (excepto actividades de promoción y prevención que realicen las entidades e instituciones promotoras y prestadoras de servicios de salud de naturaleza pública o privada, con recursos que provengan del Sistema General de Seguridad Social en Salud.)
+8720;8720;servicios (grupo 304);9,66;Actividades de atención residencial, para el cuidado de pacientes con retardo mental, enfermedad mental y consumo de sustancias psicoactivas
+8730;8730;servicios (grupo 304);9,66;Actividades de atención en instituciones para el cuidado de personas mayores y/o discapacitadas
+8790;8790;servicios (grupo 304);9,66;Otras actividades de atención en instituciones con alojamiento
+8810;8810;servicios (grupo 304);9,66;Actividades de asistencia social sin alojamiento para personas mayores y discapacitadas
+8891;8891;servicios (grupo 304);9,66;Actividades de guarderías para niños y niñas
+8899;8899;servicios (grupo 304);9,66;Otras actividades de asistencia social n.c.p
+891;0891;industrial (grupo 103);11,04;Extracción de minerales para la fabricación de abonos y productos químicos
+892;0892;industrial (grupo 103);11,04;Extracción de halita (sal)
+899;0899;industrial (grupo 103);11,04;Extracción de otros minerales no metálicos n.c.p.
+910;0910;servicios (grupo 304);9,66;Actividades de apoyo para la extracción de petróleo y de gas natural
+92001;9200;servicios (grupo 304);9,66;Actividades de juegos de destreza, habilidad, conocimiento y fuerza
+9321;9321;servicios (grupo 304);9,66;Actividades de parques de atracciones y parques temáticos
+93291;9329;servicios (grupo 304);9,66;Otras actividades recreativas y de esparcimiento n.c.p. (excepto juegos de suerte y azar, discotecas y similares)
+9411;9411;servicios (grupo 304);9,66;Actividades de asociaciones empresariales y de empleadores
+9499;9499;servicios (grupo 304);9,66;Actividades de otras asociaciones n.c.p.
+9511;9511;servicios (grupo 304);9,66;Mantenimiento y reparación de computadores y de equipo periférico
+9512;9512;servicios (grupo 304);9,66;Mantenimiento y reparación de equipos de comunicación
+9521;9521;servicios (grupo 304);9,66;Mantenimiento y reparación de aparatos electrónicos de consumo
+9522;9522;servicios (grupo 304);9,66;Mantenimiento y reparación de aparatos domésticos y equipos domésticos y de jardinería
+9523;9523;servicios (grupo 304);9,66;Reparación de calzado y artículos de cuero
+9524;9524;servicios (grupo 304);9,66;Reparación de muebles y accesorios para el hogar
+9529;9529;servicios (grupo 304);9,66;Mantenimiento y reparación de otros efectos personales y enseres domésticos
+9601;9601;servicios (grupo 304);9,66;Lavado y limpieza, incluso la limpieza en seco, de productos textiles y de piel
+9602;9602;servicios (grupo 304);9,66;Peluquería y otros tratamientos de belleza
+9603;9603;servicios (grupo 304);9,66;Pompas fúnebres y actividades relacionadas
+9609;9609;servicios (grupo 304);9,66;Otras actividades de servicios personales n.c.p.
+990;0990;servicios (grupo 304);9,66;Actividades de apoyo para otras actividades de explotación de minas y canteras

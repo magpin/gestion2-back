@@ -27,10 +27,23 @@ export interface LineaCompraEntrada {
   ivaTarifa: number;
   /** `true` si somos responsables de IVA (el IVA de esta línea es descontable). */
   ivaDescontable: boolean;
+  /**
+   * El AIU del renglón, cuando la factura lo discrimina: aseo, vigilancia,
+   * temporales y cooperativas de trabajo asociado liquidan el IVA sobre el
+   * AIU, nunca menos del 10 % del renglón (art. 462-1 ET, bug #16). Sin AIU,
+   * el IVA va sobre el subtotal.
+   */
+  aiu?: number;
 }
 
 export interface LineaCompraCalculada extends LineaCompraEntrada {
   subtotal: number;
+  /**
+   * La base del IVA cuando no es el subtotal: el AIU, con su piso del 10 %.
+   * `null` es lo de siempre —el IVA va sobre el subtotal—, y así se guarda
+   * en `compra_documento_linea.iva_base` (0102).
+   */
+  ivaBase: number | null;
   ivaValor: number;
   total: number;
   /**
@@ -74,14 +87,32 @@ function aPesos(centavos: number): number {
 }
 
 /**
- * Una línea. El IVA se calcula sobre el subtotal YA redondeado, igual que
- * en una venta: así lo verifica `ck_compra_linea_iva` en la base.
+ * La base del IVA de un renglón con AIU, en centavos: el AIU escrito, nunca
+ * menos del 10 % del renglón ni más que el renglón entero (art. 462-1 ET).
+ * `null` sin AIU: el IVA va sobre el subtotal.
+ */
+export function baseIvaAiuCentavos(
+  subtotalCentavos: number,
+  aiu: number | undefined,
+): number | null {
+  if (aiu === undefined || !Number.isFinite(aiu) || aiu <= 0) return null;
+  const piso = Math.round(subtotalCentavos / 10);
+  return Math.min(Math.max(aCentavos(aiu), piso), subtotalCentavos);
+}
+
+/**
+ * Una línea. El IVA se calcula sobre el subtotal YA redondeado —o sobre el
+ * AIU, si el renglón lo trae—, igual que en una venta: así lo verifica
+ * `ck_compra_linea_iva` en la base.
  */
 export function calcularLineaCompra(
   entrada: LineaCompraEntrada,
 ): LineaCompraCalculada {
   const subtotalCentavos = aCentavos(entrada.cantidad * entrada.costoUnitario);
-  const ivaCentavos = Math.round((subtotalCentavos * entrada.ivaTarifa) / 100);
+  const baseAiuCentavos = baseIvaAiuCentavos(subtotalCentavos, entrada.aiu);
+  const ivaCentavos = Math.round(
+    ((baseAiuCentavos ?? subtotalCentavos) * entrada.ivaTarifa) / 100,
+  );
   const totalCentavos = subtotalCentavos + ivaCentavos;
 
   // Redondeado a la misma precisión de `producto_movimiento.costo_unitario`
@@ -105,6 +136,7 @@ export function calcularLineaCompra(
   return {
     ...entrada,
     subtotal: aPesos(subtotalCentavos),
+    ivaBase: baseAiuCentavos === null ? null : aPesos(baseAiuCentavos),
     ivaValor: aPesos(ivaCentavos),
     total: aPesos(totalCentavos),
     costoUnitarioKardex,

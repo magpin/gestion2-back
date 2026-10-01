@@ -187,7 +187,7 @@ export class ExtractoService {
       throw new BadRequestException(
         `El extracto no cuadra: saldo inicial ${redondear(dto.saldoInicialBanco)} ` +
           `más los créditos y menos los débitos da ${calculado}, y el banco dice ` +
-          `${redondear(dto.saldoFinalBanco)}. Revisa qué columna es débito y cuál crédito.`,
+          `${redondear(dto.saldoFinalBanco)}. Revise qué columna es débito y cuál crédito.`,
       );
     }
 
@@ -541,7 +541,7 @@ export class ExtractoService {
         if (!cuadra) {
           throw new BadRequestException(
             `No cuadra: el banco dice ${formatoDiferencia(diferencia)} que el libro. ` +
-              'Una diferencia no se cruza: regístrala o anótala como error del banco.',
+              'Una diferencia no se cruza: regístrela o anótela como error del banco.',
           );
         }
 
@@ -759,7 +759,7 @@ export class ExtractoService {
       if (sinExplicar.length > 0) {
         throw new BadRequestException(
           `${sinExplicar.length} línea${sinExplicar.length === 1 ? '' : 's'} del extracto ` +
-            'sin cruzar ni explicar. Crúzalas, regístralas en el libro o anótalas ' +
+            'sin cruzar ni explicar. Crúcelas, regístrelas en el libro o anótelas ' +
             'como error del banco.',
         );
       }
@@ -924,7 +924,7 @@ export class ExtractoService {
     }
     if (!aceptarAnotadas && lineas.some((l) => l.nota !== null)) {
       throw new BadRequestException(
-        'Alguna línea está anotada como error del banco. Quítale la nota primero.',
+        'Alguna línea está anotada como error del banco. Quítele la nota primero.',
       );
     }
     return lineas.map((l) => ({ ...l, valor: Number(l.valor) }));

@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Put } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseEnumPipe,
+  Post,
+  Put,
+} from '@nestjs/common';
 
 import {
   ActorEmpresa,
@@ -6,12 +14,24 @@ import {
   Roles,
 } from '../../../common/auth/decoradores';
 import type { CtxEmpresa } from '../../../common/ctx';
-import {
-  FijarCuentaAjusteDto,
-  FijarExistenciaNegativaDto,
-} from '../dto/configuracion.dto';
+import { FijarCuentaConceptoDto } from '../dto/configuracion.dto';
 import { ConfiguracionService } from '../servicios/configuracion.service';
+import type { ConceptoInventario } from '../servicios/cuentas-inventario.reglas';
 
+const CONCEPTOS = {
+  INVENTARIO: 'INVENTARIO',
+  INGRESO: 'INGRESO',
+  COSTO_VENTA: 'COSTO_VENTA',
+  SOBRANTE: 'SOBRANTE',
+  FALTANTE_ASUMIDO: 'FALTANTE_ASUMIDO',
+  FALTANTE_COBRABLE: 'FALTANTE_COBRABLE',
+} as const satisfies Record<ConceptoInventario, ConceptoInventario>;
+
+/**
+ * Las cuentas automáticas de inventario. La pantalla que las muestra vive en
+ * el Plan de cuentas («Cuentas automáticas»), no en inventario: quien opera
+ * la bodega no tiene por qué verlas.
+ */
 @Controller('inventario/configuracion')
 @ExigeEmpresa()
 export class ConfiguracionController {
@@ -23,30 +43,22 @@ export class ConfiguracionController {
     return this.configuracion.obtener(ctx);
   }
 
-  /** Solo CONTADOR/DIRECTOR: elegir la contrapartida es juicio contable, no operación de bodega. */
-  @Roles('CONTADOR', 'DIRECTOR')
-  @Put()
-  fijarCuentaAjuste(
-    @ActorEmpresa() ctx: CtxEmpresa,
-    @Body() dto: FijarCuentaAjusteDto,
-  ) {
-    return this.configuracion.fijarCuentaAjuste(ctx, dto.cuentaAjusteId);
+  /** Crea lo que falte. Idempotente. Solo CONTADOR/DIRECTOR: crea cuentas en el plan. */
+  @Roles('CONTADOR', 'DIRECTOR', 'ADMIN_TENANT')
+  @Post('preparar')
+  preparar(@ActorEmpresa() ctx: CtxEmpresa) {
+    return this.configuracion.preparar(ctx);
   }
 
-  /**
-   * Vender sin existencia: DIRECTOR solamente.
-   *
-   * No es una preferencia de pantalla, es asumir que el kardex de un producto
-   * pueda quedar en rojo y que el costo de esa venta se valore con el último
-   * promedio conocido. Quien responde por el inventario lo decide; el contador
-   * no tiene por qué cargar con eso y la bodega no debería poder cambiarlo.
-   */
-  @Roles('DIRECTOR')
-  @Put('existencia-negativa')
-  fijarExistenciaNegativa(
+  /** Solo CONTADOR/DIRECTOR: elegir la cuenta es juicio contable. */
+  @Roles('CONTADOR', 'DIRECTOR')
+  @Put(':concepto')
+  fijar(
     @ActorEmpresa() ctx: CtxEmpresa,
-    @Body() dto: FijarExistenciaNegativaDto,
+    @Param('concepto', new ParseEnumPipe(CONCEPTOS))
+    concepto: ConceptoInventario,
+    @Body() dto: FijarCuentaConceptoDto,
   ) {
-    return this.configuracion.fijarExistenciaNegativa(ctx, dto.permite);
+    return this.configuracion.fijar(ctx, concepto, dto.cuentaId);
   }
 }

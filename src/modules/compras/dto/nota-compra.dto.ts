@@ -12,6 +12,11 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
+import {
+  AiuRenglonDto,
+  ConceptoRentaDto,
+  ConvenioRentaDto,
+} from './compra.dto';
 
 /** Una línea de la compra que la nota crédito corrige, y por cuánto. */
 export class LineaNotaCreditoCompraDto {
@@ -51,7 +56,7 @@ export class CrearNotaCreditoCompraDto {
   @ValidateNested({ each: true })
   @Type(() => LineaNotaCreditoCompraDto)
   @ArrayMinSize(1, {
-    message: 'Si mandás líneas, tiene que haber al menos una',
+    message: 'Si envía líneas, tiene que haber al menos una',
   })
   lineas?: LineaNotaCreditoCompraDto[];
 }
@@ -64,12 +69,26 @@ export class CrearNotaCreditoCompraDto {
  * interés, que no son productos de nadie.
  */
 export class LineaNotaDebitoCompraDto {
-  @ValidateIf((o: LineaNotaDebitoCompraDto) => o.cuentaId === undefined)
+  @ValidateIf(
+    (o: LineaNotaDebitoCompraDto) =>
+      o.cuentaId === undefined && o.conceptoId === undefined,
+  )
   @IsUUID()
   productoId?: string;
 
+  /** Qué es lo que cobra de más: la cuenta la pone el concepto. */
+  @ValidateIf(
+    (o: LineaNotaDebitoCompraDto) =>
+      o.productoId === undefined && o.cuentaId === undefined,
+  )
+  @IsUUID()
+  conceptoId?: string;
+
   /** La cuenta del gasto. Auxiliar, activa y de una clase donde un gasto va. */
-  @ValidateIf((o: LineaNotaDebitoCompraDto) => o.productoId === undefined)
+  @ValidateIf(
+    (o: LineaNotaDebitoCompraDto) =>
+      o.productoId === undefined && o.conceptoId === undefined,
+  )
   @IsUUID()
   cuentaId?: string;
 
@@ -118,4 +137,32 @@ export class CrearNotaDebitoCompraDto {
   @Type(() => LineaNotaDebitoCompraDto)
   @ArrayMinSize(1, { message: 'Una nota débito necesita al menos una línea' })
   lineas!: LineaNotaDebitoCompraDto[];
+
+  /** Los conceptos de renta contestados por renglón, como en la compra (§8.7). */
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => ConceptoRentaDto)
+  conceptosRenta?: ConceptoRentaDto[];
+
+  /** «Sin retención», con el porqué: lo mismo que en la compra. */
+  @IsOptional()
+  @IsString()
+  @Length(5, 300)
+  sinRetencionMotivo?: string;
+
+  /** Los aportes del proveedor persona natural (§8.14), como en la compra. */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  aportesSeguridadSocial?: number;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => AiuRenglonDto)
+  aiuRenglones?: AiuRenglonDto[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => ConvenioRentaDto)
+  conveniosRenta?: ConvenioRentaDto[];
 }

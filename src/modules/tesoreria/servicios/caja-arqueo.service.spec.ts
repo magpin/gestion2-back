@@ -28,21 +28,29 @@ const arqueoAbiertoFila = {
   asiento_ajuste_id: null,
 };
 
+/** Las tres cuentas de arqueo configuradas, como quedan después de `preparar`. */
+const CUENTAS = {
+  cuenta_sobrante_id: 'cta-sobrante',
+  cuenta_faltante_cobrable_id: 'cta-cobrable',
+  cuenta_faltante_asumido_id: 'cta-asumido',
+};
+
 /**
  * Transacción falsa: responde según qué tabla consulta la query.
  * `arqueoAbierto: null` simula que la caja no tiene arqueo abierto; sin
- * pasar la opción, usa `arqueoAbiertoFila` (hay uno). `cuentaDiferenciaId`
- * `undefined` simula que `caja_configuracion` no tiene fila (o la tiene
- * con la cuenta en `NULL`).
+ * pasar la opción, usa `arqueoAbiertoFila` (hay uno). `cuentas` es
+ * `caja_configuracion`: la columna que falte es un concepto sin cuenta.
+ * `responsable` es el tercero que responde por la caja.
  */
 function txFalso(
   opciones: {
     saldo?: { saldo_valor: string };
     arqueoAbierto?: Record<string, unknown> | null;
-    cuentaDiferenciaId?: string;
+    cuentas?: Partial<typeof CUENTAS>;
+    responsable?: string | null;
   } = {},
 ) {
-  const { saldo, cuentaDiferenciaId } = opciones;
+  const { saldo, cuentas = CUENTAS, responsable = null } = opciones;
   const arqueoAbierto =
     opciones.arqueoAbierto === undefined
       ? arqueoAbiertoFila
@@ -53,7 +61,13 @@ function txFalso(
   const tx = {
     query: jest.fn((sql: string, params?: unknown[]) => {
       if (sql.includes('FROM caja WHERE')) {
-        return [{ id: 'c-1', cuenta_id: 'cta-1' }];
+        return [
+          {
+            id: 'c-1',
+            cuenta_id: 'cta-1',
+            responsable_tercero_id: responsable,
+          },
+        ];
       }
       if (sql.startsWith('SELECT saldo_valor')) {
         return saldo === undefined ? [] : [saldo];
@@ -67,10 +81,10 @@ function txFalso(
       ) {
         return arqueoAbierto === null ? [] : [arqueoAbierto];
       }
-      if (sql.startsWith('SELECT cuenta_diferencia_id')) {
-        return cuentaDiferenciaId === undefined
-          ? []
-          : [{ cuenta_diferencia_id: cuentaDiferenciaId }];
+      if (sql.includes('FROM caja_configuracion')) {
+        const columna = /SELECT (\w+) AS cuenta_id/.exec(sql)?.[1] ?? '';
+        const id = (cuentas as Record<string, string | undefined>)[columna];
+        return id === undefined ? [] : [{ cuenta_id: id }];
       }
       if (sql.includes('INSERT INTO caja_arqueo_denominacion')) {
         denominaciones.push(params ?? []);
@@ -273,15 +287,15 @@ describe('CajaArqueoService.cerrar', () => {
     expect(denominaciones).toHaveLength(0);
   });
 
-  it('faltante: débito a la cuenta de diferencia, crédito a la caja, movimiento EGRESO', async () => {
-    const { tx } = txFalso({ cuentaDiferenciaId: 'cta-diferencia' });
+  it('faltante asumido: débito al gasto, crédito a la caja, movimiento EGRESO', async () => {
+    const { tx, updates } = txFalso();
     const { fake: contabilidad, asentar } = contabilidadFalso();
     const { fake: movimientos, registrarAjusteArqueo } = movimientosFalso();
 
     const cerrado = await servicioCon(tx, contabilidad, movimientos).cerrar(
       ctx,
       'c-1',
-      { saldoContado: 75_000 },
+      { saldoContado: 75_000, tratamientoFaltante: 'EMPRESA' },
     );
 
     expect(cerrado.diferencia).toBe('-5000');
@@ -294,7 +308,7 @@ describe('CajaArqueoService.cerrar', () => {
     ];
     expect(origen.origenTipo).toBe('MOVIMIENTO_CAJA');
     expect(dtoAsiento.lineas).toEqual([
-      { cuentaId: 'cta-diferencia', debito: 5000, credito: 0 },
+      { cuentaId: 'cta-asumido', debito: 5000, credito: 0 },
       { cuentaId: 'cta-1', debito: 0, credito: 5000 },
     ]);
 
@@ -309,17 +323,103 @@ describe('CajaArqueoService.cerrar', () => {
       }),
       tx,
     );
+    // tratamiento y responsable quedan escritos en el arqueo
+    expect(updates[0].slice(6)).toEqual(['EMPRESA', null]);
   });
 
-  it('sobrante: débito a la caja, crédito a la cuenta de diferencia, movimiento INGRESO', async () => {
-    const { tx } = txFalso({ cuentaDiferenciaId: 'cta-diferencia' });
+  it('faltante cobrable: a la cuenta por cobrar, con el responsable de la caja como tercero', async () => {
+    const { tx, updates } = txFalso({ responsable: 'ter-cajero' });
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+
+    await servicioCon(tx, contabilidad, movimientosFalso().fake).cerrar(
+      ctx,
+      'c-1',
+      { saldoContado: 75_000, tratamientoFaltante: 'RESPONSABLE' },
+    );
+
+    const [, dtoAsiento] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      { lineas: Array<Record<string, unknown>> },
+    ];
+    expect(dtoAsiento.lineas).toEqual([
+      {
+        cuentaId: 'cta-cobrable',
+        debito: 5000,
+        credito: 0,
+        terceroId: 'ter-cajero',
+      },
+      { cuentaId: 'cta-1', debito: 0, credito: 5000 },
+    ]);
+    expect(updates[0].slice(6)).toEqual(['RESPONSABLE', 'ter-cajero']);
+  });
+
+  it('faltante cobrable: quien cierra puede cobrárselo a otra persona', async () => {
+    const { tx, updates } = txFalso({ responsable: 'ter-cajero' });
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+
+    await servicioCon(tx, contabilidad, movimientosFalso().fake).cerrar(
+      ctx,
+      'c-1',
+      {
+        saldoContado: 75_000,
+        tratamientoFaltante: 'RESPONSABLE',
+        responsableTerceroId: 'ter-reemplazo',
+      },
+    );
+
+    const [, dtoAsiento] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      { lineas: Array<Record<string, unknown>> },
+    ];
+    expect(dtoAsiento.lineas[0].terceroId).toBe('ter-reemplazo');
+    expect(updates[0][7]).toBe('ter-reemplazo');
+  });
+
+  it('rechaza cobrar un faltante si no hay a quién', async () => {
+    const { tx, updates } = txFalso({ responsable: null });
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+
+    await expect(
+      servicioCon(tx, contabilidad, movimientosFalso().fake).cerrar(
+        ctx,
+        'c-1',
+        {
+          saldoContado: 75_000,
+          tratamientoFaltante: 'RESPONSABLE',
+        },
+      ),
+    ).rejects.toThrow(/elija a quién/);
+    expect(asentar).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(0);
+  });
+
+  it('rechaza un faltante sin decir quién lo asume', async () => {
+    const { tx, updates } = txFalso();
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+
+    await expect(
+      servicioCon(tx, contabilidad, movimientosFalso().fake).cerrar(
+        ctx,
+        'c-1',
+        {
+          saldoContado: 75_000,
+        },
+      ),
+    ).rejects.toThrow(/asume la empresa o lo paga el responsable/);
+    expect(asentar).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(0);
+  });
+
+  it('sobrante: débito a la caja, crédito a sobrantes, movimiento INGRESO', async () => {
+    const { tx, updates } = txFalso();
     const { fake: contabilidad, asentar } = contabilidadFalso();
     const { fake: movimientos, registrarAjusteArqueo } = movimientosFalso();
 
     const cerrado = await servicioCon(tx, contabilidad, movimientos).cerrar(
       ctx,
       'c-1',
-      { saldoContado: 90_000 },
+      // Con sobrante, el tratamiento no aplica y se ignora.
+      { saldoContado: 90_000, tratamientoFaltante: 'RESPONSABLE' },
     );
 
     expect(cerrado.diferencia).toBe('10000');
@@ -329,7 +429,7 @@ describe('CajaArqueoService.cerrar', () => {
       { lineas: Array<Record<string, unknown>> },
     ];
     expect(dtoAsiento.lineas).toEqual([
-      { cuentaId: 'cta-diferencia', debito: 0, credito: 10_000 },
+      { cuentaId: 'cta-sobrante', debito: 0, credito: 10_000 },
       { cuentaId: 'cta-1', debito: 10_000, credito: 0 },
     ]);
     expect(registrarAjusteArqueo).toHaveBeenCalledWith(
@@ -338,33 +438,38 @@ describe('CajaArqueoService.cerrar', () => {
       expect.objectContaining({ tipo: 'INGRESO', valor: 10_000 }),
       tx,
     );
+    expect(updates[0].slice(6)).toEqual([null, null]);
   });
 
-  it('rechaza sin asentar si hay diferencia pero falta configurar la cuenta', async () => {
-    const { tx, updates } = txFalso({ cuentaDiferenciaId: undefined });
+  it('rechaza sin asentar si el concepto no tiene cuenta configurada', async () => {
+    const { tx, updates } = txFalso({
+      cuentas: { cuenta_sobrante_id: 'cta-sobrante' },
+    });
     const { fake: contabilidad, asentar } = contabilidadFalso();
     const { fake: movimientos, registrarAjusteArqueo } = movimientosFalso();
 
     await expect(
       servicioCon(tx, contabilidad, movimientos).cerrar(ctx, 'c-1', {
         saldoContado: 75_000,
+        tratamientoFaltante: 'EMPRESA',
       }),
-    ).rejects.toThrow(BadRequestException);
+    ).rejects.toThrow(/Faltante de caja asumido por la empresa/);
     expect(asentar).not.toHaveBeenCalled();
     expect(registrarAjusteArqueo).not.toHaveBeenCalled();
     expect(updates).toHaveLength(0);
   });
 
   it('rechaza si la empresa no tiene el comprobante CD sembrado', async () => {
-    const { tx, updates } = txFalso({ cuentaDiferenciaId: 'cta-diferencia' });
+    const { tx, updates } = txFalso();
     const { fake: contabilidad } = contabilidadFalso(null);
     const { fake: movimientos, registrarAjusteArqueo } = movimientosFalso();
 
     await expect(
       servicioCon(tx, contabilidad, movimientos).cerrar(ctx, 'c-1', {
         saldoContado: 75_000,
+        tratamientoFaltante: 'EMPRESA',
       }),
-    ).rejects.toThrow(BadRequestException);
+    ).rejects.toThrow(/comprobante de diario/);
     expect(registrarAjusteArqueo).not.toHaveBeenCalled();
     expect(updates).toHaveLength(0);
   });

@@ -9,6 +9,7 @@ import { PlataformaGuard } from './plataforma.guard';
 import { CobrosService } from './servicios/cobros.service';
 import { CuentasService } from './servicios/cuentas.service';
 import { PanelService } from './servicios/panel.service';
+import { LeyRetencionesService } from './servicios/ley-retenciones.service';
 import { SistemaService } from './servicios/sistema.service';
 
 /**
@@ -31,6 +32,7 @@ import { SistemaService } from './servicios/sistema.service';
     PanelService,
     CobrosService,
     SistemaService,
+    LeyRetencionesService,
     PlataformaGuard,
   ],
 })

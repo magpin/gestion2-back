@@ -5,8 +5,11 @@ import {
   IsIn,
   IsNumber,
   IsOptional,
+  IsString,
   IsUUID,
+  Length,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
@@ -16,11 +19,63 @@ import {
   type FormaPago,
 } from './venta.dto';
 
-export class LineaFacturaDto {
-  @IsUUID()
-  productoId!: string;
+/**
+ * Un anticipo o saldo a favor del cliente que paga parte de la factura al
+ * emitirla, sin mover caja ni banco.
+ */
+export class AplicarAlFacturarDto {
+  @IsIn(['ANTICIPO', 'SALDO_A_FAVOR'])
+  tipo!: 'ANTICIPO' | 'SALDO_A_FAVOR';
 
-  /** Sin `precioUnitario`: se toma el precio de lista vigente — ver `CrearCotizacionDto`. */
+  /** El movimiento del anticipo, o la factura con saldo a favor. */
+  @IsUUID()
+  origenId!: string;
+
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  valor!: number;
+}
+
+/**
+ * Una línea de la factura: un producto del catálogo, o un concepto de ingreso
+ * —un servicio (41) u otro ingreso (42)—. Una de las dos (Fase 8, pantalla 13).
+ */
+export class LineaFacturaDto {
+  @ValidateIf((l: LineaFacturaDto) => l.conceptoId === undefined)
+  @IsUUID()
+  productoId?: string;
+
+  /** Concepto de INGRESO: la línea no mueve kardex y entra a la cuenta del concepto. */
+  @ValidateIf((l: LineaFacturaDto) => l.productoId === undefined)
+  @IsUUID()
+  conceptoId?: string;
+
+  /** Solo en la de concepto: qué se cobró («Transporte de la mercancía a Turbo»). */
+  @ValidateIf((l: LineaFacturaDto) => l.conceptoId !== undefined)
+  @IsString()
+  @Length(2, 200)
+  detalle?: string;
+
+  /**
+   * Sin IVA. En la de concepto es obligatorio: un servicio no tiene precio de
+   * lista, lo pone quien factura. En la de producto es opcional: si viene,
+   * manda sobre el de lista —el precio pactado con el cliente—; si no, se
+   * toma el de lista vigente.
+   */
+  @ValidateIf(
+    (l: LineaFacturaDto) =>
+      l.conceptoId !== undefined || l.precioUnitario !== undefined,
+  )
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  precioUnitario?: number;
+
+  /** Solo en la de concepto: 0, 5 o 19. En la de producto la dice el producto. */
+  @ValidateIf((l: LineaFacturaDto) => l.conceptoId !== undefined)
+  @IsIn([0, 5, 19])
+  ivaTarifa?: number;
+
+  /** En la de producto, sin `precioUnitario` se toma el precio de lista vigente — ver `resolverPrecio`. */
   @IsNumber({ maxDecimalPlaces: 6 })
   @Min(0.000001)
   cantidad!: number;
@@ -62,7 +117,7 @@ export class CrearFacturaDto {
    * "Sé que no hay existencia y la emito igual".
    *
    * No es un permiso: es una confirmación. La empresa tiene que haber
-   * habilitado el descubierto (`inventario_configuracion.permite_existencia_negativa`)
+   * habilitado el descubierto (el hecho operativo `VENDE_SIN_EXISTENCIA`)
    * y el producto tiene que tener un costo promedio conocido; si falta
    * cualquiera de las dos, la factura se rechaza aunque esto venga en `true`.
    * Lo que salga sin estar queda anotado en `venta_faltante`.
@@ -98,8 +153,26 @@ export class CrearFacturaDto {
   @IsIn(FORMAS_PAGO)
   formaPago!: FormaPago;
 
+  /**
+   * Cuándo vence, si es a crédito. Sin ella la cartera cuenta 30 días desde
+   * la emisión, como los reportes. En una de contado no aplica: se cobra ya.
+   */
+  @IsOptional()
+  @EsFechaCalendario()
+  vence?: string;
+
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => MedioPagoAlFacturarDto)
   pagos?: MedioPagoAlFacturarDto[];
+
+  /**
+   * Anticipos y saldos a favor del cliente que pagan parte de la factura. La
+   * forma de pago y los `pagos` son sobre lo que falta; si esto la cubre
+   * entera, va de contado sin `pagos`.
+   */
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => AplicarAlFacturarDto)
+  aplicar?: AplicarAlFacturarDto[];
 }

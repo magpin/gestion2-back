@@ -96,11 +96,15 @@ describe('ConfirmacionFacturaService — registrar lo confirmado', () => {
         numeroFacturaProveedor: '215183',
         lineas: [{ productoId: 'prod-1', cantidad: 2, costoUnitario: 50_000 }],
         formaPago: 'CREDITO',
+        // La renta va por el mismo motor que la compra manual.
+        conceptosRenta: [],
+        sinRetencionMotivo: undefined,
+        zomacEnFactura: undefined,
       },
-      // De qué documento salió, en un argumento aparte del DTO: si viajara en
-      // el cuerpo de la petición, cualquiera podría registrar una compra a
-      // mano y decir que la leyó María.
-      { documentoLeidoId: 'doc-1' },
+      // De qué documento salió —y qué retención traía impresa—, en un
+      // argumento aparte del DTO: si viajara en el cuerpo de la petición,
+      // cualquiera podría registrar una compra a mano y decir que la leyó María.
+      { documentoLeidoId: 'doc-1', retencionImpresa: 0 },
       TX,
     );
   });

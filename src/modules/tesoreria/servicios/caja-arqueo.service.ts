@@ -16,12 +16,16 @@ import type {
   CerrarArqueoDto,
   ListarArqueosDto,
 } from '../dto/caja-arqueo.dto';
+import { cuentaDeConcepto } from './caja-configuracion.service';
 import { CajaMovimientoService } from './caja-movimiento.service';
 import {
+  CONCEPTOS_ARQUEO,
   calcularDiferenciaArqueo,
+  conceptoDelAjuste,
   resolverConteo,
   verificarPuedeAbrirArqueo,
   type TipoDenominacion,
+  type TratamientoFaltante,
 } from './caja.reglas';
 
 export interface ArqueoResumen {
@@ -36,6 +40,10 @@ export interface ArqueoResumen {
   cerrado_por: string | null;
   nota: string | null;
   asiento_ajuste_id: string | null;
+  /** Solo con faltante: lo asumió la empresa o se le cobra al responsable. */
+  tratamiento_faltante: TratamientoFaltante | null;
+  /** A quién se le cobra el faltante, si `tratamiento_faltante` es RESPONSABLE. */
+  responsable_tercero_id: string | null;
   /**
    * El conteo billete por billete, si se cerró así. Vacío en un arqueo
    * abierto o en uno que se cerró con el total a secas.
@@ -57,6 +65,7 @@ export interface ArqueoResumen {
 // primero y de mayor a menor, que es como se cuenta un cajón.
 const CAMPOS = `id, caja_id, to_char(fecha, 'YYYY-MM-DD') AS fecha, saldo_sistema, saldo_contado, diferencia,
                 estado, cerrado_en, cerrado_por, nota, asiento_ajuste_id,
+                tratamiento_faltante, responsable_tercero_id,
                 (SELECT coalesce(json_agg(json_build_object(
                           'tipo', d.tipo, 'denominacion', d.denominacion,
                           'cantidad', d.cantidad, 'subtotal', d.subtotal)
@@ -129,10 +138,11 @@ export class CajaArqueoService {
 
   /**
    * Cierra el arqueo abierto de esta caja. Si `saldoContado` difiere del
-   * `saldo_sistema` congelado al abrir, genera el asiento de ajuste contra
-   * `caja_configuracion.cuenta_diferencia_id` y el `caja_movimiento`
-   * correctivo — todo en la misma transacción del cierre. Sin diferencia,
-   * solo cierra: no toca contabilidad para nada.
+   * `saldo_sistema` congelado al abrir, genera el asiento de ajuste contra la
+   * cuenta del concepto —sobrante, faltante cobrable o faltante asumido, según
+   * lo que diga quien cierra— y el `caja_movimiento` correctivo, todo en la
+   * misma transacción del cierre. Sin diferencia, solo cierra: no toca
+   * contabilidad para nada.
    */
   async cerrar(
     ctx: CtxEmpresa,
@@ -155,17 +165,44 @@ export class CajaArqueoService {
       );
 
       let asientoAjusteId: string | null = null;
+      let tratamiento: TratamientoFaltante | null = null;
+      let responsableId: string | null = null;
       if (diferencia !== 0) {
-        const cuentaDiferenciaId = await this.exigirCuentaDiferencia(ctx, t);
+        const ajuste = conceptoDelAjuste(diferencia, dto.tratamientoFaltante);
+        if (!ajuste.ok) {
+          throw new BadRequestException(ajuste.motivo);
+        }
+        if (diferencia < 0) {
+          tratamiento = dto.tratamientoFaltante ?? null;
+          if (tratamiento === 'RESPONSABLE') {
+            // El de la caja viene por defecto; quien cierra lo cambia si ese
+            // día contó otra persona.
+            responsableId =
+              dto.responsableTerceroId ?? caja.responsable_tercero_id;
+            if (responsableId === null) {
+              throw new BadRequestException(
+                'Para cobrar el faltante, elija a quién: esta caja no tiene responsable.',
+              );
+            }
+          }
+        }
+
+        const cuentaAjusteId = await cuentaDeConcepto(t, ctx, ajuste.concepto);
+        if (cuentaAjusteId === null) {
+          throw new BadRequestException(
+            `Falta la cuenta de «${CONCEPTOS_ARQUEO[ajuste.concepto].etiqueta}»: elíjala en Plan de cuentas → Cuentas automáticas.`,
+          );
+        }
         const movimientoId = randomUUID();
 
         asientoAjusteId = await this.asentarAjuste(
           ctx,
           caja,
-          cuentaDiferenciaId,
+          cuentaAjusteId,
           arqueo,
           diferencia,
           movimientoId,
+          responsableId,
           t,
         );
 
@@ -203,7 +240,8 @@ export class CajaArqueoService {
           `UPDATE caja_arqueo
               SET estado = 'CERRADO', saldo_contado = $2, diferencia = $3,
                   cerrado_en = now(), cerrado_por = $4,
-                  nota = COALESCE($5, nota), asiento_ajuste_id = $6
+                  nota = COALESCE($5, nota), asiento_ajuste_id = $6,
+                  tratamiento_faltante = $7, responsable_tercero_id = $8
             WHERE id = $1
           RETURNING ${CAMPOS}`,
           [
@@ -213,6 +251,8 @@ export class CajaArqueoService {
             ctx.usuarioId,
             dto.nota ?? null,
             asientoAjusteId,
+            tratamiento,
+            responsableId,
           ],
         ),
       );
@@ -263,10 +303,18 @@ export class CajaArqueoService {
   private async exigirCajaBloqueada(
     cajaId: string,
     t: Tx,
-  ): Promise<{ id: string; cuenta_id: string }> {
-    const caja = fila<{ id: string; cuenta_id: string }>(
+  ): Promise<{
+    id: string;
+    cuenta_id: string;
+    responsable_tercero_id: string | null;
+  }> {
+    const caja = fila<{
+      id: string;
+      cuenta_id: string;
+      responsable_tercero_id: string | null;
+    }>(
       await t.query(
-        `SELECT id, cuenta_id FROM caja WHERE id = $1 AND activa FOR UPDATE`,
+        `SELECT id, cuenta_id, responsable_tercero_id FROM caja WHERE id = $1 AND activa FOR UPDATE`,
         [cajaId],
       ),
     );
@@ -321,28 +369,11 @@ export class CajaArqueoService {
     return abierto;
   }
 
-  private async exigirCuentaDiferencia(
-    ctx: CtxEmpresa,
-    t: Tx,
-  ): Promise<string> {
-    const config = fila<{ cuenta_diferencia_id: string | null }>(
-      await t.query(
-        'SELECT cuenta_diferencia_id FROM caja_configuracion WHERE empresa_id = $1',
-        [ctx.empresaId],
-      ),
-    );
-    if (config?.cuenta_diferencia_id == null) {
-      throw new BadRequestException(
-        'Configura primero la cuenta de diferencia de arqueo de esta empresa.',
-      );
-    }
-    return config.cuenta_diferencia_id;
-  }
-
   /**
-   * El asiento de ajuste: débito a `cuentaDiferenciaId` y crédito a
+   * El asiento de ajuste: débito a `cuentaAjusteId` y crédito a
    * `caja.cuenta_id` si faltó, al revés si sobró — misma tabla que
-   * documenta `caja-bancos-backend.md`. `origenId` es el id del
+   * documenta `caja-bancos-backend.md`. Si el faltante se le cobra a
+   * alguien, la línea de la cuenta por cobrar lleva ese tercero. `origenId` es el id del
    * `caja_movimiento` correctivo que se inserta a continuación, en la
    * MISMA transacción — se genera antes para poder enlazarlo en los dos
    * lados, mismo patrón que `KardexService.asentarAjuste`.
@@ -350,10 +381,11 @@ export class CajaArqueoService {
   private async asentarAjuste(
     ctx: CtxEmpresa,
     caja: { cuenta_id: string },
-    cuentaDiferenciaId: string,
+    cuentaAjusteId: string,
     arqueo: { id: string; fecha: string },
     diferencia: number,
     movimientoId: string,
+    responsableId: string | null,
     t: Tx,
   ): Promise<string> {
     const comprobante = await this.contabilidad.tipoComprobantePorCodigo(
@@ -378,9 +410,10 @@ export class CajaArqueoService {
         glosa: `Ajuste de arqueo (${faltante ? 'faltante' : 'sobrante'}), arqueo ${arqueo.id}`,
         lineas: [
           {
-            cuentaId: cuentaDiferenciaId,
+            cuentaId: cuentaAjusteId,
             debito: faltante ? valor : 0,
             credito: faltante ? 0 : valor,
+            terceroId: responsableId ?? undefined,
           },
           {
             cuentaId: caja.cuenta_id,

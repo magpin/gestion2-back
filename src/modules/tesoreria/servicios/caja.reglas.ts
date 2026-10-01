@@ -1,3 +1,8 @@
+import {
+  resolverCuentaConcepto,
+  type DefinicionConcepto,
+} from '../../../common/contabilidad/cuentas-automaticas';
+
 /**
  * El saldo corrido de una caja, en memoria. Sin base de datos.
  *
@@ -75,7 +80,7 @@ export function verificarPuedeAbrirArqueo(
     return {
       ok: false,
       motivo:
-        'Ya hay un arqueo abierto para esta caja. Cerralo antes de abrir uno nuevo.',
+        'Ya hay un arqueo abierto para esta caja. Ciérrelo antes de abrir uno nuevo.',
     };
   }
   return { ok: true };
@@ -170,4 +175,109 @@ export function resolverConteo(
     };
   }
   return { ok: true, saldoContado: total, denominaciones: contadas };
+}
+
+// ---------------------------------------------------------------------------
+// Las cuentas de un arqueo con diferencia
+// ---------------------------------------------------------------------------
+
+/**
+ * Una diferencia de arqueo no es una sola cosa. Plata de más es un ingreso sin
+ * explicar; plata de menos o la paga quien respondía por la caja —y es una
+ * cuenta por cobrar a esa persona— o la asume la empresa como gasto.
+ */
+export type ConceptoArqueo =
+  'SOBRANTE' | 'FALTANTE_COBRABLE' | 'FALTANTE_ASUMIDO';
+
+export type TratamientoFaltante = 'EMPRESA' | 'RESPONSABLE';
+
+export const CONCEPTOS_ARQUEO: Record<ConceptoArqueo, DefinicionConcepto> = {
+  SOBRANTE: {
+    familia: '429553',
+    codigoCrear: '429553',
+    nombreCuenta: 'Sobrantes de caja',
+    etiqueta: 'Sobrante de caja',
+    explicacion:
+      'Dinero de más al contar la caja: un ingreso que no se registró.',
+    columna: 'cuenta_sobrante_id',
+  },
+  FALTANTE_COBRABLE: {
+    familia: '136530',
+    codigoCrear: '136530',
+    nombreCuenta: 'Faltantes de caja por cobrar',
+    etiqueta: 'Faltante de caja cobrable al responsable',
+    explicacion:
+      'Dinero de menos que paga quien respondía por la caja: queda como cuenta por cobrar a esa persona.',
+    exigeTercero: true,
+    columna: 'cuenta_faltante_cobrable_id',
+  },
+  FALTANTE_ASUMIDO: {
+    familia: '531595',
+    codigoCrear: '531595',
+    nombreCuenta: 'Faltantes de caja asumidos',
+    etiqueta: 'Faltante de caja asumido por la empresa',
+    explicacion: 'Dinero de menos que la empresa asume como gasto.',
+    columna: 'cuenta_faltante_asumido_id',
+  },
+};
+
+export const ORDEN_CONCEPTOS: ConceptoArqueo[] = [
+  'SOBRANTE',
+  'FALTANTE_COBRABLE',
+  'FALTANTE_ASUMIDO',
+];
+
+// La regla de auxiliares es la de todas las cuentas automáticas: vive en
+// `common/contabilidad`. Se reexporta porque es parte de las reglas de caja.
+export { resolverCuentaConcepto };
+
+export type CuentaDeAjuste =
+  { ok: true; concepto: ConceptoArqueo } | { ok: false; motivo: string };
+
+/**
+ * Qué concepto lleva el ajuste de un arqueo. El sobrante no pregunta; el
+ * faltante sí, porque qué pasó con la plata lo sabe quien cerró la caja, no
+ * el sistema.
+ */
+export function conceptoDelAjuste(
+  diferencia: number,
+  tratamiento: TratamientoFaltante | undefined,
+): CuentaDeAjuste {
+  if (diferencia > 0) {
+    return { ok: true, concepto: 'SOBRANTE' };
+  }
+  if (tratamiento === undefined) {
+    return {
+      ok: false,
+      motivo:
+        'Hay un faltante: indique si lo asume la empresa o lo paga el responsable de la caja.',
+    };
+  }
+  return {
+    ok: true,
+    concepto:
+      tratamiento === 'RESPONSABLE' ? 'FALTANTE_COBRABLE' : 'FALTANTE_ASUMIDO',
+  };
+}
+
+/**
+ * Qué impide que una caja lleve esta cuenta, o `null`. Tiene que estar
+ * activa, recibir asientos y colgar de 1105; la caja menor, de 110510. Sin
+ * esto, una caja podía quedar sobre una cuenta que agrupa y fallar recién al
+ * primer movimiento.
+ */
+export function problemaCuentaDeCaja(
+  tipo: 'PRINCIPAL' | 'MENOR',
+  cuenta: { codigo: string; activa: boolean; esAuxiliar: boolean },
+): string | null {
+  if (!cuenta.activa)
+    return `La cuenta ${cuenta.codigo} está inactiva. Actívela en Plan de cuentas.`;
+  if (!cuenta.esAuxiliar)
+    return `La cuenta ${cuenta.codigo} agrupa otras y no recibe asientos: elija uno de sus auxiliares o cree uno.`;
+  const prefijo = tipo === 'MENOR' ? '110510' : '1105';
+  if (!cuenta.codigo.startsWith(prefijo))
+    return tipo === 'MENOR'
+      ? `La caja menor va en una cuenta de 110510 (caja menor); la ${cuenta.codigo} no lo es.`
+      : `Una caja va en una cuenta de 1105 (caja); la ${cuenta.codigo} no lo es.`;
+  return null;
 }

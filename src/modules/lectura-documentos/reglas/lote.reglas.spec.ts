@@ -184,7 +184,7 @@ describe('motivoNoSeLee', () => {
   it('dice cuándo es algo que lee pero no le toca a quien lo subió', () => {
     expect(
       motivoNoSeLee({ tipo: 'PEDIDO_VENTA', clase: 'Pedido' }, false),
-    ).toContain('facturar no te toca');
+    ).toContain('facturar no le corresponde');
     expect(
       motivoNoSeLee({ tipo: 'FACTURA_COMPRA', clase: 'Factura' }, true),
     ).toBeNull();

@@ -1,4 +1,5 @@
 import {
+  baseIvaAiuCentavos,
   calcularLineaCompra,
   calcularLineasCompra,
   calcularPago,
@@ -269,5 +270,76 @@ describe('validarFormaPago', () => {
     expect(validarFormaPago('CONTADO', [120000, undefined], 119000).ok).toBe(
       false,
     );
+  });
+});
+
+describe('IVA sobre el AIU (art. 462-1 ET, bug #16)', () => {
+  const aseo = (aiu?: number, ivaDescontable = true) =>
+    calcularLineaCompra({
+      cantidad: 1,
+      costoUnitario: 10_000_000,
+      ivaTarifa: 19,
+      ivaDescontable,
+      aiu,
+    });
+
+  it('aseo de $10.000.000 con AIU de $1.200.000: IVA 19 % × 1.200.000 = $228.000', () => {
+    const l = aseo(1_200_000);
+    expect(l.subtotal).toBe(10_000_000);
+    expect(l.ivaBase).toBe(1_200_000);
+    expect(l.ivaValor).toBe(228_000);
+    expect(l.total).toBe(10_228_000);
+  });
+
+  it('con AIU de $500.000 (menos del 10 %): la base es $1.000.000 → IVA $190.000', () => {
+    const l = aseo(500_000);
+    expect(l.ivaBase).toBe(1_000_000);
+    expect(l.ivaValor).toBe(190_000);
+    expect(l.total).toBe(10_190_000);
+  });
+
+  it('sin AIU escrito: el IVA va sobre el subtotal y la base queda nula', () => {
+    const l = aseo();
+    expect(l.ivaBase).toBeNull();
+    expect(l.ivaValor).toBe(1_900_000);
+    expect(aseo(0).ivaBase).toBeNull();
+  });
+
+  it('un AIU mayor que el renglón no pasa del renglón', () => {
+    expect(aseo(12_000_000).ivaBase).toBe(10_000_000);
+  });
+
+  it('IVA no descontable: el kardex lleva el IVA sobre el AIU, no sobre el total', () => {
+    expect(aseo(1_200_000, false).valorKardex).toBe(10_228_000);
+  });
+
+  it('los totales del documento suman el IVA sobre el AIU', () => {
+    const { totales } = calcularLineasCompra([
+      {
+        cantidad: 1,
+        costoUnitario: 10_000_000,
+        ivaTarifa: 19,
+        ivaDescontable: true,
+        aiu: 1_200_000,
+      },
+      {
+        cantidad: 1,
+        costoUnitario: 100_000,
+        ivaTarifa: 19,
+        ivaDescontable: true,
+      },
+    ]);
+    expect(totales).toEqual({
+      subtotal: 10_100_000,
+      totalIva: 247_000,
+      total: 10_347_000,
+    });
+  });
+
+  it('baseIvaAiuCentavos: el piso del 10 % en centavos', () => {
+    expect(baseIvaAiuCentavos(1_000_000_000, 50_000_000 / 100)).toBe(
+      100_000_000,
+    );
+    expect(baseIvaAiuCentavos(1_000_000_000, undefined)).toBeNull();
   });
 });

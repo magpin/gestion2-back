@@ -1,9 +1,16 @@
 import { Module } from '@nestjs/common';
 
+import { EstadosFinancierosModule } from '../estados-financieros/estados-financieros.module';
+import { EstadosReporteController } from './controladores/estados-reporte.controller';
+import { EstadosReporteService } from './servicios/estados-reporte.service';
+
 import { ContabilidadModule } from '../contabilidad/contabilidad.module';
 import { ArmadorController } from './controladores/armador.controller';
+import { DocumentosController } from './controladores/documentos.controller';
+import { DocumentosPdfService } from './servicios/documentos-pdf.service';
 import { ReportesController } from './controladores/reportes.controller';
 import { CarteraReporteService } from './servicios/cartera-reporte.service';
+import { RetencionesReporteService } from './servicios/retenciones-reporte.service';
 import { CorridaService } from './servicios/corrida.service';
 import { ExcelService } from './servicios/excel.service';
 import { FechasReporteService } from './servicios/fechas.service';
@@ -34,8 +41,13 @@ import { VentasReporteService } from './servicios/ventas-reporte.service';
  * no la tecnología. El día que además salga en Excel, sigue llamándose igual.
  */
 @Module({
-  imports: [ContabilidadModule],
-  controllers: [ReportesController, ArmadorController],
+  imports: [ContabilidadModule, EstadosFinancierosModule],
+  controllers: [
+    ReportesController,
+    ArmadorController,
+    EstadosReporteController,
+    DocumentosController,
+  ],
   providers: [
     GotenbergService,
     GraficoService,
@@ -43,14 +55,22 @@ import { VentasReporteService } from './servicios/ventas-reporte.service';
     PlantillaService,
     VentasReporteService,
     CarteraReporteService,
+    RetencionesReporteService,
     CorridaService,
     ExcelService,
     FechasReporteService,
     ArmadorService,
+    EstadosReporteService,
+    DocumentosPdfService,
   ],
   // `ArmadorService` lo usa el asistente para consultar datos (paso 6 de
   // `asistente-conversacion.md`): con los mismos permisos que la pantalla, y
   // re-mirados adentro de `correr`.
-  exports: [VentasReporteService, CarteraReporteService, ArmadorService],
+  exports: [
+    VentasReporteService,
+    CarteraReporteService,
+    ArmadorService,
+    RetencionesReporteService,
+  ],
 })
 export class ReportesModule {}

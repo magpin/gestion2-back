@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Post,
@@ -71,6 +73,21 @@ export class FacturasLeidasController {
     @Body() dto: RegistrarCompraLeidaDto,
   ) {
     return this.facturas.confirmar(ctx, id, dto);
+  }
+
+  /**
+   * La retención de renta que llevaría, sin registrar nada, con la impresa al
+   * lado. Recibe las mismas respuestas que registrar.
+   */
+  @Roles('ADMIN_TENANT', 'DIRECTOR', 'CONTADOR', 'COMPRAS')
+  @Post(':id/simular-retencion')
+  @HttpCode(HttpStatus.OK)
+  simularRetencion(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RegistrarCompraLeidaDto,
+  ) {
+    return this.facturas.simularRetencion(ctx, id, dto);
   }
 
   /**

@@ -443,7 +443,7 @@ describe('CajaMovimientoService.reversar', () => {
     });
   });
 
-  it('un ingreso no se reversa si la plata ya no está en la caja', async () => {
+  it('un ingreso no se reversa si el dinero ya no está en la caja', async () => {
     const { tx, insertadas } = txReversa(
       { ...egresoManual, tipo: 'INGRESO', valor: '50000' },
       '20000',

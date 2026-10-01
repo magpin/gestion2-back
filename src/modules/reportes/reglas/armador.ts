@@ -115,7 +115,7 @@ export function validar(
 
   // ── Columnas ──
   if (!Array.isArray(entrada.columnas) || entrada.columnas.length === 0) {
-    throw new DefinicionInvalida('Elige al menos una columna.');
+    throw new DefinicionInvalida('Elija al menos una columna.');
   }
   const columnas = [
     ...new Set([

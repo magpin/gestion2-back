@@ -29,6 +29,11 @@ export class CrearCajaDto {
    */
   @IsUUID()
   cuentaId!: string;
+
+  /** El empleado que responde por la caja. Opcional: se puede asignar después. */
+  @IsOptional()
+  @IsUUID()
+  responsableTerceroId?: string;
 }
 
 export class EditarCajaDto {
@@ -36,4 +41,9 @@ export class EditarCajaDto {
   @IsString()
   @Length(2, 200)
   nombre?: string;
+
+  /** `null` quita el responsable; sin el campo, no se toca. */
+  @IsOptional()
+  @IsUUID()
+  responsableTerceroId?: string | null;
 }

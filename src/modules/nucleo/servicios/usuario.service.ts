@@ -109,7 +109,7 @@ export class UsuarioService {
    */
   async desactivar(ctx: Ctx, id: string): Promise<void> {
     if (id === ctx.usuarioId) {
-      throw new BadRequestException('No puedes desactivarte a ti mismo');
+      throw new BadRequestException('No puede desactivarse a sí mismo');
     }
     await this.tx.enContexto(ctx, (t) =>
       t.query('UPDATE usuario SET activo = false WHERE id = $1', [id]),
@@ -174,7 +174,7 @@ export class UsuarioService {
   async revocarAdminTenant(ctx: Ctx, usuarioId: string): Promise<void> {
     if (usuarioId === ctx.usuarioId) {
       throw new BadRequestException(
-        'No puedes quitarte a ti mismo la administracion de la cuenta',
+        'No puede quitarse a sí mismo la administración de la cuenta',
       );
     }
     await this.tx.enContexto(ctx, async (t) => {

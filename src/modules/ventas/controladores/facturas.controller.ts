@@ -16,7 +16,7 @@ import {
   Roles,
 } from '../../../common/auth/decoradores';
 import type { CtxEmpresa } from '../../../common/ctx';
-import { ConvertirCotizacionDto } from '../dto/cotizacion.dto';
+import { ConvertirCotizacionDto, ExistenciaDto } from '../dto/cotizacion.dto';
 import { CrearFacturaDto } from '../dto/factura.dto';
 import {
   AnularVentaDto,
@@ -46,6 +46,13 @@ export class FacturasController {
     return this.ventas.listar(ctx, 'FACTURA', q);
   }
 
+  /** El número que sale si se emite ahora. Antes de `:id`, que lo tomaría por un id. */
+  @Roles('VENTAS', 'DIRECTOR')
+  @Get('numeracion')
+  numeracion(@ActorEmpresa() ctx: CtxEmpresa) {
+    return this.facturas.numeracion(ctx);
+  }
+
   @Roles('DIRECTOR', 'CONTADOR', 'VENTAS', 'CONSULTA')
   @Get(':id')
   porId(
@@ -59,6 +66,34 @@ export class FacturasController {
   @Post()
   crear(@ActorEmpresa() ctx: CtxEmpresa, @Body() dto: CrearFacturaDto) {
     return this.facturas.crear(ctx, dto);
+  }
+
+  /** Cómo quedaría la factura, sin emitirla: totales, retenciones y asiento. */
+  @Roles('VENTAS', 'DIRECTOR')
+  @Post('previo')
+  @HttpCode(HttpStatus.OK)
+  previo(@ActorEmpresa() ctx: CtxEmpresa, @Body() dto: CrearFacturaDto) {
+    return this.facturas.previo(ctx, dto);
+  }
+
+  /** Qué productos no alcanzan, antes de emitir. Solo lee. */
+  @Roles('VENTAS', 'DIRECTOR')
+  @Post('existencia')
+  @HttpCode(HttpStatus.OK)
+  existencia(@ActorEmpresa() ctx: CtxEmpresa, @Body() dto: ExistenciaDto) {
+    return this.facturas.existencia(ctx, dto.lineas);
+  }
+
+  /** Cómo quedaría la factura de una cotización, sin emitirla. */
+  @Roles('VENTAS', 'DIRECTOR')
+  @Post('desde-cotizacion/:cotizacionId/previo')
+  @HttpCode(HttpStatus.OK)
+  previoConversion(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('cotizacionId', ParseUUIDPipe) cotizacionId: string,
+    @Body() dto: ConvertirCotizacionDto,
+  ) {
+    return this.facturas.previoConversion(ctx, cotizacionId, dto);
   }
 
   /**

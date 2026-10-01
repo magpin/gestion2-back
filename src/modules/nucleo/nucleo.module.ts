@@ -4,8 +4,10 @@ import { ContabilidadModule } from '../contabilidad/contabilidad.module';
 import { AuthController } from './controladores/auth.controller';
 import { CatalogosController } from './controladores/catalogos.controller';
 import { EmpresaLegalController } from './controladores/empresa-legal.controller';
+import { ImpuestosController } from './controladores/impuestos.controller';
 import { EmpresasController } from './controladores/empresas.controller';
 import { GeografiaController } from './controladores/geografia.controller';
+import { ConceptosController } from './controladores/conceptos.controller';
 import { PlanCuentasController } from './controladores/plan-cuentas.controller';
 import { ResolucionesController } from './controladores/resoluciones.controller';
 import { TenantsController } from './controladores/tenants.controller';
@@ -16,9 +18,11 @@ import { NucleoApi } from './nucleo.api';
 import { AutenticacionService } from './servicios/autenticacion.service';
 import { CatalogoService } from './servicios/catalogo.service';
 import { EmpresaLegalService } from './servicios/empresa-legal.service';
+import { ImpuestosEmpresaService } from './servicios/impuestos-empresa.service';
 import { EmpresaService } from './servicios/empresa.service';
 import { EstadoConfiguracionService } from './servicios/estado-configuracion.service';
 import { GeografiaService } from './servicios/geografia.service';
+import { ConceptosService } from './servicios/conceptos.service';
 import { PlanCuentasService } from './servicios/plan-cuentas.service';
 import { ResolucionService } from './servicios/resolucion.service';
 import { TenantService } from './servicios/tenant.service';
@@ -43,17 +47,20 @@ import { UsuarioService } from './servicios/usuario.service';
     TenantsController,
     EmpresasController,
     EmpresaLegalController,
+    ImpuestosController,
     ResolucionesController,
     UsuariosController,
     TercerosController,
     GeografiaController,
     CatalogosController,
     PlanCuentasController,
+    ConceptosController,
   ],
   providers: [
     AutenticacionService,
     EmpresaService,
     EmpresaLegalService,
+    ImpuestosEmpresaService,
     EstadoConfiguracionService,
     ResolucionService,
     UsuarioService,
@@ -61,6 +68,7 @@ import { UsuarioService } from './servicios/usuario.service';
     GeografiaService,
     CatalogoService,
     PlanCuentasService,
+    ConceptosService,
     TenantService,
     ProvisionGuard,
     NucleoApi,

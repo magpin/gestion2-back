@@ -5,6 +5,7 @@ import { filas } from '../../../common/db/filas';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import {
   comprasParecidas,
+  comprasRetencionDistinta,
   comprasSinRetencion,
   gastosAInventario,
   gastosEnCuentaDistinta,
@@ -13,6 +14,7 @@ import {
   productosSinDatosDeVenta,
   tercerosSinMarcar,
   type FilaCompraSinRetencion,
+  type FilaRetencionDistinta,
   type FilaGasto,
   type FilaLectura,
   type FilaPeriodoAbierto,
@@ -97,6 +99,7 @@ export class RevisionService {
         ...ivaAntesDelRegimen(await this.ivaAntesDelRegimen(t)),
         // ── Fase 9: piden criterio ──
         ...comprasSinRetencion(retencion.sinConceptos, retencion.sobreLaBase),
+        ...comprasRetencionDistinta(await this.retencionDistinta(t)),
         ...periodosSinCerrar(await this.periodosAbiertos(t)),
         ...lecturasSinRegistrar(await this.lecturas(t)),
         ...productosSinDatosDeVenta(await this.productosIncompletos(t)),
@@ -251,7 +254,7 @@ export class RevisionService {
         inicial AS (
           SELECT caja_id, sum(valor) AS valor
             FROM caja_movimiento
-           WHERE tipo = 'SALDO_INICIAL'
+           WHERE tipo = 'SALDO_INICIAL' AND asiento_id IS NULL
            GROUP BY caja_id
         ),
         contable AS (${SALDO_CONTABLE})
@@ -282,7 +285,7 @@ export class RevisionService {
         inicial AS (
           SELECT cuenta_bancaria_id, sum(valor) AS valor
             FROM banco_movimiento
-           WHERE tipo = 'SALDO_INICIAL'
+           WHERE tipo = 'SALDO_INICIAL' AND asiento_id IS NULL
            GROUP BY cuenta_bancaria_id
         ),
         contable AS (${SALDO_CONTABLE})
@@ -351,7 +354,7 @@ export class RevisionService {
                  CASE WHEN cm.tipo = 'INGRESO' THEN 'ENTRA' ELSE 'SALE' END AS direccion
             FROM caja_movimiento cm
             JOIN caja j ON j.id = cm.caja_id
-           WHERE cm.origen_id IS NOT NULL
+           WHERE cm.origen_tipo IN ('FACTURA_VENTA', 'COMPRA')
              AND cm.reversa_de IS NULL
              AND NOT EXISTS (SELECT 1 FROM caja_movimiento r WHERE r.reversa_de = cm.id)
           UNION ALL
@@ -361,7 +364,8 @@ export class RevisionService {
                       THEN 'ENTRA' ELSE 'SALE' END
             FROM banco_movimiento bm
             JOIN cuenta_bancaria b ON b.id = bm.cuenta_bancaria_id
-           WHERE bm.origen_id IS NOT NULL
+           -- Un traslado y su anulación mueven lo mismo en los dos sentidos: no son repetidos.
+           WHERE bm.origen_tipo IN ('FACTURA_VENTA', 'COMPRA')
         ),
         repetidos AS (
           SELECT origen_tipo, origen_id, fecha, valor,
@@ -506,6 +510,27 @@ export class RevisionService {
    * renta configurados —no pudieron llevar retención— y las que superan la
    * base mínima más baja de los conceptos que sí hay.
    */
+  /** Las compras con retención impresa por el proveedor, y lo registrado (§8.6). */
+  private async retencionDistinta(t: Tx): Promise<FilaRetencionDistinta[]> {
+    return filas<Record<string, unknown>>(
+      await t.query(`
+        SELECT c.id, c.numero_factura_proveedor AS numero, ${NOMBRE_TERCERO} AS proveedor,
+               c.fecha::text AS fecha, c.retencion_impresa, c.total_retenciones
+          FROM compra_documento c
+          JOIN tercero t ON t.id = c.tercero_id
+         WHERE c.tipo = 'FACTURA' AND c.estado = 'EMITIDA'
+           AND c.retencion_impresa IS NOT NULL
+         ORDER BY c.fecha`),
+    ).map((r) => ({
+      compraId: r.id as string,
+      numero: r.numero as string,
+      proveedor: r.proveedor as string,
+      fecha: r.fecha as string,
+      impresa: Number(r.retencion_impresa),
+      registrada: Number(r.total_retenciones),
+    }));
+  }
+
   private async comprasSinRetencion(t: Tx): Promise<{
     sinConceptos: {
       anio: number;
@@ -519,14 +544,7 @@ export class RevisionService {
         WITH retenedor AS (
           SELECT fecha_inicio, fecha_fin
             FROM empresa_regimen_tributario
-           WHERE tipo_regimen = 'AGENTE_RETENEDOR_RENTA'
-        ),
-        base AS (
-          SELECT k.anio, min(k.base_minima_uvt * u.valor) AS minima, count(*) AS conceptos
-            FROM retencion_concepto k
-            LEFT JOIN uvt u ON u.anio = k.anio
-           WHERE k.tipo = 'RENTA' AND k.activo
-           GROUP BY k.anio
+           WHERE tipo_regimen IN ('AGENTE_RETENEDOR_RENTA', 'GRAN_CONTRIBUYENTE', 'AUTORRETENEDOR_RENTA')
         )
         SELECT c.id, c.numero_factura_proveedor AS numero, ${NOMBRE_TERCERO} AS proveedor,
                c.fecha::text AS fecha, c.subtotal,
@@ -534,11 +552,27 @@ export class RevisionService {
                (SELECT min(r.fecha_inicio) FROM retenedor r
                  WHERE r.fecha_inicio <= c.fecha
                    AND (r.fecha_fin IS NULL OR r.fecha_fin >= c.fecha))::text AS desde,
-               b.conceptos, b.minima
+               -- La base mínima más baja de compras y servicios generales en la
+               -- ley vigente a la fecha de la compra (motor de retenciones).
+               (SELECT count(*) FROM retencion_tarifa x
+                  JOIN retencion_concepto_nacional n ON n.id = x.concepto_id
+                 WHERE n.codigo IN ('COMPRAS_GENERALES', 'SERVICIOS_GENERALES')
+                   AND x.vigencia_desde <= c.fecha
+                   AND (x.vigencia_hasta IS NULL OR x.vigencia_hasta >= c.fecha))
+                 AS conceptos,
+               (SELECT min(x.base_uvt) * u.valor FROM retencion_tarifa x
+                  JOIN retencion_concepto_nacional n ON n.id = x.concepto_id
+                 WHERE n.codigo IN ('COMPRAS_GENERALES', 'SERVICIOS_GENERALES')
+                   AND x.vigencia_desde <= c.fecha
+                   AND (x.vigencia_hasta IS NULL OR x.vigencia_hasta >= c.fecha))
+                 AS minima
           FROM compra_documento c
           JOIN tercero t ON t.id = c.tercero_id
-          LEFT JOIN base b ON b.anio = extract(year FROM c.fecha)::int
+          LEFT JOIN uvt u ON u.anio = extract(year FROM c.fecha)::int
          WHERE c.tipo = 'FACTURA' AND c.estado = 'EMITIDA'
+           -- Las que pasaron por el motor tienen su decisión escrita —no
+           -- sujeto, bajo la base, o «sin retención» con motivo— y se respetan.
+           AND (c.retencion_decision IS NULL OR c.retencion_decision = 'MANUAL')
            AND NOT EXISTS (SELECT 1 FROM compra_retencion x WHERE x.compra_documento_id = c.id)
            AND EXISTS (SELECT 1 FROM retenedor r
                         WHERE r.fecha_inicio <= c.fecha
@@ -560,7 +594,7 @@ export class RevisionService {
         subtotal: n(f.subtotal),
       };
       const anio = n(f.anio);
-      if (f.conceptos === null) {
+      if (f.conceptos === null || n(f.conceptos) === 0) {
         const g = sinConceptos.get(anio) ?? {
           anio,
           desde: (f.desde as string).slice(0, 10),
@@ -649,13 +683,18 @@ export class RevisionService {
         )
         SELECT p.id, p.codigo, p.nombre, u.saldo_cantidad AS existencias,
                coalesce(pp.precio_venta, 0) <= 0 AS sin_precio,
-               (p.cuenta_ingreso_id IS NULL OR p.cuenta_costo_venta_id IS NULL) AS sin_cuentas
+               -- Sin cuenta es sin la propia NI la de la empresa: un producto
+               -- sin cuentas toma las automáticas al venderse.
+               (coalesce(p.cuenta_ingreso_id, ic.cuenta_ingreso_id) IS NULL
+                OR coalesce(p.cuenta_costo_venta_id, ic.cuenta_costo_venta_id) IS NULL) AS sin_cuentas
           FROM producto p
           JOIN ultimo u ON u.producto_id = p.id AND u.saldo_cantidad > 0
           LEFT JOIN producto_precio pp ON pp.producto_id = p.id AND pp.fecha_fin IS NULL
+          LEFT JOIN inventario_configuracion ic ON ic.empresa_id = p.empresa_id
          WHERE p.activo
            AND (coalesce(pp.precio_venta, 0) <= 0
-                OR p.cuenta_ingreso_id IS NULL OR p.cuenta_costo_venta_id IS NULL)
+                OR coalesce(p.cuenta_ingreso_id, ic.cuenta_ingreso_id) IS NULL
+                OR coalesce(p.cuenta_costo_venta_id, ic.cuenta_costo_venta_id) IS NULL)
          ORDER BY p.codigo`),
     );
     return r.map((f) => ({

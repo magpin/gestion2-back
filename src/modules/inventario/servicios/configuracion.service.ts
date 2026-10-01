@@ -1,104 +1,115 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
-import { fila } from '../../../common/db/filas';
+import {
+  CuentasAutomaticas,
+  type ConceptoConfigurado,
+} from '../../../common/contabilidad/cuentas-automaticas';
 import { TxService, type Tx } from '../../../common/db/tx.service';
+import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
+import { NucleoApi } from '../../nucleo/nucleo.api';
+import {
+  CONCEPTOS_INVENTARIO,
+  conceptosInventarioPara,
+  ORDEN_CONCEPTOS_INVENTARIO,
+  type ConceptoInventario,
+} from './cuentas-inventario.reglas';
 
 export interface InventarioConfiguracion {
-  empresa_id: string;
-  cuenta_ajuste_id: string | null;
-  /**
-   * Si la empresa acepta facturar sin existencia. `false` por defecto: el
-   * kardex —por trigger, ver `0037`— rechaza la salida. Con `true`, quien
-   * factura todavía tiene que confirmarlo documento por documento.
-   */
-  permite_existencia_negativa: boolean;
+  conceptos: ConceptoConfigurado<ConceptoInventario>[];
+  /** Todos los conceptos tienen cuenta: productos y ajustes funcionan sin preguntar. */
+  completa: boolean;
 }
 
 /**
- * Contra qué cuenta se asienta un ajuste de existencias. Una fila por
- * empresa, elegida una sola vez por quien tiene criterio contable
- * (`CONTADOR`/`DIRECTOR`) — ver el porqué en `0025_producto_inventario.sql`.
+ * Las cuentas automáticas de inventario: las que toma un producto nuevo
+ * (inventario, ingreso, costo de venta) y contra las que se asienta un ajuste
+ * de existencias (sobrante, faltante asumido, faltante cobrable).
+ *
+ * Nadie las elige al operar: el sistema propone la del decreto, la crea si
+ * falta, y solo pregunta —en el Plan de cuentas— cuando hay varios auxiliares.
+ *
+ * «Vender sin existencia» ya no vive acá: es el hecho operativo
+ * `VENDE_SIN_EXISTENCIA`, que se contesta en el asistente.
  */
 @Injectable()
 export class ConfiguracionService {
-  constructor(private readonly tx: TxService) {}
+  private readonly cuentas: CuentasAutomaticas<ConceptoInventario>;
 
-  /** `cuenta_ajuste_id` viene `null` si nadie la ha fijado todavía. */
+  constructor(
+    private readonly tx: TxService,
+    nucleo: NucleoApi,
+    contabilidad: ContabilidadApi,
+  ) {
+    this.cuentas = new CuentasAutomaticas(
+      'inventario_configuracion',
+      CONCEPTOS_INVENTARIO,
+      ORDEN_CONCEPTOS_INVENTARIO,
+      nucleo,
+      contabilidad,
+      // El ingreso y el costo de un producto nuevo, según la actividad de la
+      // empresa: una de servicios no vende en 4135.
+      async (ctx, t) =>
+        conceptosInventarioPara(await nucleo.familiaDeIngreso(ctx, t)),
+    );
+  }
+
   async obtener(ctx: CtxEmpresa, tx?: Tx): Promise<InventarioConfiguracion> {
     return this.tx.enContexto(
       ctx,
       async (t) => {
-        const encontrada = fila<InventarioConfiguracion>(
-          await t.query(
-            `SELECT empresa_id, cuenta_ajuste_id, permite_existencia_negativa
-               FROM inventario_configuracion WHERE empresa_id = $1`,
-            [ctx.empresaId],
-          ),
-        );
-        return (
-          encontrada ?? {
-            empresa_id: ctx.empresaId,
-            cuenta_ajuste_id: null,
-            permite_existencia_negativa: false,
-          }
-        );
+        const conceptos = await this.cuentas.obtener(ctx, t);
+        return {
+          conceptos,
+          completa: conceptos.every((c) => c.cuenta !== null),
+        };
       },
       tx,
     );
   }
 
-  /**
-   * `UPSERT`: la primera vez inserta, después actualiza. Si `cuentaAjusteId`
-   * no existe o es de otra empresa, la FK compuesta lo rechaza.
-   */
-  async fijarCuentaAjuste(
+  /** La cuenta de un concepto, elegida entre sus opciones y solo entre ellas. */
+  async fijar(
     ctx: CtxEmpresa,
-    cuentaAjusteId: string,
+    concepto: ConceptoInventario,
+    cuentaId: string,
   ): Promise<InventarioConfiguracion> {
     return this.tx.enContexto(ctx, async (t) => {
-      const guardada = fila<InventarioConfiguracion>(
-        await t.query(
-          `INSERT INTO inventario_configuracion (empresa_id, cuenta_ajuste_id)
-           VALUES ($1, $2)
-           ON CONFLICT (empresa_id) DO UPDATE SET cuenta_ajuste_id = EXCLUDED.cuenta_ajuste_id
-           RETURNING empresa_id, cuenta_ajuste_id, permite_existencia_negativa`,
-          [ctx.empresaId, cuentaAjusteId],
-        ),
-      );
-      if (guardada === undefined) {
-        throw new BadRequestException('No se pudo guardar la configuracion.');
-      }
-      return guardada;
+      await this.cuentas.fijar(ctx, concepto, cuentaId, t);
+      return this.obtener(ctx, t);
     });
   }
 
   /**
-   * Habilita o apaga el descubierto para toda la empresa.
-   *
-   * Es una decisión de quien responde por el inventario, tomada una vez y no
-   * documento por documento: con esto apagado, la confirmación de quien
-   * factura no alcanza y el kardex rechaza la salida igual.
+   * Crea las cuentas que falten y asigna cada concepto si no hay nada que
+   * elegir. Idempotente. Lo llaman el asistente al crear el plan, la pantalla
+   * de inventario al abrirse, y crear un producto o un ajuste si encuentran
+   * un concepto sin cuenta.
    */
-  async fijarExistenciaNegativa(
+  async preparar(
     ctx: CtxEmpresa,
-    permite: boolean,
-  ): Promise<InventarioConfiguracion> {
-    return this.tx.enContexto(ctx, async (t) => {
-      const guardada = fila<InventarioConfiguracion>(
-        await t.query(
-          `INSERT INTO inventario_configuracion (empresa_id, permite_existencia_negativa)
-           VALUES ($1, $2)
-           ON CONFLICT (empresa_id) DO UPDATE
-             SET permite_existencia_negativa = EXCLUDED.permite_existencia_negativa
-           RETURNING empresa_id, cuenta_ajuste_id, permite_existencia_negativa`,
-          [ctx.empresaId, permite],
-        ),
-      );
-      if (guardada === undefined) {
-        throw new BadRequestException('No se pudo guardar la configuracion.');
-      }
-      return guardada;
-    });
+    tx?: Tx,
+  ): Promise<{ cuentasCreadas: string[] }> {
+    return this.tx.enContexto(
+      ctx,
+      async (t) => ({ cuentasCreadas: await this.cuentas.preparar(ctx, t) }),
+      tx,
+    );
+  }
+
+  /**
+   * La cuenta que usa hoy un concepto. Si no la tiene, prepara primero: quien
+   * opera nunca tiene que ir a configurar nada. Sigue siendo `null` solo si
+   * hay varios auxiliares y nadie ha elegido.
+   */
+  async cuentaDe(
+    ctx: CtxEmpresa,
+    concepto: ConceptoInventario,
+    t: Tx,
+  ): Promise<string | null> {
+    const cuenta = await this.cuentas.cuentaDe(ctx, concepto, t);
+    if (cuenta !== null) return cuenta;
+    await this.cuentas.preparar(ctx, t);
+    return this.cuentas.cuentaDe(ctx, concepto, t);
   }
 }

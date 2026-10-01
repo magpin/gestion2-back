@@ -1,5 +1,8 @@
 import {
   calcularDiferenciaArqueo,
+  problemaCuentaDeCaja,
+  conceptoDelAjuste,
+  resolverCuentaConcepto,
   calcularEgreso,
   calcularIngreso,
   redondear,
@@ -56,11 +59,11 @@ describe('calcularDiferenciaArqueo', () => {
     expect(calcularDiferenciaArqueo(100_000, 100_000)).toBe(0);
   });
 
-  it('es positiva cuando sobra plata', () => {
+  it('es positiva cuando sobra dinero', () => {
     expect(calcularDiferenciaArqueo(100_000, 105_000)).toBe(5_000);
   });
 
-  it('es negativa cuando falta plata', () => {
+  it('es negativa cuando falta dinero', () => {
     expect(calcularDiferenciaArqueo(100_000, 92_000)).toBe(-8_000);
   });
 });
@@ -74,7 +77,7 @@ describe('verificarPuedeAbrirArqueo', () => {
     expect(verificarPuedeAbrirArqueo(true)).toEqual({
       ok: false,
       motivo:
-        'Ya hay un arqueo abierto para esta caja. Cerralo antes de abrir uno nuevo.',
+        'Ya hay un arqueo abierto para esta caja. Ciérrelo antes de abrir uno nuevo.',
     });
   });
 });
@@ -157,5 +160,118 @@ describe('resolverConteo', () => {
         { tipo: 'MONEDA', denominacion: 200, cantidad: 3 },
       ]).ok,
     ).toBe(false);
+  });
+});
+
+describe('resolverCuentaConcepto', () => {
+  const madre = {
+    id: 'm',
+    codigo: '429553',
+    nombre: 'Sobrantes',
+    esAuxiliar: true,
+  };
+  const aux = (n: number) => ({
+    id: `a${n}`,
+    codigo: `4295530${n}`,
+    nombre: `Sobrantes ${n}`,
+    esAuxiliar: true,
+  });
+
+  it('sin auxiliares, la cuenta misma queda elegida', () => {
+    expect(resolverCuentaConcepto({ cuenta: madre, auxiliares: [] })).toEqual({
+      opciones: [madre],
+      cuentaId: 'm',
+    });
+  });
+
+  it('con un solo auxiliar, ese queda elegido y la madre sale de las opciones', () => {
+    expect(
+      resolverCuentaConcepto({ cuenta: madre, auxiliares: [aux(1)] }),
+    ).toEqual({ opciones: [aux(1)], cuentaId: 'a1' });
+  });
+
+  it('con varios auxiliares, hay que elegir', () => {
+    expect(
+      resolverCuentaConcepto({ cuenta: madre, auxiliares: [aux(1), aux(2)] }),
+    ).toEqual({ opciones: [aux(1), aux(2)], cuentaId: null });
+  });
+
+  it('una madre que no recibe asientos y sin auxiliares no sirve', () => {
+    expect(
+      resolverCuentaConcepto({
+        cuenta: { ...madre, esAuxiliar: false },
+        auxiliares: [],
+      }),
+    ).toEqual({ opciones: [], cuentaId: null });
+  });
+
+  it('sin cuenta ni auxiliares, no hay nada', () => {
+    expect(resolverCuentaConcepto({ cuenta: null, auxiliares: [] })).toEqual({
+      opciones: [],
+      cuentaId: null,
+    });
+  });
+});
+
+describe('conceptoDelAjuste', () => {
+  it('un sobrante no pregunta', () => {
+    expect(conceptoDelAjuste(10, undefined)).toEqual({
+      ok: true,
+      concepto: 'SOBRANTE',
+    });
+  });
+
+  it('un faltante sin tratamiento se rechaza', () => {
+    expect(conceptoDelAjuste(-10, undefined).ok).toBe(false);
+  });
+
+  it('un faltante lo asume la empresa o lo paga el responsable', () => {
+    expect(conceptoDelAjuste(-10, 'EMPRESA')).toEqual({
+      ok: true,
+      concepto: 'FALTANTE_ASUMIDO',
+    });
+    expect(conceptoDelAjuste(-10, 'RESPONSABLE')).toEqual({
+      ok: true,
+      concepto: 'FALTANTE_COBRABLE',
+    });
+  });
+});
+
+describe('problemaCuentaDeCaja', () => {
+  const cuenta = (
+    codigo: string,
+    o: Partial<{ activa: boolean; esAuxiliar: boolean }> = {},
+  ) => ({
+    codigo,
+    activa: true,
+    esAuxiliar: true,
+    ...o,
+  });
+
+  it('una caja bajo 1105, activa y auxiliar, sirve', () => {
+    expect(problemaCuentaDeCaja('PRINCIPAL', cuenta('11050501'))).toBeNull();
+  });
+
+  it('la caja menor va bajo 110510', () => {
+    expect(problemaCuentaDeCaja('MENOR', cuenta('11051001'))).toBeNull();
+    expect(problemaCuentaDeCaja('MENOR', cuenta('11050501'))).toMatch(/110510/);
+  });
+
+  it('una cuenta de otra clase no sirve', () => {
+    expect(problemaCuentaDeCaja('PRINCIPAL', cuenta('11100501'))).toMatch(
+      /1105/,
+    );
+  });
+
+  it('inactiva o que agrupa, tampoco', () => {
+    expect(
+      problemaCuentaDeCaja(
+        'PRINCIPAL',
+        cuenta('110505', { esAuxiliar: false }),
+      ),
+    ).toMatch(/agrupa/);
+    expect(
+      problemaCuentaDeCaja('PRINCIPAL', cuenta('11050501', { activa: false })),
+    ).toMatch(/inactiva/);
   });
 });

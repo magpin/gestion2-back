@@ -18,6 +18,7 @@ import type {
 } from './dto/empresa-legal.dto';
 import type { CrearResolucionDto } from './dto/resolucion.dto';
 import { AutenticacionService } from './servicios/autenticacion.service';
+import { ConceptosService } from './servicios/conceptos.service';
 import { EmpresaService } from './servicios/empresa.service';
 import { EmpresaLegalService } from './servicios/empresa-legal.service';
 import { EstadoConfiguracionService } from './servicios/estado-configuracion.service';
@@ -56,7 +57,26 @@ export class NucleoApi {
     private readonly plan: PlanCuentasService,
     private readonly resoluciones: ResolucionService,
     private readonly terceros: TerceroService,
+    private readonly conceptos: ConceptosService,
   ) {}
+
+  /**
+   * Un concepto de ingreso o egreso, con su cuenta. Lo usan Tesorería, Compras
+   * y Ventas para asentar lo que la persona eligió. Ver `ConceptosService`.
+   */
+  async concepto(ctx: CtxEmpresa, id: string, tx?: Tx) {
+    return this.conceptos.obtener(ctx, id, tx);
+  }
+
+  /** Un concepto del sistema por su código (`GTO-GMF`). Ver `ConceptosService.porCodigo`. */
+  async conceptoPorCodigo(ctx: CtxEmpresa, codigo: string, tx?: Tx) {
+    return this.conceptos.porCodigo(ctx, codigo, tx);
+  }
+
+  /** Los conceptos activos, para elegir uno. */
+  async conceptosActivos(ctx: CtxEmpresa, tx?: Tx) {
+    return this.conceptos.listar(ctx, {}, tx);
+  }
 
   /** Roles del usuario en una empresa, leídos de la base y no del token. */
   async rolesDe(ctx: Ctx, empresaId: string, tx?: Tx): Promise<RolCodigo[]> {
@@ -102,7 +122,7 @@ export class NucleoApi {
 
     if (responsable && noResponsable) {
       throw new ConflictException(
-        'La empresa figura a la vez como responsable y como no responsable de IVA. Cerrá una de las dos condiciones antes de facturar.',
+        'La empresa figura a la vez como responsable y como no responsable de IVA. Cierre una de las dos condiciones antes de facturar.',
       );
     }
 
@@ -173,6 +193,83 @@ export class NucleoApi {
     tx?: Tx,
   ): Promise<CuentaResumen | null> {
     return this.plan.cuenta(ctx, codigo, tx);
+  }
+
+  /** Una cuenta y sus auxiliares activos. Ver `PlanCuentasService.cuentaConAuxiliares`. */
+  async cuentaConAuxiliares(ctx: CtxEmpresa, codigo: string, tx?: Tx) {
+    return this.plan.cuentaConAuxiliares(ctx, codigo, tx);
+  }
+
+  /**
+   * Crea una cuenta del decreto si la empresa no la tiene. `null` si ya
+   * existía, aunque esté inactiva. Ver `PlanCuentasService.asegurarCuenta`.
+   */
+  async asegurarCuenta(
+    ctx: CtxEmpresa,
+    datos: { codigo: string; nombre: string; exigeTercero?: boolean },
+    tx?: Tx,
+  ) {
+    return this.plan.asegurarCuenta(ctx, datos, tx);
+  }
+
+  /**
+   * Un auxiliar bajo `madre` con el código que sigue. Con `sistema`, lo crea
+   * la configuración (la caja de una sede, el banco) sin preguntar el rol.
+   * Ver `PlanCuentasService.crearAuxiliar`.
+   */
+  async crearAuxiliar(
+    ctx: CtxEmpresa,
+    datos: { madre: string; nombre: string },
+    opciones: { sistema?: boolean } = {},
+    tx?: Tx,
+  ): Promise<{ id: string; codigo: string; nombre: string }> {
+    const f = await this.plan.crearAuxiliar(ctx, datos, opciones, tx);
+    return {
+      id: f.id as string,
+      codigo: f.codigo as string,
+      nombre: f.nombre as string,
+    };
+  }
+
+  /**
+   * La cuenta de ingresos (41xx) de la actividad principal de la empresa, o
+   * `null` si no la ha declarado. El costo es la misma con 61.
+   */
+  async familiaDeIngreso(ctx: CtxEmpresa, tx?: Tx): Promise<string | null> {
+    return this.plan.familiaDeIngreso(ctx, tx);
+  }
+
+  /** El capital y la 370505 si faltan. Ver `PlanCuentasService.prepararPatrimonio`. */
+  async prepararPatrimonio(ctx: CtxEmpresa, tx?: Tx): Promise<string[]> {
+    return this.plan.prepararPatrimonio(ctx, tx);
+  }
+
+  /** La depreciación en códigos de flota, corregida. Ver `PlanCuentasService.corregirDepreciacion`. */
+  async corregirDepreciacion(ctx: CtxEmpresa, tx?: Tx): Promise<string[]> {
+    return this.plan.corregirDepreciacion(ctx, tx);
+  }
+
+  /** Los conceptos de movimiento iniciales, con su cuenta. Ver `ConceptosService.preparar`. */
+  async prepararConceptos(ctx: CtxEmpresa, tx?: Tx) {
+    return this.conceptos.preparar(ctx, tx);
+  }
+
+  /** Las sedes de la empresa: id y nombre, la principal primero. */
+  async sedes(ctx: CtxEmpresa, tx?: Tx) {
+    return this.empresas.sedesResumen(ctx, tx);
+  }
+
+  /**
+   * Si la empresa declaró un hecho operativo (`MANEJA_CAJA_MENOR`,
+   * `TIENE_EMPLEADOS`…). Es lo que ningún documento dice y solo la persona
+   * contesta en el asistente.
+   */
+  async tieneHechoOperativo(
+    ctx: CtxEmpresa,
+    hecho: string,
+    tx?: Tx,
+  ): Promise<boolean> {
+    return (await this.legal.hechosOperativos(ctx, tx)).includes(hecho);
   }
 
   /**

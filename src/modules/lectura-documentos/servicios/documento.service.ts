@@ -158,7 +158,8 @@ export class DocumentoService {
         await t.query(
           `SELECT DISTINCT ON (tipo) *
              FROM documento_leido
-            WHERE empresa_id = $1 AND tipo NOT IN ('FACTURA_COMPRA', 'PEDIDO_VENTA')
+            WHERE empresa_id = $1
+              AND tipo NOT IN ('FACTURA_COMPRA', 'PEDIDO_VENTA', 'VENTA_HISTORICA')
             ORDER BY tipo, creado_en DESC`,
           [ctx.empresaId],
         ),
@@ -222,6 +223,29 @@ export class DocumentoService {
     });
   }
 
+  /**
+   * Los últimos archivos con ventas del sistema anterior (fase 11). Cuáles de
+   * sus facturas ya están en el sistema no se dice acá: lo agrega quien las
+   * muestra, mirando los números.
+   */
+  async listarVentasHistoricas(
+    ctx: CtxEmpresa,
+    tope = 50,
+  ): Promise<Documento[]> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const encontrados = filas<FilaDocumento>(
+        await t.query(
+          `SELECT * FROM documento_leido
+            WHERE empresa_id = $1 AND tipo = 'VENTA_HISTORICA'
+            ORDER BY creado_en DESC
+            LIMIT $2`,
+          [ctx.empresaId, tope],
+        ),
+      );
+      return encontrados.map(aDocumento);
+    });
+  }
+
   async porId(ctx: CtxEmpresa, id: string): Promise<Documento> {
     return this.tx.enContexto(ctx, async (t) => {
       const encontrada = fila<FilaDocumento>(
@@ -260,7 +284,7 @@ export class DocumentoService {
   async descartar(
     ctx: CtxEmpresa,
     id: string,
-    tipo: 'FACTURA_COMPRA' | 'PEDIDO_VENTA',
+    tipo: 'FACTURA_COMPRA' | 'PEDIDO_VENTA' | 'VENTA_HISTORICA',
     motivo: string,
   ): Promise<Documento> {
     return this.tx.enContexto(ctx, async (t) => {
@@ -271,6 +295,8 @@ export class DocumentoService {
                            WHERE c.documento_leido_id = d.id AND c.estado <> 'ANULADA')
                OR EXISTS (SELECT 1 FROM venta_documento v
                            WHERE v.documento_leido_id = d.id AND v.estado <> 'ANULADA')
+                  -- Ventas anteriores: si ya se cargó alguna de sus facturas.
+               OR jsonb_array_length(coalesce(d.confirmacion -> 'aplicados', '[]'::jsonb)) > 0
                   AS registrada
              FROM documento_leido d
             WHERE d.id = $1 AND d.tipo = $2
@@ -283,7 +309,7 @@ export class DocumentoService {
       }
       if (actual.registrada) {
         throw new BadRequestException(
-          'Ya está registrado: para dejarlo sin efecto, anulá el documento que se registró.',
+          'Ya está registrado: para dejarlo sin efecto, anule el documento que se registró.',
         );
       }
       if (actual.estado !== 'LEIDO') {

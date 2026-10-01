@@ -145,11 +145,11 @@ export class ErrorPostgresFilter implements ExceptionFilter {
       uq_resolucion_numero: 'Esa resolucion ya esta registrada.',
       uq_producto_codigo: 'Ya existe un producto con ese codigo.',
       uq_venta_documento_leido:
-        'Este pedido ya se facturo. Anula esa factura si hay que volver a hacerla.',
+        'Este pedido ya se facturo. Anule esa factura si hay que volver a hacerla.',
       ux_caja_principal_por_sede:
         'Ya hay una caja principal activa en esa sede.',
       ux_arqueo_abierto:
-        'Ya hay un arqueo abierto para esta caja. Cerralo antes de abrir uno nuevo.',
+        'Ya hay un arqueo abierto para esta caja. Ciérrelo antes de abrir uno nuevo.',
       uq_cuenta_bancaria_numero:
         'Ya existe una cuenta bancaria con ese banco y número.',
       uq_cuenta_bancaria_cuenta:
@@ -175,7 +175,8 @@ export class ErrorPostgresFilter implements ExceptionFilter {
     const conocidos: Record<string, string> = {
       ck_empresa_dv: 'El digito de verificacion no corresponde al NIT.',
       ck_tercero_dv: 'El digito de verificacion no corresponde al NIT.',
-      ck_tercero_rol: 'Un tercero tiene que ser cliente, proveedor o ambos.',
+      ck_tercero_rol:
+        'Un tercero tiene que ser cliente, proveedor o empleado (o varios a la vez).',
       ck_tercero_nombre:
         'Persona juridica exige razon social; persona natural exige primer nombre y primer apellido.',
       ck_resolucion_consecutivo:
@@ -195,6 +196,8 @@ export class ErrorPostgresFilter implements ExceptionFilter {
         'La fecha de fin no puede ser anterior a la de inicio.',
       ck_caja_sede:
         'Una caja principal necesita una sede; el fondo de caja menor no.',
+      ck_arqueo_tratamiento:
+        'Solo un faltante se asume o se cobra, y cobrarlo exige decir a quién.',
       ck_caja_mov_reversa:
         'Una reversa necesita su motivo, de al menos tres letras.',
       ck_banco_corte_cuadre:

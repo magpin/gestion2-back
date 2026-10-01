@@ -34,6 +34,8 @@ export interface FilaArchivo {
     extraido: unknown;
     error: string | null;
     motivoDescarte: string | null;
+    /** Ventas anteriores: cuántas de sus facturas ya se cargaron (fase 11). */
+    cargadas?: number;
   } | null;
   /** La compra o la factura en que terminó, si alguien ya la registró. */
   registrado: { id: string; numero: string } | null;
@@ -95,6 +97,7 @@ export interface ResumenLote {
 const DESCRIPCION: Record<string, string> = {
   FACTURA_COMPRA: 'Factura de compra',
   PEDIDO_VENTA: 'Pedido de cliente',
+  VENTA_HISTORICA: 'Ventas del sistema anterior',
   RUT: 'RUT',
   CAMARA_COMERCIO: 'Certificado de Cámara de Comercio',
   RESOLUCION_DIAN: 'Resolución de facturación',
@@ -210,6 +213,9 @@ export function situacionDelLote(filas: FilaArchivo[]): ArchivoDelLote[] {
       if (d.estado === 'FALLO') {
         return { ...base, situacion: 'FALLO' as const, nota: d.error };
       }
+      if (d.tipo === 'VENTA_HISTORICA') {
+        return { ...base, ...ventasAnteriores(d) };
+      }
       if (d.tipo !== 'FACTURA_COMPRA' && d.tipo !== 'PEDIDO_VENTA') {
         return {
           ...base,
@@ -306,6 +312,87 @@ export function resumenDelLote(archivos: ArchivoDelLote[]): ResumenLote {
   };
 }
 
+/**
+ * Un archivo con ventas del sistema anterior: varias facturas en uno. Se da por
+ * hecho cuando se cargó alguna; si no, se aparta si alguna tiene preguntas o no
+ * cuadra. Si ya estaban en el sistema no se sabe acá: lo dice la pantalla de
+ * Ventas, que lo mira al mostrarlas.
+ */
+function ventasAnteriores(
+  d: NonNullable<FilaArchivo['documento']>,
+): Pick<
+  ArchivoDelLote,
+  'situacion' | 'titulo' | 'valor' | 'motivos' | 'nota' | 'registrado'
+> {
+  const e = (d.extraido ?? {}) as {
+    facturas?: Array<{
+      factura: {
+        numero: string;
+        cliente: { nombre: string };
+        impreso: { total: number };
+      };
+      comprobaciones: Array<{ cuadra: boolean }>;
+      preguntas: unknown[];
+    }>;
+    preguntas?: unknown[];
+  };
+  const facturas = e.facturas ?? [];
+  const n = facturas.length;
+  const titulo =
+    n === 1
+      ? `${facturas[0].factura.cliente.nombre} · ${facturas[0].factura.numero}`
+      : plural(n, 'factura de venta', 'facturas de venta');
+  const total = facturas.reduce(
+    (s, f) => s + (f.factura.impreso.total || 0),
+    0,
+  );
+  const conDatos = {
+    titulo,
+    valor: total > 0 ? total : null,
+    motivos: [] as ArchivoDelLote['motivos'],
+    nota: null as string | null,
+    registrado: null as ArchivoDelLote['registrado'],
+  };
+
+  const cargadas = d.cargadas ?? 0;
+  if (cargadas > 0) {
+    return {
+      ...conDatos,
+      situacion: 'REGISTRADA',
+      registrado: { id: d.id, numero: `${cargadas} de ${n}` },
+    };
+  }
+  if (d.estado === 'DESCARTADO') {
+    return { ...conDatos, situacion: 'DESCARTADA', nota: d.motivoDescarte };
+  }
+
+  const motivos: ArchivoDelLote['motivos'] = [];
+  const noCuadran = facturas.filter((f) =>
+    f.comprobaciones.some((c) => !c.cuadra),
+  ).length;
+  if (noCuadran > 0) {
+    motivos.push({
+      clave: 'NO_CUADRA',
+      texto: `Las cuentas no dan en ${plural(noCuadran, 'factura', 'facturas')}`,
+    });
+  }
+  const conPreguntas = facturas.filter((f) => f.preguntas.length > 0).length;
+  if (conPreguntas > 0 || (e.preguntas ?? []).length > 0) {
+    motivos.push({
+      clave: 'PREGUNTAS',
+      texto:
+        conPreguntas > 0
+          ? `Me faltan datos en ${plural(conPreguntas, 'factura', 'facturas')}`
+          : 'No pude buscar los clientes ni los productos',
+    });
+  }
+  return {
+    ...conDatos,
+    situacion: motivos.length === 0 ? 'LISTA' : 'APARTADA',
+    motivos,
+  };
+}
+
 /** Lo que dice el lote de un archivo que no es algo que María lea. */
 export function motivoNoSeLee(
   analisis: { tipo: string | null; clase: string },
@@ -316,10 +403,12 @@ export function motivoNoSeLee(
   }
   if (!permitido) {
     return analisis.tipo === 'FACTURA_COMPRA'
-      ? 'Es una factura de compra, y registrar compras no te toca: se la pasás a quien las registra.'
+      ? 'Es una factura de compra, y registrar compras no le corresponde: entréguela a quien las registra.'
       : analisis.tipo === 'PEDIDO_VENTA'
-        ? 'Es un pedido de cliente, y facturar no te toca: se lo pasás a quien factura.'
-        : 'Es un documento de la configuración de la empresa, y configurarla no te toca.';
+        ? 'Es un pedido de cliente, y facturar no le corresponde: entrégueselo a quien factura.'
+        : analisis.tipo === 'VENTA_HISTORICA'
+          ? 'Son ventas del sistema anterior, y cargarlas no le corresponde: entrégueselas al contador.'
+          : 'Es un documento de la configuración de la empresa, y configurarla no le corresponde.';
   }
   return null;
 }

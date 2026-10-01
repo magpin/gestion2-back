@@ -9,6 +9,7 @@ import {
 import type { CtxEmpresa, RolCodigo } from '../../../common/ctx';
 import { PausaIaService } from '../../../common/ia/pausa-ia.service';
 import { AlmacenamientoApi } from '../../almacenamiento/almacenamiento.api';
+import { RetencionesApi } from '../../retenciones/retenciones.api';
 import { nombreDocumento } from '../reglas/documento.reglas';
 import {
   EXTRACTOR_PUERTO,
@@ -30,6 +31,7 @@ import {
   CruceService,
   type FacturaCruzada,
   type PedidoCruzado,
+  type VentasHistoricasCruzadas,
 } from './cruce.service';
 import { ProgresoService } from './progreso.service';
 
@@ -56,6 +58,8 @@ export class ExtractorService {
     @Inject(EXTRACTOR_PUERTO) private readonly extractor: ExtractorPuerto,
     // Opcional: las pruebas arman el servicio sin él. En la app siempre está.
     @Optional() private readonly pausa?: PausaIaService,
+    // Opcional por lo mismo: propone cambios al perfil del proveedor (§8.8).
+    @Optional() private readonly retenciones?: RetencionesApi,
   ) {}
 
   /** `false` cuando falta la clave: el modo IA entonces no se ofrece. */
@@ -149,7 +153,7 @@ export class ExtractorService {
   async detener(ctx: CtxEmpresa, documento: Documento): Promise<boolean> {
     if (this.progreso.detener(documento.id)) return true;
     const motivo =
-      'La lectura se interrumpió antes de terminar. Subí el archivo de nuevo.';
+      'La lectura se interrumpió antes de terminar. Suba el archivo de nuevo.';
     await this.documentos.marcarFallo(ctx, documento.id, {
       clase: 'DETENIDO',
       motivo,
@@ -202,6 +206,11 @@ export class ExtractorService {
       // y termina igual: LEIDO con el borrador de la factura, o FALLO.
       if (documento.tipo === 'PEDIDO_VENTA') {
         await this.leerPedido(ctx, documento, archivo, corte.signal);
+        return;
+      }
+      // Las ventas del sistema anterior: una lista de facturas por archivo.
+      if (documento.tipo === 'VENTA_HISTORICA') {
+        await this.leerVentasHistoricas(ctx, documento, archivo, corte.signal);
         return;
       }
 
@@ -329,13 +338,40 @@ export class ExtractorService {
           {
             sobre: 'cruce',
             texto:
-              'Leí la factura pero no pude buscar el proveedor ni los productos. Probá de nuevo.',
+              'Leí la factura pero no pude buscar el proveedor ni los productos. Intente de nuevo.',
           },
         ],
         completa: false,
       },
       resultado.medicion,
     );
+
+    // Lo que la factura dice del proveedor y no coincide con su perfil queda
+    // como propuesta (plan motor de retenciones, Fase 8, §8.8). Si falla, la
+    // lectura ya quedó guardada: no se pierde por esto.
+    const tributario = resultado.factura.proveedor.tributario;
+    if (
+      this.retenciones !== undefined &&
+      cruzada?.proveedor != null &&
+      tributario !== undefined
+    ) {
+      try {
+        await this.retenciones.proponerPerfilDesdeFactura(ctx, {
+          terceroId: cruzada.proveedor.id,
+          documentoLeidoId: documento.id,
+          referencia:
+            [resultado.factura.prefijo, resultado.factura.numero]
+              .filter((x) => x !== null && x !== '')
+              .join('') || null,
+          fecha: resultado.factura.fecha,
+          leido: tributario,
+        });
+      } catch (error: unknown) {
+        this.log.warn(
+          `No pude proponer cambios al perfil del proveedor de ${documento.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
 
     this.progreso.emitir(ctx.empresaId, {
       etapa: 'LISTO',
@@ -404,7 +440,7 @@ export class ExtractorService {
           {
             sobre: 'cruce',
             texto:
-              'Leí el pedido pero no pude buscar el cliente ni los productos. Probá de nuevo.',
+              'Leí el pedido pero no pude buscar el cliente ni los productos. Intente de nuevo.',
           },
         ],
         completa: false,
@@ -426,6 +462,86 @@ export class ExtractorService {
     });
   }
 
+  /**
+   * La rama de las ventas del sistema anterior. Como las otras: si el cruce se
+   * cae, lo leído se guarda igual con una pregunta que lo dice.
+   */
+  private async leerVentasHistoricas(
+    ctx: CtxEmpresa,
+    documento: Documento,
+    archivo: ArchivoParaLeer,
+    corte: AbortSignal,
+  ): Promise<void> {
+    const resultado = await this.extractor.leerVentasHistoricas({
+      archivo,
+      corte,
+    });
+
+    if (!resultado.leido) {
+      await this.documentos.marcarFallo(ctx, documento.id, resultado);
+      this.progreso.emitir(ctx.empresaId, {
+        etapa: 'ERROR',
+        documento: documento.tipo,
+        documentoId: documento.id,
+        mensaje: resultado.motivo,
+        datos: [],
+      });
+      this.log.warn(
+        `Lectura ${documento.id} (ventas anteriores) terminó en ${resultado.clase}.`,
+      );
+      return;
+    }
+
+    let cruzadas: VentasHistoricasCruzadas | null;
+    try {
+      cruzadas = await this.cruce.cruzarVentasHistoricas(
+        ctx,
+        resultado.facturas,
+      );
+    } catch (error: unknown) {
+      this.log.error(
+        `No pude cruzar las ventas anteriores ${documento.id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      cruzadas = null;
+    }
+
+    await this.documentos.guardarLeido(
+      ctx,
+      documento.id,
+      cruzadas ?? {
+        facturas: resultado.facturas.map((f) => ({
+          ...f,
+          cliente: null,
+          renglones: [],
+          preguntas: [],
+          completa: false,
+        })),
+        preguntas: [
+          {
+            sobre: 'cruce',
+            texto:
+              'Leí las facturas pero no pude buscar los clientes ni los productos. Intente de nuevo.',
+          },
+        ],
+      },
+      resultado.medicion,
+    );
+
+    const total = resultado.facturas.length;
+    const completas = cruzadas?.facturas.filter((f) => f.completa).length ?? 0;
+    this.progreso.emitir(ctx.empresaId, {
+      etapa: 'LISTO',
+      documento: documento.tipo,
+      documentoId: documento.id,
+      mensaje:
+        cruzadas === null
+          ? `Leí ${total === 1 ? '1 factura' : `${total} facturas`}, pero no pude buscar los clientes ni los productos.`
+          : `Leí ${total === 1 ? '1 factura' : `${total} facturas`} de venta: ${completas === total ? 'todas listas para cargar' : `${completas} listas para cargar`}.`,
+      datos: [],
+    });
+  }
+
   private async marcarFalloSeguro(
     ctx: CtxEmpresa,
     documento: Documento,
@@ -433,13 +549,13 @@ export class ExtractorService {
     try {
       await this.documentos.marcarFallo(ctx, documento.id, {
         clase: 'FALLA',
-        motivo: 'No pude leer el documento. Probá de nuevo.',
+        motivo: 'No pude leer el documento. Intente de nuevo.',
       });
       this.progreso.emitir(ctx.empresaId, {
         etapa: 'ERROR',
         documento: documento.tipo,
         documentoId: documento.id,
-        mensaje: 'No pude leer el documento. Probá de nuevo.',
+        mensaje: 'No pude leer el documento. Intente de nuevo.',
         datos: [],
       });
     } catch (error: unknown) {
@@ -472,7 +588,10 @@ function puedeMandarALeer(ctx: CtxEmpresa, tipo: TipoDocumento): boolean {
       : tipo === 'PEDIDO_VENTA'
         ? // Los de `POST /facturas`: leer un pedido es el primer paso de facturar.
           ['DIRECTOR', 'VENTAS']
-        : ['ADMIN_TENANT', 'DIRECTOR', 'CONTADOR'];
+        : tipo === 'VENTA_HISTORICA'
+          ? // Los de `POST /facturas-historicas`: es armar la cartera de arranque.
+            ['DIRECTOR', 'CONTADOR']
+          : ['ADMIN_TENANT', 'DIRECTOR', 'CONTADOR'];
   return ctx.roles.some((rol) => permitidos.includes(rol));
 }
 
@@ -480,10 +599,12 @@ function exigirRolPara(ctx: CtxEmpresa, tipo: TipoDocumento): void {
   if (puedeMandarALeer(ctx, tipo)) return;
   throw new ForbiddenException(
     tipo === 'FACTURA_COMPRA'
-      ? 'No tenés permiso para registrar compras.'
+      ? 'No tiene permiso para registrar compras.'
       : tipo === 'PEDIDO_VENTA'
-        ? 'No tenés permiso para facturar.'
-        : 'No tenés permiso para configurar la empresa.',
+        ? 'No tiene permiso para facturar.'
+        : tipo === 'VENTA_HISTORICA'
+          ? 'No tiene permiso para cargar ventas anteriores.'
+          : 'No tiene permiso para configurar la empresa.',
   );
 }
 

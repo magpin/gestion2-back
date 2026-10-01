@@ -220,8 +220,18 @@ export class AsientoService {
             `La fecha del asiento tiene que ser AAAA-MM-DD; llegó "${String(dto.fecha)}".`,
           );
         }
-        const fecha = new Date(`${dto.fecha}T12:00:00`);
-        const periodo = await this.periodos.exigirAbierto(ctx, fecha, t);
+        // El calendario es automático: si el mes del documento ya se cerró, el
+        // asiento va al mes abierto, el primer día, y la glosa guarda la fecha
+        // original. El documento (factura, compra) conserva la suya.
+        const destino = await this.periodos.periodoParaAsentar(
+          ctx,
+          dto.fecha,
+          t,
+        );
+        const periodo = destino.periodo;
+        const glosa = destino.movida
+          ? `${dto.glosa} (documento del ${dto.fecha}: su mes ya estaba cerrado)`
+          : dto.glosa;
 
         // Los automáticos no pasan por acá: un asiento de venta puede ser de
         // naturaleza que una persona no podría digitar.
@@ -247,9 +257,9 @@ export class AsientoService {
               ctx.empresaId,
               dto.comprobanteTipoId,
               numero,
-              dto.fecha,
+              destino.fecha,
               periodo.id,
-              dto.glosa,
+              glosa,
               totalDebito,
               totalCredito,
               origen?.origenTipo ?? null,
@@ -269,8 +279,8 @@ export class AsientoService {
           await t.query(
             `INSERT INTO asiento_linea
                (asiento_id, empresa_id, orden, cuenta_id, tercero_id,
-                centro_costo_id, base_gravable, detalle, debito, credito)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+                centro_costo_id, base_gravable, detalle, debito, credito, concepto_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
             [
               cabecera.id,
               ctx.empresaId,
@@ -282,6 +292,7 @@ export class AsientoService {
               l.detalle ?? null,
               l.debito ?? 0,
               l.credito ?? 0,
+              l.conceptoId ?? null,
             ],
           );
         }
@@ -378,6 +389,7 @@ export class AsientoService {
     cuentaId: string;
     terceroId: string | null;
     centroCostoId: string | null;
+    conceptoId: string | null;
     baseGravable: number | null;
     debito: number;
     credito: number;
@@ -395,12 +407,14 @@ export class AsientoService {
           cuenta_id: string;
           tercero_id: string | null;
           centro_costo_id: string | null;
+          concepto_id: string | null;
           base_gravable: string | null;
           debito: string;
           credito: string;
         }>(
           await t.query(
-            `SELECT cuenta_id, tercero_id, centro_costo_id, base_gravable, debito, credito
+            `SELECT cuenta_id, tercero_id, centro_costo_id, concepto_id, base_gravable,
+                    debito, credito
                FROM asiento_linea
               WHERE asiento_id = $1
               ORDER BY orden`,
@@ -411,6 +425,7 @@ export class AsientoService {
           cuentaId: l.cuenta_id,
           terceroId: l.tercero_id,
           centroCostoId: l.centro_costo_id,
+          conceptoId: l.concepto_id,
           baseGravable:
             l.base_gravable === null ? null : Number(l.base_gravable),
           debito: Number(l.debito),
@@ -461,14 +476,14 @@ export class AsientoService {
     const negativas = lineasConValorNegativo(dto.lineas);
     if (negativas.length > 0) {
       throw new BadRequestException(
-        `El valor nunca es negativo; el sentido lo da la columna. Revisa ${renglones(negativas)}.`,
+        `El valor nunca es negativo; el sentido lo da la columna. Revise ${renglones(negativas)}.`,
       );
     }
 
     const sinPata = lineasSinUnaPata(dto.lineas);
     if (sinPata.length > 0) {
       throw new BadRequestException(
-        `Cada linea lleva debito o credito, nunca los dos ni ninguno. Revisa ${renglones(sinPata)}.`,
+        `Cada linea lleva debito o credito, nunca los dos ni ninguno. Revise ${renglones(sinPata)}.`,
       );
     }
 

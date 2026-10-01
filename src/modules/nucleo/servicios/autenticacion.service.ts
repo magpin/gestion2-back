@@ -181,7 +181,9 @@ export class AutenticacionService {
       // La consola de plataforma muestra los intentos fallidos de cada
       // administrador. Solo la fecha: ni la contraseña probada ni un pedazo.
       await this.tx.sinContexto((tx) =>
-        tx.query('INSERT INTO login_fallido (admin_id) VALUES ($1)', [admin.id]),
+        tx.query('INSERT INTO login_fallido (admin_id) VALUES ($1)', [
+          admin.id,
+        ]),
       );
     }
     if (!coincide || !admin.activo) {

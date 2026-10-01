@@ -20,6 +20,7 @@ import type { CtxEmpresa } from '../../../common/ctx';
 import { hoyEnColombia } from '../../../common/fecha';
 import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import {
+  CertificadosReporteDto,
   CorteReporteDto,
   RangoReporteDto,
   type Formato,
@@ -34,6 +35,7 @@ import {
 } from '../reglas/reportes';
 import { CarteraReporteService } from '../servicios/cartera-reporte.service';
 import { CorridaService } from '../servicios/corrida.service';
+import { RetencionesReporteService } from '../servicios/retenciones-reporte.service';
 import { FechasReporteService } from '../servicios/fechas.service';
 import { MembreteService } from '../servicios/membrete.service';
 import { PlantillaService } from '../servicios/plantilla.service';
@@ -55,6 +57,7 @@ export class ReportesController {
     private readonly contabilidad: ContabilidadApi,
     private readonly corridas: CorridaService,
     private readonly fechas: FechasReporteService,
+    private readonly retenciones: RetencionesReporteService,
   ) {}
 
   /**
@@ -283,6 +286,160 @@ export class ReportesController {
   }
 
   /**
+   * Formulario 350 del mes (plan motor de retenciones, Fase 6). El rango tiene
+   * que ser un mes calendario completo: el servicio lo exige.
+   */
+  @ExigeEmpresa()
+  @Get('retenciones-350')
+  async retenciones350(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Query() q: RangoReporteDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.correrRango(
+      'RETENCIONES_350',
+      'formulario-350',
+      ctx,
+      q,
+      req,
+      res,
+      {
+        xlsx: (rango) => this.retenciones.xlsx350(ctx, rango),
+        pdf: (rango, quien) => this.retenciones.pdf350(ctx, rango, quien),
+        html: async (rango, quien, base) => {
+          const { html, datos } = await this.retenciones.hoja350(
+            ctx,
+            rango,
+            quien,
+            'PANTALLA',
+            base,
+          );
+          return { html, vacio: datos.filas === 0 };
+        },
+      },
+    );
+  }
+
+  @ExigeEmpresa()
+  @Get('reteica')
+  async reteIca(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Query() q: RangoReporteDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.correrRango('RETEICA', 'reteica', ctx, q, req, res, {
+      xlsx: (rango) => this.retenciones.xlsxIca(ctx, rango),
+      pdf: (rango, quien) => this.retenciones.pdfIca(ctx, rango, quien),
+      html: async (rango, quien, base) => {
+        const { html, datos } = await this.retenciones.hojaIca(
+          ctx,
+          rango,
+          quien,
+          'PANTALLA',
+          base,
+        );
+        return { html, vacio: datos.filas === 0 };
+      },
+    });
+  }
+
+  @ExigeEmpresa()
+  @Get('certificados-retencion')
+  async certificadosRetencion(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Query() q: CertificadosReporteDto,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.correrRango(
+      'CERTIFICADOS_RETENCION',
+      'certificados-retencion',
+      ctx,
+      q,
+      req,
+      res,
+      {
+        xlsx: (rango) =>
+          this.retenciones.xlsxCertificados(ctx, rango, q.terceroId),
+        pdf: (rango, quien) =>
+          this.retenciones.pdfCertificados(ctx, rango, quien, q.terceroId),
+        html: async (rango, quien, base) => {
+          const { html, datos } = await this.retenciones.hojaCertificados(
+            ctx,
+            rango,
+            quien,
+            'PANTALLA',
+            base,
+            q.terceroId,
+          );
+          return { html, vacio: datos.certificados.length === 0 };
+        },
+      },
+    );
+  }
+
+  /**
+   * Lo que tienen en común los reportes de rango sin gráficas: exigir el rol,
+   * resolver el rango, sacar el formato pedido y dejar la corrida anotada.
+   */
+  private async correrRango(
+    clave: ClaveReporte &
+      ('RETENCIONES_350' | 'RETEICA' | 'CERTIFICADOS_RETENCION'),
+    archivo: string,
+    ctx: CtxEmpresa,
+    q: RangoReporteDto,
+    req: Request,
+    res: Response,
+    hacer: {
+      xlsx: (rango: Rango) => Promise<Buffer>;
+      pdf: (
+        rango: Rango,
+        quien: { nombre: string; rol: string },
+      ) => Promise<Buffer>;
+      html: (
+        rango: Rango,
+        quien: { nombre: string; rol: string },
+        baseFuentes: string,
+      ) => Promise<{ html: string; vacio: boolean }>;
+    },
+  ): Promise<void> {
+    this.exigir(clave, ctx);
+    const rango = await this.rangoDe(ctx, q);
+    const quien = await this.membretes.firmante(ctx);
+    const formato: Formato = q.formato ?? 'HTML';
+    const parametros = {
+      desde: rango.desde,
+      hasta: rango.hasta,
+      etiqueta: rango.etiqueta,
+    };
+    const nombre = `${archivo}-${rango.desde}-a-${rango.hasta}`;
+
+    if (formato === 'XLSX') {
+      const xlsx = await hacer.xlsx(rango);
+      await this.corridas.registrar(ctx, clave, parametros, 'XLSX');
+      this.enviarXlsx(res, xlsx, nombre);
+      return;
+    }
+    if (formato === 'PDF') {
+      const pdf = await hacer.pdf(rango, quien);
+      await this.corridas.registrar(ctx, clave, parametros, 'PDF');
+      this.enviarPdf(res, pdf, nombre);
+      return;
+    }
+    const { html, vacio } = await hacer.html(
+      rango,
+      quien,
+      this.baseFuentes(req),
+    );
+    if (q.previa !== true) {
+      await this.corridas.registrar(ctx, clave, parametros, 'HTML');
+    }
+    this.enviarHtml(res, html, rango, vacio, 0);
+  }
+
+  /**
    * La dirección absoluta de las fuentes, vista desde el navegador.
    *
    * `API_URL_PUBLICA` manda cuando existe: detrás de un proxy, el host que
@@ -310,7 +467,7 @@ export class ReportesController {
   private exigir(clave: ClaveReporte, ctx: CtxEmpresa): void {
     if (!puedeCorrer(clave, ctx.roles)) {
       throw new ForbiddenException(
-        'Tu rol no puede ver este reporte. Pedile acceso a quien administra la cuenta.',
+        'Su rol no puede ver este reporte. Solicite acceso a quien administra la cuenta.',
       );
     }
   }

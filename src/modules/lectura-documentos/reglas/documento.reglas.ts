@@ -95,8 +95,10 @@ export const CAMPOS: Record<string, DefinicionCampo> = {
     etiqueta: 'Actividad económica principal',
     documentos: ['RUT', 'CAMARA_COMERCIO'],
   },
+  // La casilla 53 alimenta el paso «Impuestos» (plan motor de retenciones,
+  // §0.7.4): María llena el bloque «Tu empresa ante la DIAN» desde acá.
   responsabilidadesRut: {
-    paso: 'SITUACION_LEGAL',
+    paso: 'IMPUESTOS',
     etiqueta: 'Responsabilidades del RUT',
     documentos: ['RUT'],
   },
@@ -245,6 +247,8 @@ export function nombreDocumento(tipo: TipoDocumento): string {
       return 'la factura';
     case 'PEDIDO_VENTA':
       return 'el pedido';
+    case 'VENTA_HISTORICA':
+      return 'las facturas de venta';
   }
 }
 

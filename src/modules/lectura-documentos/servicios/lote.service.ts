@@ -298,7 +298,7 @@ export class LoteService {
       // Si ya tenía su lectura, esa quedó en FALLO; si no, se dice acá.
       await marcar(
         `UPDATE lote_archivo SET estado = 'NO_SE_LEE',
-                motivo = 'No pude abrir este archivo. Probá subirlo de nuevo.'
+                motivo = 'No pude abrir este archivo. Intente subirlo de nuevo.'
           WHERE id = $1 AND estado <> 'DERIVADO'`,
         [archivo.id],
       ).catch(() => undefined);
@@ -353,6 +353,7 @@ export class LoteService {
       d_extraido: unknown;
       d_error: string | null;
       d_motivo_descarte: string | null;
+      d_cargadas: number | null;
       registrado_id: string | null;
       registrado_numero: string | null;
     }>(
@@ -361,6 +362,9 @@ export class LoteService {
                 d.id AS d_id, d.tipo AS d_tipo, d.estado AS d_estado,
                 d.extraido AS d_extraido, d.error AS d_error,
                 d.motivo_descarte AS d_motivo_descarte,
+                CASE WHEN d.tipo = 'VENTA_HISTORICA' THEN
+                  jsonb_array_length(coalesce(d.confirmacion -> 'aplicados', '[]'::jsonb))
+                END AS d_cargadas,
                 coalesce(c.id, v.id) AS registrado_id,
                 coalesce(c.numero_factura_proveedor,
                          concat_ws('', v.prefijo, v.consecutivo::text)) AS registrado_numero
@@ -403,6 +407,9 @@ export class LoteService {
                 extraido: f.d_extraido,
                 error: f.d_error,
                 motivoDescarte: f.d_motivo_descarte,
+                ...(f.d_cargadas !== null && {
+                  cargadas: Number(f.d_cargadas),
+                }),
               },
         registrado:
           f.registrado_id === null

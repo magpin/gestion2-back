@@ -7,15 +7,24 @@ import {
 import type { CtxEmpresa } from '../../../common/ctx';
 import { fila, filas } from '../../../common/db/filas';
 import { TxService, type Tx } from '../../../common/db/tx.service';
-import type { CrearCuentaBancariaDto } from '../dto/cuenta-bancaria.dto';
+import { NucleoApi } from '../../nucleo/nucleo.api';
+import type {
+  CrearCuentaBancariaConAuxiliarDto,
+  CrearCuentaBancariaDto,
+} from '../dto/cuenta-bancaria.dto';
+import { nombreDelAuxiliar, problemaCuentaDeBanco } from './banco.reglas';
 
 export interface CuentaBancaria {
   id: string;
   banco: string;
   numero_cuenta: string;
-  tipo_cuenta: 'AHORROS' | 'CORRIENTE';
+  tipo_cuenta: 'AHORROS' | 'CORRIENTE' | 'BILLETERA';
   cuenta_id: string;
   activa: boolean;
+  /** Exenta del 4×1000 (art. 879 num. 1 ET): una sola cuenta por titular. */
+  exenta_gmf: boolean;
+  /** Hasta qué día está conciliada con el extracto; `null` si nunca se concilió. */
+  conciliada_hasta: string | null;
   /** Cuánta plata hay hoy. Puede ser negativo: el banco admite sobregiro. */
   saldo: string;
   /** El día del último movimiento, o `null` si no hubo ninguno. */
@@ -35,10 +44,13 @@ const ultimo = (columna: string, porDefecto: string) =>
         ORDER BY m.secuencia DESC
         LIMIT 1), ${porDefecto}))`;
 
-const CAMPOS = `id, banco, numero_cuenta, tipo_cuenta, cuenta_id, activa,
+const CAMPOS = `id, banco, numero_cuenta, tipo_cuenta, cuenta_id, activa, exenta_gmf,
                 formato_extracto,
                 ${ultimo('saldo_valor', '0')} AS saldo,
-                ${ultimo('fecha', 'NULL')} AS ultimo_movimiento`;
+                ${ultimo('fecha', 'NULL')} AS ultimo_movimiento,
+                (SELECT max(e.fecha_hasta)::text FROM extracto_bancario e
+                  WHERE e.cuenta_bancaria_id = cuenta_bancaria.id AND e.estado = 'CONCILIADO')
+                  AS conciliada_hasta`;
 
 /**
  * El maestro de cuentas bancarias. Sin movimientos todavía —eso es
@@ -48,35 +60,86 @@ const CAMPOS = `id, banco, numero_cuenta, tipo_cuenta, cuenta_id, activa,
  */
 @Injectable()
 export class CuentaBancariaService {
-  constructor(private readonly tx: TxService) {}
+  constructor(
+    private readonly tx: TxService,
+    private readonly nucleo: NucleoApi,
+  ) {}
+
+  /** La cuenta existe, está activa, recibe asientos y es de bancos (1110 o 1120). */
+  private async validarCuenta(
+    ctx: CtxEmpresa,
+    cuentaId: string,
+    t: Tx,
+  ): Promise<void> {
+    const cuenta = await this.nucleo.cuentaPorId(ctx, cuentaId, t);
+    if (cuenta === null) {
+      throw new BadRequestException(
+        'Esa cuenta no está en el plan de la empresa.',
+      );
+    }
+    const problema = problemaCuentaDeBanco({
+      codigo: cuenta.codigo,
+      activa: cuenta.activa,
+      esAuxiliar: cuenta.es_auxiliar,
+    });
+    if (problema !== null) throw new BadRequestException(problema);
+  }
+
+  /**
+   * La cuenta bancaria y su auxiliar bajo 111005 en una sola transacción: si
+   * algo falla, no queda ni la cuenta contable suelta ni el banco sin cuenta.
+   */
+  async crearConAuxiliar(
+    ctx: CtxEmpresa,
+    dto: CrearCuentaBancariaConAuxiliarDto,
+  ): Promise<CuentaBancaria> {
+    return this.tx.enContexto(ctx, async (t) => {
+      const cuenta = await this.nucleo.crearAuxiliar(
+        ctx,
+        {
+          madre: '111005',
+          nombre: nombreDelAuxiliar(dto.banco, dto.numeroCuenta),
+        },
+        { sistema: true },
+        t,
+      );
+      return this.crear(ctx, { ...dto, cuentaId: cuenta.id }, t);
+    });
+  }
 
   async crear(
     ctx: CtxEmpresa,
     dto: CrearCuentaBancariaDto,
+    tx?: Tx,
   ): Promise<CuentaBancaria> {
-    return this.tx.enContexto(ctx, async (t) => {
-      const creada = fila<CuentaBancaria>(
-        await t.query(
-          `INSERT INTO cuenta_bancaria
+    return this.tx.enContexto(
+      ctx,
+      async (t) => {
+        await this.validarCuenta(ctx, dto.cuentaId, t);
+        const creada = fila<CuentaBancaria>(
+          await t.query(
+            `INSERT INTO cuenta_bancaria
              (empresa_id, banco, numero_cuenta, tipo_cuenta, cuenta_id, creado_por)
            VALUES ($1, $2, $3, $4, $5, $6)
            RETURNING ${CAMPOS}`,
-          [
-            ctx.empresaId,
-            dto.banco,
-            dto.numeroCuenta,
-            dto.tipoCuenta,
-            dto.cuentaId,
-            ctx.usuarioId,
-          ],
-        ),
-      );
+            [
+              ctx.empresaId,
+              dto.banco,
+              dto.numeroCuenta,
+              dto.tipoCuenta,
+              dto.cuentaId,
+              ctx.usuarioId,
+            ],
+          ),
+        );
 
-      if (creada === undefined) {
-        throw new BadRequestException('No se pudo crear la cuenta bancaria.');
-      }
-      return creada;
-    });
+        if (creada === undefined) {
+          throw new BadRequestException('No se pudo crear la cuenta bancaria.');
+        }
+        return creada;
+      },
+      tx,
+    );
   }
 
   async listar(

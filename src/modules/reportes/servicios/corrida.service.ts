@@ -5,7 +5,15 @@ import { filas } from '../../../common/db/filas';
 import { TxService } from '../../../common/db/tx.service';
 
 export type ClaveCorrida =
-  'VENTAS_POR_CLIENTE' | 'ANTIGUEDAD_CARTERA' | 'GUARDADO';
+  | 'VENTAS_POR_CLIENTE'
+  | 'ANTIGUEDAD_CARTERA'
+  | 'RETENCIONES_350'
+  | 'RETEICA'
+  | 'CERTIFICADOS_RETENCION'
+  | 'ESTADO_RESULTADOS'
+  | 'BALANCE_GENERAL'
+  | 'FLUJO_CAJA'
+  | 'GUARDADO';
 export type FormatoCorrida = 'HTML' | 'PDF' | 'XLSX';
 
 /**

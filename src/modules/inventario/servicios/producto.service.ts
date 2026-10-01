@@ -14,6 +14,7 @@ import {
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import { AlmacenamientoApi } from '../../almacenamiento/almacenamiento.api';
 import type { CrearProductoDto, EditarProductoDto } from '../dto/producto.dto';
+import { ConfiguracionService } from './configuracion.service';
 
 export interface ProductoResumen {
   id: string;
@@ -22,7 +23,11 @@ export interface ProductoResumen {
   unidad_medida: string;
   iva_tarifa: string;
   cuenta_inventario_id: string;
-  /** Las dos siguientes: `null` en productos creados antes de que `ventas` exigiera este dato. */
+  /**
+   * Las dos siguientes son las que se usan al vender: la propia del producto
+   * o, si no tiene, la de la empresa (cuentas automáticas). `null` solo si
+   * ninguna de las dos existe todavía.
+   */
   cuenta_costo_venta_id: string | null;
   cuenta_ingreso_id: string | null;
   activo: boolean;
@@ -89,8 +94,17 @@ const ultimaCompra = (columna: string) =>
      ORDER BY m.secuencia DESC
      LIMIT 1)`;
 
+// Costo e ingreso: los del producto o, si no tiene, los de la empresa. Así un
+// producto viejo sin esas cuentas se vende igual, y quien vende no tiene que
+// saber nada de esto.
+const porDefecto = (columna: string) =>
+  `COALESCE(producto.${columna},
+      (SELECT ic.${columna} FROM inventario_configuracion ic
+        WHERE ic.empresa_id = producto.empresa_id))`;
+
 const CAMPOS = `id, codigo, nombre, unidad_medida, iva_tarifa, cuenta_inventario_id,
-                cuenta_costo_venta_id, cuenta_ingreso_id, activo,
+                ${porDefecto('cuenta_costo_venta_id')} AS cuenta_costo_venta_id,
+                ${porDefecto('cuenta_ingreso_id')} AS cuenta_ingreso_id, activo,
                 categoria_id, codigo_barras, imagen_clave,
                 (SELECT c.nombre FROM producto_categoria c WHERE c.id = producto.categoria_id) AS categoria_nombre,
                 ${ultimoSaldo('saldo_cantidad')} AS saldo_cantidad,
@@ -108,6 +122,7 @@ export class ProductoService {
   constructor(
     private readonly tx: TxService,
     private readonly almacenamiento: AlmacenamientoApi,
+    private readonly configuracion: ConfiguracionService,
   ) {}
 
   /**
@@ -178,12 +193,30 @@ export class ProductoService {
    * obligatorio y entra junto, no en un paso aparte. Si `cuentaInventarioId`
    * no existe o es de otra empresa, la FK compuesta de `producto` lo
    * rechaza — no hace falta validarlo a mano acá.
+   *
+   * Las cuentas que no vengan salen de las cuentas automáticas de la empresa:
+   * quien crea un producto no tiene por qué saber cuál es su 1435.
    */
   async crear(
     ctx: CtxEmpresa,
     dto: CrearProductoDto,
   ): Promise<ProductoResumen> {
     return this.tx.enContexto(ctx, async (t) => {
+      const cuentaInventarioId =
+        dto.cuentaInventarioId ??
+        (await this.configuracion.cuentaDe(ctx, 'INVENTARIO', t));
+      if (cuentaInventarioId === null) {
+        throw new BadRequestException(
+          'La cuenta de inventario tiene varios auxiliares: elija uno en Plan de cuentas → Cuentas automáticas, o indíquela en el producto.',
+        );
+      }
+      const cuentaCostoVentaId =
+        dto.cuentaCostoVentaId ??
+        (await this.configuracion.cuentaDe(ctx, 'COSTO_VENTA', t));
+      const cuentaIngresoId =
+        dto.cuentaIngresoId ??
+        (await this.configuracion.cuentaDe(ctx, 'INGRESO', t));
+
       const creado = fila<ProductoResumen>(
         await t.query(
           `INSERT INTO producto
@@ -197,9 +230,9 @@ export class ProductoService {
             dto.nombre,
             dto.unidadMedida ?? 'UND',
             dto.ivaTarifa,
-            dto.cuentaInventarioId,
-            dto.cuentaCostoVentaId ?? null,
-            dto.cuentaIngresoId ?? null,
+            cuentaInventarioId,
+            cuentaCostoVentaId,
+            cuentaIngresoId,
             dto.categoriaId ?? null,
             dto.codigoBarras?.trim() ?? null,
             ctx.usuarioId,

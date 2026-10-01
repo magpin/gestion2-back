@@ -62,7 +62,7 @@ export class LibrosService {
              JOIN empresa_comprobante_tipo c ON c.id = a.comprobante_tipo_id
             WHERE a.fecha BETWEEN $1 AND $2
               AND a.estado = 'REGISTRADO'
-            ORDER BY a.fecha, a.numero`,
+            ORDER BY a.fecha DESC, a.numero DESC`,
           [desde, hasta],
         ),
       );
@@ -148,7 +148,7 @@ export class LibrosService {
             WHERE l.cuenta_id = $1
               AND a.fecha BETWEEN $2 AND $3
               AND a.estado = 'REGISTRADO'
-            ORDER BY a.fecha, a.numero, l.orden`,
+            ORDER BY a.fecha DESC, a.numero DESC, l.orden DESC`,
           [cuentaId, desde, hasta, cuenta.naturaleza],
         ),
       );
@@ -181,7 +181,7 @@ export class LibrosService {
             WHERE l.tercero_id = $1
               AND a.fecha BETWEEN $2 AND $3
               AND a.estado = 'REGISTRADO'
-            ORDER BY a.fecha, a.numero, l.orden`,
+            ORDER BY a.fecha DESC, a.numero DESC, l.orden DESC`,
           [terceroId, desde, hasta],
         ),
       ),

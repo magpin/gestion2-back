@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -43,6 +44,19 @@ export class SalidaAjusteDto {
   @IsString()
   @Length(3, 300)
   motivo!: string;
+
+  /**
+   * Qué pasó con lo que falta: EMPRESA lo lleva a gasto (merma, daño),
+   * RESPONSABLE se lo cobra a una persona. Obligatorio: lo sabe quien contó la
+   * bodega, no el sistema.
+   */
+  @IsIn(['EMPRESA', 'RESPONSABLE'])
+  tratamientoFaltante!: 'EMPRESA' | 'RESPONSABLE';
+
+  /** A quién se le cobra. Obligatorio con RESPONSABLE. */
+  @IsOptional()
+  @IsUUID()
+  responsableTerceroId?: string;
 }
 
 export class FiltroMovimientosDto extends PaginacionDto {

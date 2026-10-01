@@ -252,7 +252,7 @@ body {
  * Están acá y no en la plantilla de cada reporte porque los dos las usan: las
  * cifras de arriba, la tabla con subtotales y las barras proporcionales son el
  * vocabulario de estas hojas, no de una sola. Salen del diseño de
- * `docs/reportes-pdf-diseno/`, con sus medidas.
+ * `docs/mocks/reportes-pdf-diseno/`, con sus medidas.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── La fila de cifras ────────────────────────────────────────────────────── */
@@ -597,4 +597,127 @@ body {
 
 .barras--cartera .monto {
   font-weight: 600;
+}
+
+/* ── Retenciones: 350, ReteICA y certificados ────────────────────────────── */
+
+/* El 350: renglón, casillas y las cuatro cifras de jurídicas y naturales. Los
+   renglones que no distinguen persona usan solo las dos últimas columnas. */
+.detalle--350 .fila {
+  grid-template-columns: 1fr 70px 104px 96px 104px 96px;
+}
+
+.detalle--350 .vacio {
+  color: var(--texto-apagado);
+}
+
+/* ReteICA: tercero, documento, base, tarifas y retenido. */
+.detalle--ica .fila {
+  grid-template-columns: 1fr 110px 110px 90px 100px;
+}
+
+/* Recibo de caja y comprobante de egreso: concepto, detalle y valor. */
+.detalle--comprobante .fila {
+  grid-template-columns: 170px 1fr 130px;
+}
+
+/* El cuadre con el libro: documento, motor, libro, diferencia y la razón. */
+.detalle--cuadre .fila {
+  grid-template-columns: 110px 96px 96px 96px 1fr;
+}
+
+.detalle--certificado .fila {
+  grid-template-columns: 1fr 90px 120px 110px;
+}
+
+.aviso-hoja {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--aviso);
+  background: var(--n-50);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+.certificado .partes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 12px 0 16px;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.certificado .partes .rotulo {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--texto-apagado);
+}
+
+/* ── Estados financieros ──────────────────────────────────────────────────── */
+
+.estado .fila {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  gap: 12px;
+  align-items: baseline;
+  padding: 4px 9px;
+  font-size: 10px;
+}
+
+.estado--compara .fila {
+  grid-template-columns: 1fr 110px 110px 70px;
+}
+
+.estado .cabecera {
+  padding: 6px 9px;
+  background: var(--n-900);
+  color: var(--n-0);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.estado .seccion {
+  margin-top: 8px;
+  padding-top: 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.estado .grupo {
+  border-top: 1px solid var(--n-300);
+  font-weight: 600;
+}
+
+.estado .cuenta {
+  padding-left: 22px;
+  color: var(--texto-apagado);
+}
+
+.estado .codigo {
+  margin-right: 6px;
+  font-size: 8.5px;
+}
+
+.estado .subtotal {
+  background: var(--n-50);
+  border-top: 1px solid var(--n-300);
+  font-weight: 600;
+}
+
+/* El total cierra con doble línea, como se cierra una cuenta en papel. */
+.estado .total {
+  margin-top: 4px;
+  padding: 8px 9px;
+  border-top: 2px solid var(--n-900);
+  border-bottom: 2px solid var(--n-900);
+  font-size: 11px;
+  font-weight: 700;
 }

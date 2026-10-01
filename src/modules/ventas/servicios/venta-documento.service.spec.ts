@@ -1,9 +1,21 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
 import type { Tx, TxService } from '../../../common/db/tx.service';
 import type { CobrarDto } from '../dto/venta.dto';
 import { VentaDocumentoService } from './venta-documento.service';
+
+/** RetencionesApi: la autorretención de la venta, que acá no hay. */
+function retencionesVentaFalsas() {
+  return {
+    anularAutorretencion: jest.fn(() => Promise.resolve()),
+    reversarAutorretencionPorNota: jest.fn(() => Promise.resolve([])),
+  } as never;
+}
 
 const ctx: CtxEmpresa = {
   tenantId: 't-1',
@@ -198,6 +210,17 @@ function tesoreriaFalso() {
   const fake = {
     registrarCobro,
     registrarDevolucionCobro,
+    // Una cuenta que paga 4×1000: de 100.400 que se devuelven, 400 son el impuesto.
+    gmfIncluidoEn: jest.fn((_ctx: unknown, _cuenta: string, total: number) =>
+      Promise.resolve(total - Math.round((total * 1000) / 1004)),
+    ),
+    cuentaDelMedio: jest.fn((_ctx: unknown, m: { medio: string }) =>
+      Promise.resolve(
+        m.medio === 'CAJA'
+          ? { cuentaId: 'cta-caja', nombre: 'Caja general' }
+          : { cuentaId: 'cta-banco', nombre: 'Bancolombia ···1234' },
+      ),
+    ),
   } as unknown as ConstructorParameters<typeof VentaDocumentoService>[4];
   return { fake, registrarCobro, registrarDevolucionCobro };
 }
@@ -254,6 +277,10 @@ function txCobrarFalso(
           },
         ];
       }
+      // Lo descontado por pronto pago en recibos: en estos casos, nada.
+      if (sql.includes('recibo_caja_aplicacion')) {
+        return [{ total: '0' }];
+      }
       throw new Error(`Query inesperada en el test: ${sql}`);
     }),
   } as unknown as Tx;
@@ -268,7 +295,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso(),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
-      {} as never, // TesoreriaApi: no la usan estos métodos.
+      {} as never, // TesoreriaApi: no la usan estos métodos.,
+      retencionesVentaFalsas(),
     );
 
     const documento = await servicio.crearCotizacion(ctx, {
@@ -293,7 +321,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso({ responsableIva: false }),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
-      {} as never, // TesoreriaApi: no la usan estos métodos.
+      {} as never, // TesoreriaApi: no la usan estos métodos.,
+      retencionesVentaFalsas(),
     );
 
     const documento = await servicio.crearCotizacion(ctx, {
@@ -313,7 +342,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso({ tercero: null }),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
-      {} as never, // TesoreriaApi: no la usan estos métodos.
+      {} as never, // TesoreriaApi: no la usan estos métodos.,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -334,7 +364,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       }),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
-      {} as never, // TesoreriaApi: no la usan estos métodos.
+      {} as never, // TesoreriaApi: no la usan estos métodos.,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -353,7 +384,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso(),
       inventarioFalso({ producto: null }),
       {} as never,
-      {} as never, // TesoreriaApi: no la usa este método.
+      {} as never, // TesoreriaApi: no la usa este método.,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -372,7 +404,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso(),
       inventarioFalso({ precio: null }),
       {} as never,
-      {} as never, // TesoreriaApi: no la usa este método.
+      {} as never, // TesoreriaApi: no la usa este método.,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -381,7 +414,7 @@ describe('VentaDocumentoService.crearCotizacion', () => {
         fecha: '2026-09-07',
         lineas: [{ productoId: 'p-1', cantidad: 1 }],
       }),
-    ).rejects.toThrow(/digitá el precio en la línea/);
+    ).rejects.toThrow(/digite el precio en la línea/);
   });
 
   it('usa el precio digitado en la línea cuando el producto no tiene precio de lista', async () => {
@@ -391,7 +424,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       nucleoFalso(),
       inventarioFalso({ precio: null }),
       {} as never,
-      {} as never, // TesoreriaApi: no la usa este método.
+      {} as never, // TesoreriaApi: no la usa este método.,
+      retencionesVentaFalsas(),
     );
 
     const documento = await servicio.crearCotizacion(ctx, {
@@ -405,23 +439,24 @@ describe('VentaDocumentoService.crearCotizacion', () => {
     expect(documento.total_iva).toBe('38000');
   });
 
-  it('el precio de lista manda sobre el digitado cuando el producto sí tiene precio', async () => {
+  it('el precio digitado manda sobre el de lista: es el que se le ofrece al cliente', async () => {
     const { tx } = txFalso();
     const servicio = new VentaDocumentoService(
       txServiceFalso(tx),
       nucleoFalso(),
       inventarioFalso(),
       {} as never,
-      {} as never, // TesoreriaApi: no la usa este método.
+      {} as never, // TesoreriaApi: no la usa este método.,
+      retencionesVentaFalsas(),
     );
 
     const documento = await servicio.crearCotizacion(ctx, {
       terceroId: 'ter-1',
       fecha: '2026-09-07',
-      lineas: [{ productoId: 'p-1', cantidad: 1, precioUnitario: 1 }],
+      lineas: [{ productoId: 'p-1', cantidad: 1, precioUnitario: 250000 }],
     });
 
-    expect(documento.lineas[0].precio_unitario).toBe('289900');
+    expect(documento.lineas[0].precio_unitario).toBe('250000');
   });
 
   it('no mira la existencia: cotiza 9.999 unidades de un producto sin nada en bodega', async () => {
@@ -433,7 +468,8 @@ describe('VentaDocumentoService.crearCotizacion', () => {
       // si la cotización consultara el saldo o el kardex, reventaría acá.
       inventarioFalso(),
       {} as never,
-      {} as never, // TesoreriaApi: no la usa este método.
+      {} as never, // TesoreriaApi: no la usa este método.,
+      retencionesVentaFalsas(),
     );
 
     const documento = await servicio.crearCotizacion(ctx, {
@@ -455,6 +491,7 @@ describe('VentaDocumentoService.editarCotizacion', () => {
       inventarioFalso(),
       {} as never,
       {} as never,
+      retencionesVentaFalsas(),
     );
   }
 
@@ -482,6 +519,20 @@ describe('VentaDocumentoService.editarCotizacion', () => {
       consultas.some((s) => s.includes('DELETE FROM venta_documento_linea')),
     ).toBe(true);
     expect(consultas.some((s) => s.includes('FOR UPDATE'))).toBe(true);
+  });
+
+  it('corregir conserva el precio digitado', async () => {
+    const { tx } = txFalso();
+    const servicio = servicioCon(tx);
+
+    const documento = await servicio.editarCotizacion(ctx, 'cot-1', {
+      terceroId: 'ter-1',
+      fecha: '2026-09-07',
+      lineas: [{ productoId: 'p-1', cantidad: 2, precioUnitario: 250000 }],
+    });
+
+    expect(documento.lineas[0].precio_unitario).toBe('250000');
+    expect(documento.subtotal).toBe('500000');
   });
 
   it('rechaza corregir una cotización ya convertida en factura', async () => {
@@ -533,6 +584,7 @@ describe('VentaDocumentoService.descartarCotizacion', () => {
       inventarioFalso(),
       {} as never,
       {} as never,
+      retencionesVentaFalsas(),
     );
 
     await servicio.descartarCotizacion(ctx, 'cot-1', 'El cliente no la tomó');
@@ -555,6 +607,7 @@ describe('VentaDocumentoService.descartarCotizacion', () => {
       inventarioFalso(),
       {} as never,
       {} as never,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -609,7 +662,8 @@ describe('VentaDocumentoService.porId', () => {
       nucleoFalso(),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
-      {} as never, // TesoreriaApi: no la usan estos métodos.
+      {} as never, // TesoreriaApi: no la usan estos métodos.,
+      retencionesVentaFalsas(),
     );
 
     const detalle = await servicio.porId(ctx, 'COTIZACION', 'doc-1');
@@ -660,6 +714,7 @@ describe('VentaDocumentoService.porId', () => {
         inventarioFalso(),
         {} as never,
         {} as never,
+        retencionesVentaFalsas(),
       );
 
     const nota = await servicioCon('NOTA_CREDITO').porId(
@@ -683,7 +738,8 @@ describe('VentaDocumentoService.porId', () => {
       nucleoFalso(),
       inventarioFalso(),
       {} as never, // ContabilidadApi: crearCotizacion/listar/porId no lo usan.
-      {} as never, // TesoreriaApi: no la usan estos métodos.
+      {} as never, // TesoreriaApi: no la usan estos métodos.,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -704,12 +760,17 @@ describe('VentaDocumentoService.anular', () => {
   function txAnularFalso(
     documento:
       { tipo: string; estado: string; asiento_id: string | null } | undefined,
+    /** Las notas vivas que corrigen al documento. */
+    notasVivas: Array<{ tipo: string; numero: string }> = [],
   ) {
     const actualizaciones: unknown[][] = [];
     const tx = {
       query: jest.fn((sql: string, params?: unknown[]) => {
         if (sql.includes('SELECT tipo, estado, asiento_id')) {
           return documento === undefined ? [] : [documento];
+        }
+        if (sql.includes('WHERE documento_origen_id = $1')) {
+          return notasVivas;
         }
         if (sql.includes('UPDATE venta_documento')) {
           actualizaciones.push(params ?? []);
@@ -737,7 +798,8 @@ describe('VentaDocumentoService.anular', () => {
         revertirPorAnulacion: revertir,
       } as unknown as ConstructorParameters<typeof VentaDocumentoService>[2],
       contabilidad,
-      {} as never, // TesoreriaApi: no la usa anular.
+      {} as never, // TesoreriaApi: no la usa anular.,
+      retencionesVentaFalsas(),
     );
 
     await servicio.anular(ctx, 'fv-1', 'Error de digitación');
@@ -758,6 +820,90 @@ describe('VentaDocumentoService.anular', () => {
       tx,
     );
     expect(actualizaciones).toHaveLength(1);
+    // La factura se bloquea antes de mirar sus notas: una nota que se emita
+    // mientras tanto espera, y la anulación no se cruza con ella.
+    const consultas = (tx.query as jest.Mock).mock.calls.map(
+      ([sql]: [string]) => sql,
+    );
+    expect(consultas[0]).toContain('FOR UPDATE');
+  });
+
+  it('rechaza anular una factura con una nota viva, y la nombra', async () => {
+    const { tx, actualizaciones } = txAnularFalso(
+      { tipo: 'FACTURA', estado: 'EMITIDA', asiento_id: 'asiento-1' },
+      [{ tipo: 'NOTA_CREDITO', numero: 'NC-5' }],
+    );
+    const { fake: contabilidad, anular: anularAsiento } = contabilidadFalso();
+    const anularAutorretencion = jest.fn(() => Promise.resolve());
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      inventarioFalso(),
+      contabilidad,
+      {} as never, // TesoreriaApi: no la usa anular.
+      { anularAutorretencion } as never,
+    );
+
+    const intento = servicio.anular(ctx, 'fv-1', 'Error de digitación');
+    await expect(intento).rejects.toThrow(ConflictException);
+    await expect(intento).rejects.toThrow(
+      'Esta factura tiene la nota crédito NC-5 viva: anúlela primero.',
+    );
+    // Nada se tocó: ni el asiento, ni la autorretención, ni el documento.
+    expect(anularAsiento).not.toHaveBeenCalled();
+    expect(anularAutorretencion).not.toHaveBeenCalled();
+    expect(actualizaciones).toHaveLength(0);
+  });
+
+  it('nombra todas las notas vivas, crédito y débito', async () => {
+    const { tx } = txAnularFalso(
+      { tipo: 'FACTURA', estado: 'EMITIDA', asiento_id: 'asiento-1' },
+      [
+        { tipo: 'NOTA_CREDITO', numero: 'NC-5' },
+        { tipo: 'NOTA_DEBITO', numero: 'ND-2' },
+      ],
+    );
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      inventarioFalso(),
+      contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa anular.
+      retencionesVentaFalsas(),
+    );
+
+    await expect(servicio.anular(ctx, 'fv-1', 'motivo')).rejects.toThrow(
+      'Esta factura tiene vivas la nota crédito NC-5 y la nota débito ND-2: anúlelas primero.',
+    );
+  });
+
+  it('solo cuenta las notas vivas: la consulta descarta las anuladas', async () => {
+    const { tx } = txAnularFalso({
+      tipo: 'FACTURA',
+      estado: 'EMITIDA',
+      asiento_id: 'asiento-1',
+    });
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoFalso(),
+      {
+        ...inventarioFalso(),
+        revertirPorAnulacion: jest.fn(() =>
+          Promise.resolve({ movimientos: 0 }),
+        ),
+      } as unknown as ConstructorParameters<typeof VentaDocumentoService>[2],
+      contabilidadFalso().fake,
+      {} as never, // TesoreriaApi: no la usa anular.
+      retencionesVentaFalsas(),
+    );
+
+    await servicio.anular(ctx, 'fv-1', 'motivo');
+
+    const notas = (tx.query as jest.Mock).mock.calls.find(([sql]: [string]) =>
+      sql.includes('WHERE documento_origen_id = $1'),
+    ) as [string, unknown[]];
+    expect(notas[0]).toContain(`estado <> 'ANULADA'`);
+    expect(notas[1]).toEqual(['fv-1']);
   });
 
   it('rechaza anular una cotización', async () => {
@@ -771,7 +917,8 @@ describe('VentaDocumentoService.anular', () => {
       nucleoFalso(),
       inventarioFalso(),
       contabilidadFalso().fake,
-      {} as never, // TesoreriaApi: no la usa anular.
+      {} as never, // TesoreriaApi: no la usa anular.,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.anular(ctx, 'cot-1', 'motivo')).rejects.toThrow(
@@ -790,7 +937,8 @@ describe('VentaDocumentoService.anular', () => {
       nucleoFalso(),
       inventarioFalso(),
       contabilidadFalso().fake,
-      {} as never, // TesoreriaApi: no la usa anular.
+      {} as never, // TesoreriaApi: no la usa anular.,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.anular(ctx, 'fv-1', 'motivo')).rejects.toThrow(
@@ -805,7 +953,8 @@ describe('VentaDocumentoService.anular', () => {
       nucleoFalso(),
       inventarioFalso(),
       contabilidadFalso().fake,
-      {} as never, // TesoreriaApi: no la usa anular.
+      {} as never, // TesoreriaApi: no la usa anular.,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.anular(ctx, 'inexistente', 'motivo')).rejects.toThrow(
@@ -847,6 +996,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     const actualizado = await servicio.cobrar(ctx, 'fv-1', DTO);
@@ -878,6 +1028,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     await servicio.cobrar(ctx, 'fv-1', {
@@ -910,6 +1061,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreriaFalso().fake,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.cobrar(ctx, 'cot-1', DTO)).rejects.toThrow(
@@ -925,6 +1077,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreriaFalso().fake,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.cobrar(ctx, 'fv-1', DTO)).rejects.toThrow(
@@ -944,6 +1097,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.cobrar(ctx, 'fv-1', porValor(30000))).rejects.toThrow(
@@ -966,6 +1120,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -985,6 +1140,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria2,
+      retencionesVentaFalsas(),
     );
     await servicio2.cobrar(ctx, 'fv-1', porValor(100000));
     expect(registrar2).toHaveBeenCalledTimes(1);
@@ -999,6 +1155,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     const actualizado = await servicio.cobrar(ctx, 'fv-1', {
@@ -1009,8 +1166,8 @@ describe('VentaDocumentoService.cobrar', () => {
       ],
     });
 
-    // Dos movimientos, uno por renglón, y el concepto los numera para que el
-    // libro de caja no muestre dos líneas indistinguibles.
+    // Dos movimientos, uno por renglón, y el concepto dice a dónde fue cada
+    // parte para que el libro no muestre dos líneas indistinguibles.
     expect(registrarCobro).toHaveBeenCalledTimes(2);
     expect(registrarCobro).toHaveBeenNthCalledWith(
       1,
@@ -1019,7 +1176,7 @@ describe('VentaDocumentoService.cobrar', () => {
         medio: 'CAJA',
         cajaId: 'c-1',
         valor: 19000,
-        concepto: 'Cobro de la factura SETP-000005 (1 de 2)',
+        concepto: 'Cobro de la factura SETP-000005 · en Caja general',
       }),
       expect.anything(),
     );
@@ -1030,7 +1187,7 @@ describe('VentaDocumentoService.cobrar', () => {
         medio: 'BANCO',
         cuentaBancariaId: 'cb-1',
         valor: 100000,
-        concepto: 'Cobro de la factura SETP-000005 (2 de 2)',
+        concepto: 'Cobro de la factura SETP-000005 · en Bancolombia ···1234',
       }),
       expect.anything(),
     );
@@ -1049,6 +1206,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     // 70.000 + 70.000 sobre una factura de 119.000: por separado cada uno
@@ -1075,6 +1233,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.cobrar(ctx, 'fv-1', DTO)).rejects.toThrow(
@@ -1091,6 +1250,7 @@ describe('VentaDocumentoService.cobrar', () => {
       inventarioFalso(),
       {} as never,
       tesoreriaFalso().fake,
+      retencionesVentaFalsas(),
     );
 
     await expect(servicio.cobrar(ctx, 'inexistente', DTO)).rejects.toThrow(
@@ -1120,6 +1280,7 @@ describe('VentaDocumentoService.devolverCobro', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     const actualizado = await servicio.devolverCobro(ctx, 'fv-1', {
@@ -1155,6 +1316,7 @@ describe('VentaDocumentoService.devolverCobro', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     await expect(
@@ -1176,6 +1338,7 @@ describe('VentaDocumentoService.devolverCobro', () => {
       inventarioFalso(),
       {} as never,
       tesoreria,
+      retencionesVentaFalsas(),
     );
 
     const actualizado = await servicio.devolverCobro(ctx, 'fv-1', {
@@ -1186,8 +1349,46 @@ describe('VentaDocumentoService.devolverCobro', () => {
       ],
     });
 
-    expect(registrarDevolucionCobro).toHaveBeenCalledTimes(2);
+    // Caja, banco y el 4×1000 del banco, que sale de lo que se devuelve.
+    expect(registrarDevolucionCobro).toHaveBeenCalledTimes(3);
     expect(actualizaciones).toHaveLength(1);
     expect(actualizado.monto_pagado).toBe('0');
+  });
+
+  it('por banco, el 4×1000 lo asume el cliente: le llega el resto y la factura baja por el total', async () => {
+    const { tx } = txCobrarFalso(FACTURA_COBRADA);
+    const { fake: tesoreria, registrarDevolucionCobro } = tesoreriaFalso();
+    const servicio = new VentaDocumentoService(
+      txServiceFalso(tx),
+      nucleoCarteraFalso(),
+      inventarioFalso(),
+      {} as never,
+      tesoreria,
+      retencionesVentaFalsas(),
+    );
+
+    await servicio.devolverCobro(ctx, 'fv-1', {
+      fecha: '2026-09-16',
+      pagos: [{ medio: 'BANCO', cuentaBancariaId: 'cb-1', valor: 100400 }],
+    });
+
+    expect(registrarDevolucionCobro).toHaveBeenCalledTimes(2);
+    expect(registrarDevolucionCobro).toHaveBeenNthCalledWith(
+      1,
+      ctx,
+      expect.objectContaining({ valor: 100000 }),
+      expect.anything(),
+    );
+    expect(registrarDevolucionCobro).toHaveBeenNthCalledWith(
+      2,
+      ctx,
+      expect.objectContaining({
+        valor: 400,
+        concepto: expect.stringMatching(
+          /4×1000, lo asume el cliente$/,
+        ) as unknown,
+      }),
+      expect.anything(),
+    );
   });
 });

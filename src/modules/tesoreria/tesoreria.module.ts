@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { ContabilidadModule } from '../contabilidad/contabilidad.module';
+import { NucleoModule } from '../nucleo/nucleo.module';
 import { BancoCortesController } from './controladores/banco-cortes.controller';
 import { BancoMovimientosController } from './controladores/banco-movimientos.controller';
 import { CajaArqueosController } from './controladores/caja-arqueos.controller';
@@ -21,6 +22,17 @@ import { CuentaBancariaService } from './servicios/cuenta-bancaria.service';
 import { ExtractoReglaService } from './servicios/extracto-regla.service';
 import { ExtractoService } from './servicios/extracto.service';
 import { TesoreriaApi } from './tesoreria.api';
+import { MovimientosConceptoController } from './controladores/movimientos-concepto.controller';
+import { MovimientoConceptoService } from './servicios/movimiento-concepto.service';
+import { TrasladosController } from './controladores/traslados.controller';
+import { CajaBancosController } from './controladores/caja-bancos.controller';
+import { SaldosInicialesController } from './controladores/saldos-iniciales.controller';
+import { CajaBancosService } from './servicios/caja-bancos.service';
+import { SaldosInicialesService } from './servicios/saldos-iniciales.service';
+import { TrasladoService } from './servicios/traslado.service';
+import { PrepararTodoService } from './servicios/preparar-todo.service';
+import { PrepararTodoController } from './controladores/preparar-todo.controller';
+import { InventarioModule } from '../inventario/inventario.module';
 
 /**
  * Tesorería (módulo 7 de la secuencia): Caja y Bancos. Bancos se suma
@@ -28,6 +40,9 @@ import { TesoreriaApi } from './tesoreria.api';
  * (`docs/planes/caja-bancos-fase2.md`) — a diferencia de Caja, que llegó
  * de una sola vez en el paso 10, acá cada servicio/controlador nuevo se
  * registra en este módulo al construirse, no al final.
+ *
+ * Importa `NucleoModule` porque `CajaConfiguracionService` necesita el plan
+ * de cuentas, las sedes y los hechos operativos para dejar tesorería lista.
  *
  * Importa `ContabilidadModule` porque `CajaMovimientoService`/
  * `CajaArqueoService` (y, más adelante, `BancoMovimientoService`)
@@ -39,7 +54,7 @@ import { TesoreriaApi } from './tesoreria.api';
  * importa directamente.
  */
 @Module({
-  imports: [ContabilidadModule],
+  imports: [NucleoModule, ContabilidadModule, InventarioModule],
   controllers: [
     CajasController,
     CajaMovimientosController,
@@ -51,6 +66,11 @@ import { TesoreriaApi } from './tesoreria.api';
     ExtractosController,
     ExtractoController,
     ExtractoReglasController,
+    MovimientosConceptoController,
+    TrasladosController,
+    CajaBancosController,
+    SaldosInicialesController,
+    PrepararTodoController,
   ],
   providers: [
     CajaService,
@@ -62,6 +82,11 @@ import { TesoreriaApi } from './tesoreria.api';
     BancoCorteService,
     ExtractoService,
     ExtractoReglaService,
+    MovimientoConceptoService,
+    TrasladoService,
+    CajaBancosService,
+    SaldosInicialesService,
+    PrepararTodoService,
     TesoreriaApi,
   ],
   exports: [TesoreriaApi],

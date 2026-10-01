@@ -8,6 +8,7 @@ import { InventarioApi } from '../../inventario/inventario.api';
 import type { ClaveOrigen } from '../../reportes/reglas/catalogo';
 import { aMano } from '../../reportes/reglas/rango';
 import { ArmadorService } from '../../reportes/servicios/armador.service';
+import { RetencionesApi } from '../../retenciones/retenciones.api';
 import { RevisionApi } from '../../revision/revision.api';
 import { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import type { HerramientasDelTurno } from '../proveedores/conversador.puerto';
@@ -20,8 +21,11 @@ import {
   herramientasPara,
   origenDeHerramienta,
   resultadoParaModelo,
+  RETENCIONES,
+  retencionesParaModelo,
   REVISAR,
   revisionParaModelo,
+  ROLES_RETENCIONES,
   ROLES_REVISION,
   ROLES_EXISTENCIAS,
   ROLES_SALDOS,
@@ -83,6 +87,7 @@ export class ConsultasService {
     private readonly inventario: InventarioApi,
     private readonly propuestas: PropuestasService,
     private readonly revision: RevisionApi,
+    private readonly retenciones: RetencionesApi,
   ) {}
 
   /**
@@ -196,6 +201,19 @@ export class ConsultasService {
       };
     }
 
+    if (nombre === RETENCIONES) {
+      if (!ctx.roles.some((r) => ROLES_RETENCIONES.includes(r)))
+        throw new NoPermitida();
+      const texto = (v: unknown) => (typeof v === 'string' ? v : undefined);
+      const filas = await this.retenciones.retencionesParaAsistente(ctx, {
+        proveedor: texto(e.proveedor),
+        numero: texto(e.numero),
+        desde: texto(e.desde),
+        hasta: texto(e.hasta),
+      });
+      return { texto: retencionesParaModelo(filas), filas: filas.length };
+    }
+
     if (nombre === REVISAR) {
       if (!ctx.roles.some((r) => ROLES_REVISION.includes(r)))
         throw new NoPermitida();
@@ -233,6 +251,6 @@ export class ConsultasService {
       `Falló la consulta ${nombre}`,
       e instanceof Error ? e.stack : String(e),
     );
-    return 'La consulta falló. Probá de nuevo en un rato.';
+    return 'La consulta falló. Intente de nuevo en un momento.';
   }
 }

@@ -50,7 +50,7 @@ const PAGOS = {
   type: 'array',
   minItems: 1,
   description:
-    'De dónde entra o sale la plata. Un renglón por caja o cuenta; varios si se reparte.',
+    'De dónde entra o sale el dinero. Un renglón por caja o cuenta; varios si se reparte.',
   items: {
     type: 'object',
     properties: {
@@ -71,7 +71,7 @@ const FECHA = {
   description: 'aaaa-mm-dd. Opcional: sin fecha es hoy.',
 };
 
-const NO_REGISTRA = `No registra nada: se verifica en seco y queda como propuesta, con un botón Confirmar para la persona. Si la verificación falla, te dice por qué.`;
+const NO_REGISTRA = `No registra nada: se verifica en seco y queda como propuesta, con un botón Confirmar para la persona. Si la verificación falla, le dice por qué.`;
 
 /** Las herramientas de proponer que el rol puede confirmar. */
 export function herramientasDeAccion(
@@ -81,7 +81,7 @@ export function herramientasDeAccion(
   if (puedeHacer(roles, 'COBRO')) {
     lista.push({
       name: PROPONER_COBRO,
-      description: `Arma el cobro de una factura de venta para que la persona lo confirme. ${NO_REGISTRA} Necesitás el número de la factura como sale en la cartera («SETT-5») y el id de la caja o la cuenta de consultar_saldos. Hasta ${PROPUESTAS_POR_TURNO} por turno.`,
+      description: `Arma el cobro de una factura de venta para que la persona lo confirme. ${NO_REGISTRA} Necesita el número de la factura como sale en la cartera («SETT-5») y el id de la caja o la cuenta de consultar_saldos. Hasta ${PROPUESTAS_POR_TURNO} por turno.`,
       input_schema: {
         type: 'object',
         properties: {
@@ -99,7 +99,7 @@ export function herramientasDeAccion(
   if (puedeHacer(roles, 'PAGO')) {
     lista.push({
       name: PROPONER_PAGO,
-      description: `Arma el pago de una compra a un proveedor para que la persona lo confirme. ${NO_REGISTRA} Necesitás el número de la factura del proveedor, como sale en las compras, y el id de la caja o la cuenta de consultar_saldos. Hasta ${PROPUESTAS_POR_TURNO} por turno.`,
+      description: `Arma el pago de una compra a un proveedor para que la persona lo confirme. ${NO_REGISTRA} Necesita el número de la factura del proveedor, como sale en las compras, y el id de la caja o la cuenta de consultar_saldos. Hasta ${PROPUESTAS_POR_TURNO} por turno.`,
       input_schema: {
         type: 'object',
         properties: {

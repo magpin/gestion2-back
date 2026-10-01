@@ -38,6 +38,14 @@ import {
 import { CobrosService } from '../servicios/cobros.service';
 import { CuentasService } from '../servicios/cuentas.service';
 import { PanelService } from '../servicios/panel.service';
+import {
+  NuevaTarifaDto,
+  NuevaUvtDto,
+  NuevoIcaMunicipioDto,
+  NuevaAutorretencionDto,
+  RecalcularRetencionesDto,
+} from '../dto/ley-retenciones.dto';
+import { LeyRetencionesService } from '../servicios/ley-retenciones.service';
 import { SistemaService } from '../servicios/sistema.service';
 
 /**
@@ -67,6 +75,7 @@ export class PlataformaController {
     private readonly consumo: ConsumoIaApi,
     private readonly cobros: CobrosService,
     private readonly sistema: SistemaService,
+    private readonly ley: LeyRetencionesService,
   ) {}
 
   @Get('auth/yo')
@@ -160,6 +169,82 @@ export class PlataformaController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.sistema.retirar(admin, id);
+  }
+
+  // --- Ley de retenciones (plan motor de retenciones, Fase 0, §0.8) --------
+
+  @Get('retenciones')
+  leyRetenciones() {
+    return this.ley.ley();
+  }
+
+  /** Nunca edita: cierra la vigencia abierta y abre la nueva. */
+  @Post('retenciones/tarifas')
+  nuevaTarifa(@Admin() admin: CtxPlataforma, @Body() dto: NuevaTarifaDto) {
+    return this.ley.nuevaTarifa(admin, dto);
+  }
+
+  @Get('retenciones/ica')
+  leyIca() {
+    return this.ley.ica();
+  }
+
+  /** La ley de ICA de un municipio para un año nuevo, con su acuerdo. */
+  @Post('retenciones/ica')
+  nuevoIcaMunicipio(
+    @Admin() admin: CtxPlataforma,
+    @Body() dto: NuevoIcaMunicipioDto,
+  ) {
+    return this.ley.nuevoIcaMunicipio(admin, dto);
+  }
+
+  /** Aciertos del clasificador por fuente, de los últimos 90 días. */
+  @Get('retenciones/aciertos')
+  aciertosRetenciones() {
+    return this.ley.aciertos();
+  }
+
+  @Get('retenciones/autorretencion')
+  autorretenciones() {
+    return this.ley.autorretenciones();
+  }
+
+  /** La tarifa de autorretención especial de un CIIU, con su norma. */
+  @Post('retenciones/autorretencion')
+  nuevaAutorretencion(
+    @Admin() admin: CtxPlataforma,
+    @Body() dto: NuevaAutorretencionDto,
+  ) {
+    return this.ley.nuevaAutorretencion(admin, dto);
+  }
+
+  @Post('retenciones/uvt')
+  nuevaUvt(@Admin() admin: CtxPlataforma, @Body() dto: NuevaUvtDto) {
+    return this.ley.nuevaUvt(admin, dto);
+  }
+
+  /**
+   * Recalcula con la norma que rige hoy y deja las diferencias en cada
+   * empresa (Fase 6, §6.3). No toca asientos: los ajustes los aprueba una
+   * persona de la empresa (R-D6).
+   */
+  @Post('retenciones/recalcular')
+  recalcularRetenciones(
+    @Admin() admin: CtxPlataforma,
+    @Body() dto: RecalcularRetencionesDto,
+  ) {
+    return this.ley.recalcular(admin, dto);
+  }
+
+  @Get('retenciones/recalculos')
+  recalculos() {
+    return this.ley.recalculos();
+  }
+
+  /** El reporte de diferencias de un recálculo, de todas las empresas. */
+  @Get('retenciones/recalculos/:id')
+  recalculo(@Param('id', ParseUUIDPipe) id: string) {
+    return this.ley.recalculo(id);
   }
 
   /** El alta de un administrador no está acá: es por script, en el servidor. */

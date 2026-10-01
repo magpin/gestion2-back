@@ -7,7 +7,9 @@ import {
 import type { CtxEmpresa } from '../../../common/ctx';
 import { fila, filas } from '../../../common/db/filas';
 import { TxService, type Tx } from '../../../common/db/tx.service';
+import { NucleoApi } from '../../nucleo/nucleo.api';
 import type { CrearCajaDto, EditarCajaDto } from '../dto/caja.dto';
+import { problemaCuentaDeCaja } from './caja.reglas';
 
 export interface Caja {
   id: string;
@@ -16,6 +18,13 @@ export interface Caja {
   sede_id: string | null;
   cuenta_id: string;
   activa: boolean;
+  /** El empleado que responde por la caja: a quién se le cobra un faltante. */
+  responsable: {
+    id: string;
+    nombre: string;
+    tipoDocumento: string;
+    numeroDocumento: string;
+  } | null;
   /** Cuánta plata hay adentro hoy. `0` si la caja nunca se movió. */
   saldo: string;
   /** El día del último movimiento, o `null` si no hubo ninguno. */
@@ -36,6 +45,13 @@ const ultimo = (columna: string, porDefecto: string) =>
         LIMIT 1), ${porDefecto}))`;
 
 const CAMPOS = `id, nombre, tipo, sede_id, cuenta_id, activa,
+                (SELECT json_build_object(
+                          'id', tr.id,
+                          'nombre', COALESCE(NULLIF(BTRIM(tr.razon_social), ''),
+                                      BTRIM(CONCAT_WS(' ', tr.primer_nombre, tr.primer_apellido))),
+                          'tipoDocumento', tr.tipo_documento,
+                          'numeroDocumento', tr.numero_documento)
+                   FROM tercero tr WHERE tr.id = caja.responsable_tercero_id) AS responsable,
                 ${ultimo('saldo_valor', '0')} AS saldo,
                 ${ultimo('fecha', 'NULL')} AS ultimo_movimiento`;
 
@@ -46,14 +62,50 @@ const CAMPOS = `id, nombre, tipo, sede_id, cuenta_id, activa,
  */
 @Injectable()
 export class CajaService {
-  constructor(private readonly tx: TxService) {}
+  constructor(
+    private readonly tx: TxService,
+    private readonly nucleo: NucleoApi,
+  ) {}
+
+  /** La cuenta existe, está activa, recibe asientos y es de caja (1105). */
+  private async validarCuenta(
+    ctx: CtxEmpresa,
+    tipo: 'PRINCIPAL' | 'MENOR',
+    cuentaId: string,
+    t: Tx,
+  ): Promise<void> {
+    const cuenta = await this.nucleo.cuentaPorId(ctx, cuentaId, t);
+    if (cuenta === null) {
+      throw new BadRequestException(
+        'Esa cuenta no está en el plan de la empresa.',
+      );
+    }
+    const problema = problemaCuentaDeCaja(tipo, {
+      codigo: cuenta.codigo,
+      activa: cuenta.activa,
+      esAuxiliar: cuenta.es_auxiliar,
+    });
+    if (problema !== null) throw new BadRequestException(problema);
+  }
 
   async crear(ctx: CtxEmpresa, dto: CrearCajaDto): Promise<Caja> {
     return this.tx.enContexto(ctx, async (t) => {
+      // Una empresa maneja una sola caja, la principal (decisión del dueño,
+      // 30-09): con una activa no se crea otra.
+      const [otra] = filas<{ nombre: string }>(
+        await t.query('SELECT nombre FROM caja WHERE activa LIMIT 1'),
+      );
+      if (otra !== undefined) {
+        throw new BadRequestException(
+          `La empresa ya tiene su caja (${otra.nombre}): se maneja una sola, la principal.`,
+        );
+      }
+      await this.validarCuenta(ctx, dto.tipo, dto.cuentaId, t);
       const creada = fila<Caja>(
         await t.query(
-          `INSERT INTO caja (empresa_id, nombre, tipo, sede_id, cuenta_id, creado_por)
-           VALUES ($1, $2, $3, $4, $5, $6)
+          `INSERT INTO caja (empresa_id, nombre, tipo, sede_id, cuenta_id, creado_por,
+                             responsable_tercero_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
            RETURNING ${CAMPOS}`,
           [
             ctx.empresaId,
@@ -62,6 +114,7 @@ export class CajaService {
             dto.sedeId ?? null,
             dto.cuentaId,
             ctx.usuarioId,
+            dto.responsableTerceroId ?? null,
           ],
         ),
       );
@@ -122,10 +175,17 @@ export class CajaService {
     return this.tx.enContexto(ctx, async (t) => {
       const editada = fila<Caja>(
         await t.query(
-          `UPDATE caja SET nombre = COALESCE($2, nombre)
+          // `responsable` distingue «no lo tocó» (undefined) de «lo quitó» (null).
+          `UPDATE caja SET nombre = COALESCE($2, nombre),
+                  responsable_tercero_id = CASE WHEN $3 THEN $4::uuid ELSE responsable_tercero_id END
             WHERE id = $1
           RETURNING ${CAMPOS}`,
-          [id, dto.nombre ?? null],
+          [
+            id,
+            dto.nombre ?? null,
+            dto.responsableTerceroId !== undefined,
+            dto.responsableTerceroId ?? null,
+          ],
         ),
       );
       if (editada === undefined) {
@@ -142,9 +202,21 @@ export class CajaService {
     );
   }
 
+  /** Solo si no hay otra activa: una empresa maneja una sola caja. */
   async activar(ctx: CtxEmpresa, id: string): Promise<void> {
-    await this.tx.enContexto(ctx, (t) =>
-      t.query('UPDATE caja SET activa = true WHERE id = $1', [id]),
-    );
+    await this.tx.enContexto(ctx, async (t) => {
+      const [otra] = filas<{ nombre: string }>(
+        await t.query(
+          'SELECT nombre FROM caja WHERE activa AND id <> $1 LIMIT 1',
+          [id],
+        ),
+      );
+      if (otra !== undefined) {
+        throw new BadRequestException(
+          `La empresa ya tiene su caja activa (${otra.nombre}): se maneja una sola.`,
+        );
+      }
+      await t.query('UPDATE caja SET activa = true WHERE id = $1', [id]);
+    });
   }
 }

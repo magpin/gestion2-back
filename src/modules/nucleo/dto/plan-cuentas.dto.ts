@@ -122,3 +122,27 @@ export class EditarCentroCostoDto {
   @Length(2, 120)
   nombre?: string;
 }
+
+/**
+ * «+ Crear cuenta auxiliar» desde un formulario: la madre y el nombre. El
+ * código lo pone el servidor. `contexto` es de dónde se pidió (caja, banco,
+ * producto…), solo informativo.
+ */
+export class CrearAuxiliarDto {
+  @Matches(CODIGO, { message: 'Codigo de cuenta invalido' })
+  madre!: string;
+
+  @IsString()
+  @Length(2, 120)
+  nombre!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 40)
+  contexto?: string;
+}
+
+export class SiguienteAuxiliarDto {
+  @Matches(CODIGO, { message: 'Codigo de cuenta invalido' })
+  madre!: string;
+}

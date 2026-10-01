@@ -1,0 +1,97 @@
+NG;1111;agropecuaria;0;Cultivo de cereales (excepto arroz), legumbres y semillas oleaginosas, no modificados genéticamente (no gravada)
+101;1112;industrial;4;Cultivo de cereales, legumbres y oleaginosas genéticamente modificados
+NG;1121;agropecuaria;0;Cultivo de arroz no modificado genéticamente (no gravada)
+101;1122;industrial;4;Cultivo de arroz genéticamente modificado
+NG;0113-0150;agropecuaria;0;Cultivos 113-130, cría de animales 141-149, explotación mixta 150 (no gravadas)
+321;0161-0164;servicios;9;Actividades de apoyo a agricultura, ganadería, poscosecha, tratamiento de semillas
+NG;0170,0210,0220,0230,0311,0312;agropecuaria;0;Caza, silvicultura, extracción de madera, recolección forestal, pesca (no gravadas)
+321;0240;servicios;9;Servicios de apoyo a la silvicultura
+113;0321,0322;industrial;7;Acuicultura marítima y de agua dulce
+113;0510,0520,0620,0710,0721,0722,0723,0729,0820,0891,0892,0899;industrial;7;Extracción de carbón, gas, minerales metalíferos, esmeraldas, minerales para abonos, sal y otros no metálicos
+110;0610;industrial;7;Extracción de petróleo crudo
+112;0811,0812;industrial;5;Extracción de piedra, arena, arcillas, caliza, caolín
+321;0910,0990;servicios;9;Actividades de apoyo a extracción de petróleo, gas, minas y canteras
+101;10111;industrial;4;Procesamiento y conservación de carne y productos cárnicos
+103;10112;industrial;5;Producción de pieles y cueros en verde, lanas, plumas
+101;1012;industrial;4;Procesamiento de pescados, crustáceos y moluscos
+101;10201;industrial;4;Procesamiento de frutas, legumbres, hortalizas y tubérculos
+102;10202;industrial;7;Elaboración de jugos naturales de frutas u hortalizas
+101;1030;industrial;4;Aceites y grasas de origen vegetal y animal
+101;10401;industrial;4;Productos lácteos excepto bebidas
+102;10402;industrial;7;Bebidas a base de leche
+101;1051,1052,1061,1062,1063,1071,1072,1081,1082,1083,1084,1089,1090;industrial;4;Molinería, almidones, café, azúcar, panela, panadería, cacao y confitería, pastas, comidas preparadas, otros alimentos, alimentos para animales
+102;1101,1102,1103,1104;industrial;7;Bebidas alcohólicas, fermentadas, cerveza, bebidas no alcohólicas y aguas
+113;1200;industrial;7;Productos de tabaco
+104;1311,1312,13131,1391,1392,1399,14101,1430,1513,1521,1522,1523,2030;industrial;2.2;Textiles, confección de prendas (cuenta propia), punto, calzado, fibras sintéticas
+321;13132,14102,14203;servicios;9;Acabado textil / confección / prendas de piel a cambio de retribución o por contrata (maquila)
+113;1393,1394;industrial;7;Tapetes, alfombras, cuerdas, cordeles, redes
+103;14201,14202,1511,1512;industrial;5;Artículos de piel, prendas de piel, curtido, marroquinería en cuero
+105;1610,1620,1630,1640,1690,3110;industrial;7;Madera y productos de madera; fabricación de muebles
+106;1701,58112,58132,58192;industrial;4.8;Pulpa, papel y cartón; edición de libros, periódicos, revistas, otros trabajos de edición
+113;1702,1709;industrial;7;Papel y cartón ondulado, envases de papel, otros artículos de papel
+321;1811,1812,1820;servicios;9;Impresión, servicios relacionados con la impresión, copias de grabaciones
+113;1910,1922;industrial;7;Hornos de coque, mezcla de combustibles
+110;1921;industrial;7;Refinación del petróleo
+107;2011,2021,2029;industrial;6;Químicos básicos, plaguicidas, otros productos químicos n.c.p.
+113;2012,2022,2023,2100;industrial;7;Abonos, pinturas, jabones y detergentes, farmacéuticos
+109;2013,2221,2229;industrial;7;Plásticos en formas primarias, formas básicas de plástico, artículos de plástico
+108;2014,2211,2212,2219;industrial;5.4;Caucho sintético, llantas, reencauche, productos de caucho
+113;2310,23911;industrial;7;Vidrio, productos refractarios
+112;23912,2392,2393,2394,2395,2396,2399,2511;industrial;5;Morteros, arcilla para construcción, cerámica, cemento, hormigón, piedra, otros minerales no metálicos, productos metálicos estructurales
+111;2410,2421,2429,2431,2432,25921,2599;industrial;5.4;Industrias básicas de hierro, acero y metales; fundición; tratamiento de metales cuenta propia; otros productos de metal
+113;2512,2513,2520,25911,2593;industrial;7;Tanques, generadores de vapor, armas, forja cuenta propia, cuchillería y ferretería
+321;25912,25922;servicios;9;Forja / tratamiento de metales por contrata o a cambio de retribución
+111;2610-2818 (2610,2620,2630,2640,2651,26521,26522,2660,2670,2680,2711,2712,2720,2731,2732,2740,2750,2790,2811-2818);industrial;5.4;Electrónicos, computadores, equipos de comunicación, eléctricos, motores, maquinaria de uso general (2811 a 2818)
+113;2819,2821-2829,2910,2920,2930,3011,3012,3020,3030,3040,3091,3092,3099,3120,3210,3220,3230,3240,3250,3290;industrial;7;Otra maquinaria, maquinaria especial, vehículos, carrocerías, autopartes, barcos, motocicletas, bicicletas, colchones, joyas, instrumentos, juguetes, equipo médico, otras manufacturas
+321;3311,3312,3313,3314,3315,3319,3320;servicios;9;Mantenimiento y reparación especializado; instalación de maquinaria industrial
+113;3511,35201,3830;industrial;7;Generación de energía eléctrica, producción de gas, recuperación de materiales
+312;3512,3513,35202,36002,38112,61102,6120,6130,81301;servicios;7.2;Servicios públicos domiciliarios: transmisión y distribución de energía, gas, acueducto, aseo y alcantarillado, telefonía, telecom inalámbricas y satelitales, poda/corte de césped SPD
+215;3514;comercial;9;Comercialización de energía eléctrica
+209;35203,4731,47321,47593;comercial;6;Comercialización de combustibles gaseosos, combustible para automotores, lubricantes, gas en bombonas
+321;3530,36001,3700,38111,3812,3821,3822,3900;servicios;9;Vapor y aire acondicionado, captación de agua por contrata, aguas residuales, recolección y tratamiento de desechos, saneamiento
+308;41111,41112,41121,41122,4210,4220,4290,4311,4312,4321,4322,4329,4330,4390;servicios;4.8;Construcción de edificios y obras civiles, demolición, instalaciones, terminación
+214;4511;comercial;6;Comercio de vehículos automotores nuevos
+208;4512,4530,4541;comercial;4.8;Vehículos usados, autopartes, motocicletas y sus partes
+317;4520,4542;servicios;7.2;Mantenimiento y reparación de vehículos y motocicletas
+215;46101,46104,46201,46202,46412,46452,46491,4652,4659,46612,4662,46632,4664,4665,4669,4690;comercial;9;Comercio al por mayor por contrata (químicos/alimentos, otros bienes), materias primas agropecuarias, flores, confeccionados de uso doméstico, cosméticos, otros utensilios, electrónicos y telecom, otra maquinaria, aditivos, metales, fontanería/pinturas/vidrio, químicos, desperdicios, otros, no especializado
+212;46102,46611;comercial;6;Comercio al por mayor de combustibles y lubricantes (incl. por contrata)
+210;46103,4632,47112,47241,47812,47912,47922,47992;comercial;9.6;Bebidas (alcohólicas) y tabaco/cigarrillos, al por mayor y al por menor
+204;46105,4631,46451,46633,47111,47191,4722,4723,4729,47521,47731,47811,47911,47921,47991;comercial;5.4;Alimentos, ferretería, farmacéuticos y medicinales (mayor y menor), lácteos, carnes
+207;46106,46631,47522;comercial;4.8;Materiales de construcción (mayor y menor)
+202;46411,4751,47821,47913,47923,47993;comercial;4.8;Productos textiles (mayor y menor)
+205;4642,4643,4771,4772,47822,47914,47924,47994;comercial;4.2;Prendas de vestir y calzado (mayor y menor)
+213;4644,4651,47192,4741,4754,4755,47591;comercial;9.6;Electrodomésticos y aparatos de uso doméstico, computadores y software, joyería, muebles, utensilios domésticos
+211;46492,4761;comercial;4.2;Papelería, libros y periódicos (mayor y menor)
+201;4653;comercial;4.8;Comercio al por mayor de maquinaria y equipo agropecuarios
+203;47101,47201,47401,47501,47601,47701;comercial;8.5;Comercio al por menor en almacenes de departamentos y seccionales
+215;47193,47194,4721,47242,47322,4742,47523,47524,4753,47592,4762,4769,47732,4774,47751,4789,47915,47925,47995;comercial;9;Otros comercios al por menor (cosméticos, productos agrícolas, bebidas no alcohólicas, aditivos, sonido y video, vidrio, pinturas, tapices, químicos, deportivos, culturales, naturistas, otros nuevos, segunda mano, puestos móviles, internet, correo)
+206;47733;comercial;7.2;Comercio al por menor de productos ortopédicos y odontológicos
+321;47752,64992,66112,6612,6613,6619,6621,6629,6630;servicios;9;Compraventa con pacto de retroventa; servicios de casas de empeño; bolsas de valores; corretaje; auxiliares financieros; corredores de seguros; administración de fondos
+307;4911,4912,4921,4922,4923,4930,5011,5012,5021,5022,5111,5112,5121,5122,52211,5222,5223,5224,5229;servicios;6;Transporte terrestre, por tubería, marítimo, fluvial, aéreo; actividades complementarias; manipulación de carga
+321;5210;servicios;9;Almacenamiento y depósito
+313;52212;servicios;9.6;Actividades de aparcaderos (parqueaderos)
+321;5310,5320;servicios;9;Actividades postales y de mensajería
+304;5511,5512,5513,5514,5519,5520,8790;servicios;6;Alojamiento en hoteles, apartahoteles, centros vacacionales, rural, camping; otras atenciones con alojamiento
+305;5530,5590;servicios;10;Servicio de estancia por horas; otros alojamientos n.c.p.
+302;5611,5612,5613,5619,5621,5629,5630;servicios;10;Expendio de comidas preparadas, catering, expendio de bebidas alcohólicas para consumo en el establecimiento
+321;58111,58121,58131,58191;servicios;9;Servicios de edición (a cambio de retribución)
+113;58122,5820,5911,5912,59201;industrial;7;Edición de directorios, edición de software, producción y postproducción audiovisual, grabación de sonido
+316;59131,5914,59202,6010,6020,61101,7722;servicios;6.6;Distribución y exhibición de películas, servicio de grabación, radio y televisión, telecom alámbricas (no SPD), alquiler de videos
+311;59132,7310;servicios;7.2;Distribución de programas y comerciales de TV; publicidad
+321;6190,6201,6202,6209,6311,6312,6391,6399;servicios;9;Otras telecomunicaciones, desarrollo de software, consultoría informática, hosting, portales web, noticias, otros servicios de información
+400;6411,6412,6421,6422,6423,6431,6432,6491,6493,6494,6495,6496,64991,6511,6512,6513,6515,6521,6522,6523,66111,6614,6615;financiera;14;Banca, corporaciones y compañías de financiamiento, fiducias, cesantías, leasing, factoring, capitalización, seguros, intermediación cambiaria, divisas
+401;6424,6492,6531,6532;financiera;5;Cooperativas financieras, fondos de empleados y sector solidario, RPM y RAIS (pensiones)
+215;64993;comercial;9;Actividades comerciales de casas de empeño o compraventas
+309;6810,6820;servicios;7.2;Actividades inmobiliarias (propias o por contrata)
+310;69101,69102,69201,69202,70101,70102,70201,70202,71111,71112,71121,71122,7210,7220,7490,86212,86222,86912,86922;servicios;3;Consultoría profesional y profesiones liberales: jurídica, contable, administración, gestión, arquitectura, ingeniería, investigación, otras profesionales; práctica médica/odontológica/diagnóstica/terapéutica como profesión liberal
+306;69103;servicios;5;Servicios notariales y curadores urbanos
+321;7120,7320,7410,7420,7500,7710,7721,7729,77301,77302,77303,7740,7830,7911,7912,7990,8010,8020,8030,8110,8121,8129,81302,8211,8219,8220,8230,8291,8292,8299,8430,8559,8560,8810,8891,8899,9001-9008,9311,93192,9321,9329,9511,9512,9521,9522,9523,9524,9529,9609;servicios;9;Ensayos técnicos, estudios de mercado, diseño, fotografía, veterinaria, alquileres, propiedad intelectual, suministro de personal (no temporales), agencias de viaje, seguridad privada, aseo, paisajismo privado, apoyo administrativo, call center, eventos, cobranza, empaque, otras de apoyo, seguridad social obligatoria, otros tipos de educación, asistencia social, artes y espectáculos, instalaciones deportivas, recreación, reparación de computadores y enseres, otros servicios personales
+301;7810,7820;servicios;3;Agencias de empleo y empresas de servicios temporales
+303;8511,8512,8513,8521,8522,8523,8530,8541,8542,8543,8544,8551,8552,8553;servicios;7.2;Educación formal (preescolar a universidad), formación para el trabajo, enseñanza deportiva y cultural
+NG;86101;servicios;0;Hospitales y clínicas con servicios del plan obligatorio de salud (no gravada)
+314;86102,86211,86221,86911,86921,86991,86992,87101,8720,8730;servicios;8.4;Salud humana (excepto P y P con recursos del SGSSS), atención residencial medicalizada, cuidado de mayores
+315;94992;servicios;8.4;Actividades de clubes sociales
+318;9601;servicios;7.2;Lavado y limpieza de textiles (lavanderías)
+319;9602;servicios;7.2;Peluquería y tratamientos de belleza
+320;9603;servicios;9;Pompas fúnebres
+NG;8411-8424,9101,9102,9103,9200,9312,93191,9411,9412,9420,9491,9492,94991,9700,9810,9820,9900;no gravada;0;Administración pública, bibliotecas, museos, jardines, juegos de azar, clubes deportivos, otras deportivas, asociaciones, hogares, extraterritoriales (no gravadas)

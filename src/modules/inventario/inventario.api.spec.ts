@@ -68,6 +68,7 @@ describe('InventarioApi', () => {
     txServiceFalso(),
     // AlmacenamientoApi: `ultimoSaldo` no firma ninguna URL.
     { disponible: false } as never,
+    {} as never, // ConfiguracionService: leer un producto no lo toca
   );
   const kardex = new KardexService(
     txServiceFalso(),
@@ -76,7 +77,7 @@ describe('InventarioApi', () => {
     {} as never, // ConfiguracionService: ultimoSaldo no lo toca
   );
   const precios = new PrecioService(txServiceFalso());
-  const api = new InventarioApi(productos, kardex, precios);
+  const api = new InventarioApi(productos, kardex, precios, {} as never);
 
   it('producto() devuelve los datos cuando existe', async () => {
     const tx = txFalso(productoFila, undefined);

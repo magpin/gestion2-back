@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 
 import type { CtxEmpresa, TipoRegimen } from '../../../common/ctx';
-import { filas } from '../../../common/db/filas';
+import { fila, filas } from '../../../common/db/filas';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import {
   CONDICION_OPUESTA,
@@ -141,7 +141,7 @@ export class EmpresaLegalService {
         Number(actual.tarifa_ica_por_mil) <= 30
       ) {
         throw new BadRequestException(
-          'Esa actividad ya tiene tarifa de ICA. Para cambiarla, cerrala y abrila con la tarifa nueva.',
+          'Esa actividad ya tiene tarifa de ICA. Para cambiarla, ciérrela y ábrala con la tarifa nueva.',
         );
       }
       await t.query(
@@ -295,11 +295,16 @@ export class EmpresaLegalService {
     fechaFin: string,
   ): Promise<void> {
     await this.tx.enContexto(ctx, async (t) => {
-      const [fila] = await t.query<Array<{ codigo: number }>>(
-        `UPDATE empresa_responsabilidad_rut SET fecha_fin = $2
-          WHERE id = $1 AND fecha_fin IS NULL
-         RETURNING codigo`,
-        [id, fechaFin],
+      // `filas` y no desestructurar: un UPDATE devuelve [filas, cantidad], y
+      // tomar el primero daba el arreglo entero. Así nunca se sabía qué código
+      // se cerró, y la condición que sostenía quedaba abierta.
+      const [fila] = filas<{ codigo: number }>(
+        await t.query(
+          `UPDATE empresa_responsabilidad_rut SET fecha_fin = $2
+            WHERE id = $1 AND fecha_fin IS NULL
+           RETURNING codigo`,
+          [id, fechaFin],
+        ),
       );
       if (fila === undefined) {
         throw new NotFoundException(
@@ -628,8 +633,9 @@ export class EmpresaLegalService {
     dto: EditarConfiguracionContableDto,
   ): Promise<Record<string, unknown>> {
     return this.tx.enContexto(ctx, async (t) => {
-      const [fila] = await t.query<Array<Record<string, unknown>>>(
-        `UPDATE empresa_configuracion_contable
+      const editada = fila<Record<string, unknown>>(
+        await t.query(
+          `UPDATE empresa_configuracion_contable
             SET grupo_niif                   = COALESCE($2, grupo_niif),
                 moneda_funcional             = COALESCE($3, moneda_funcional),
                 mes_cierre_fiscal            = COALESCE($4, mes_cierre_fiscal),
@@ -639,23 +645,24 @@ export class EmpresaLegalService {
                 maneja_centro_de_costo       = COALESCE($8, maneja_centro_de_costo)
           WHERE empresa_id = $1
           RETURNING *`,
-        [
-          ctx.empresaId,
-          dto.grupoNiif ?? null,
-          dto.monedaFuncional ?? null,
-          dto.mesCierreFiscal ?? null,
-          dto.metodoValoracionInventario ?? null,
-          dto.decimalesValor ?? null,
-          dto.decimalesCantidad ?? null,
-          dto.manejaCentroDeCosto ?? null,
-        ],
+          [
+            ctx.empresaId,
+            dto.grupoNiif ?? null,
+            dto.monedaFuncional ?? null,
+            dto.mesCierreFiscal ?? null,
+            dto.metodoValoracionInventario ?? null,
+            dto.decimalesValor ?? null,
+            dto.decimalesCantidad ?? null,
+            dto.manejaCentroDeCosto ?? null,
+          ],
+        ),
       );
-      if (fila === undefined) {
+      if (editada === undefined) {
         throw new NotFoundException(
           'La empresa no tiene configuracion contable',
         );
       }
-      return fila;
+      return editada;
     });
   }
 

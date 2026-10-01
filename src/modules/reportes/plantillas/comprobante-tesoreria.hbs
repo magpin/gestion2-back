@@ -1,0 +1,45 @@
+{{!--
+  El recibo de caja y el comprobante de egreso impresos (Fase 5 de las
+  pantallas complementarias, tanda 5.7). Un documento de tesorería: quién,
+  por dónde entró o salió la plata, qué se pagó y cuánto.
+--}}
+
+<section class="cifras">
+  <div class="tarjeta tarjeta--principal">
+    <span class="rotulo">{{rotuloTotal}}</span>
+    <span class="valor">{{total}}</span>
+    <span class="nota">{{fecha}} · {{medio}}</span>
+  </div>
+</section>
+
+{{#if anulado}}<p class="aviso-hoja">ANULADO · {{motivoAnulacion}}</p>{{/if}}
+
+<section class="bloque">
+  <div class="encabezado">
+    <h2>{{tercero}}</h2>
+    <span class="apunte">{{terceroDocumento}}</span>
+  </div>
+  <div class="detalle detalle--comprobante">
+    <div class="fila cabecera">
+      <span>Concepto</span>
+      <span>Detalle</span>
+      <span class="derecha">Valor</span>
+    </div>
+    {{#each lineas}}
+      <div class="fila renglon">
+        <span>{{concepto}}</span>
+        <span>{{detalle}}</span>
+        <span class="derecha cifra">{{valor}}</span>
+      </div>
+    {{/each}}
+    <div class="fila total">
+      <span>{{rotuloTotal}}</span>
+      <span></span>
+      <span class="derecha cifra">{{total}}</span>
+    </div>
+  </div>
+</section>
+
+{{#if notas.length}}
+  <p class="notas">{{#each notas}}{{this}} {{/each}}</p>
+{{/if}}

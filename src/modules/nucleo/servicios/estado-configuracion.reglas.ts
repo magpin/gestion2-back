@@ -6,8 +6,8 @@
  * este archivo decide qué significan.
  *
  * El orden de los pasos no es estético. Refleja dependencias reales del negocio:
- * el plan de cuentas se deriva de la situación legal, y no se puede emitir sin
- * una resolución de la DIAN.
+ * el plan de cuentas se deriva de la situación legal y de los impuestos, y no se
+ * puede emitir sin una resolución de la DIAN.
  *
  * Acá solo está lo que hay que resolver ANTES de poder operar. Invitar usuarios y
  * cargar clientes son trabajo del día a día: se hacen desde su propia pantalla,
@@ -18,7 +18,12 @@
 import { SECCIONES_POR_SECTOR } from './secciones-ciiu';
 
 export type ClavePaso =
-  'EMPRESA' | 'SEDES' | 'SITUACION_LEGAL' | 'PLAN_CUENTAS' | 'RESOLUCIONES';
+  | 'EMPRESA'
+  | 'SEDES'
+  | 'SITUACION_LEGAL'
+  | 'IMPUESTOS'
+  | 'PLAN_CUENTAS'
+  | 'RESOLUCIONES';
 
 /**
  * `PENDIENTE` y `FALTA` no son lo mismo, y la diferencia le importa a quien
@@ -66,6 +71,11 @@ export interface EstadoConfiguracion {
    * terminar: los pasos manuales lo sacaban del modo.
    */
   modo: 'IA' | 'MANUAL' | null;
+  /**
+   * Si ya se mostró la bienvenida de María al terminar (0072). Una vez por
+   * empresa: quien entre después va directo al tablero.
+   */
+  bienvenidaVista: boolean;
 }
 
 /** Lo que el servicio lee de la base. Sin interpretar. */
@@ -75,6 +85,8 @@ export interface HechosConfiguracion {
     tipoPersona: 'JURIDICA' | 'NATURAL';
     /** Con qué modo se eligió configurarla (0068). `null`: no se eligió. */
     modoConfiguracion?: 'IA' | 'MANUAL' | null;
+    /** Cuándo se mostró la bienvenida (0072). `null`: todavía no. */
+    bienvenidaVistaEn?: Date | string | null;
     /** Puede estar vacio: al dar de alta no se exige marcar ninguno. */
     sectores: string[];
     /** Secciones CIIU de las actividades vigentes. Respaldan a los sectores. */
@@ -93,6 +105,13 @@ export interface HechosConfiguracion {
     tarifaIcaPorMil: number | null;
   } | null;
   matriculaVigente: boolean;
+  /** El paso «Impuestos» (0077). */
+  impuestos: {
+    /** Alguien miró el resumen y dijo «Todo correcto». */
+    confirmado: boolean;
+    /** Municipios con sede activa sin respuesta de ICA. */
+    municipiosSinIca: string[];
+  };
   resolucionFacturaVenta: {
     numeroResolucion: string;
     vigente: boolean;
@@ -184,30 +203,17 @@ function evaluarSituacionLegal(h: HechosConfiguracion): Paso {
   const faltantes: Faltante[] = [];
   const opcionales: Faltante[] = [];
 
-  // Sin condición tributaria vigente no se sabe si la venta lleva IVA. Es el dato
-  // del que cuelga toda la liquidación, y se deriva de la casilla 53 del RUT: la
-  // etiqueta nombra el papel que hay que cargar, no la tabla donde termina.
-  if (h.regimenesVigentes.length === 0) {
-    faltantes.push({
-      campo: 'tipoRegimen',
-      etiqueta: 'Responsabilidades del RUT',
-      detalle:
-        'Cargá la casilla 53. De ahí sale si la empresa cobra IVA, si retiene y bajo qué régimen declara.',
-    });
-  }
-
   // Persona natural se representa a sí misma: exigirle un representante legal
   // sería inventar un requisito que la ley no le pone.
   if (h.empresa.tipoPersona === 'JURIDICA' && h.representanteVigente === null) {
     faltantes.push(f('representante', 'Representante legal'));
   }
 
+  // Lo tributario (casilla 53 y el ICA de cada municipio) es del paso
+  // «Impuestos». Acá queda quién es la empresa: representante, actividad y
+  // matrícula.
   if (h.actividadPrincipal === null) {
     faltantes.push(f('codigoCiiu', 'Actividad económica principal'));
-  } else if (h.actividadPrincipal.tarifaIcaPorMil === null) {
-    // El ICA es municipal y se liquida sobre esta tarifa. Sin ella, cada venta
-    // quedaría sin su impuesto de industria y comercio.
-    faltantes.push(f('tarifaIcaPorMil', 'Tarifa de ICA'));
   }
 
   // La matrícula mercantil no la tiene toda persona natural, y su ausencia no
@@ -233,22 +239,16 @@ function evaluarSituacionLegal(h: HechosConfiguracion): Paso {
         etiqueta: `${NOMBRE_SECTOR[sector] ?? sector} sin actividad que lo respalde`,
         detalle:
           h.empresa.seccionesActividades.length === 0
-            ? 'Todavía no registraste ninguna actividad económica en el RUT.'
-            : 'Ninguna de tus actividades del RUT es de ese tipo. Puede faltar registrarla, o sobrar el sector.',
+            ? 'Todavía no ha registrado ninguna actividad económica en el RUT.'
+            : 'Ninguna de las actividades del RUT es de ese tipo. Puede faltar registrarla, o sobrar el sector.',
       });
     }
   }
 
   const seEmpezo =
-    h.regimenesVigentes.length > 0 ||
-    h.representanteVigente !== null ||
-    h.actividadPrincipal !== null;
+    h.representanteVigente !== null || h.actividadPrincipal !== null;
 
   const partes: string[] = [];
-  if (h.regimenesVigentes.includes('RESPONSABLE_IVA'))
-    partes.push('Responsable de IVA');
-  else if (h.regimenesVigentes.includes('NO_RESPONSABLE_IVA'))
-    partes.push('No responsable de IVA');
   if (h.actividadPrincipal !== null)
     partes.push(`CIIU ${h.actividadPrincipal.codigoCiiu}`);
 
@@ -265,30 +265,102 @@ function evaluarSituacionLegal(h: HechosConfiguracion): Paso {
 }
 
 /**
+ * Todo lo tributario, en lenguaje de persona (plan motor de retenciones,
+ * Fase 0, §0.7). Está listo cuando se sabe si la empresa cobra IVA, cada
+ * municipio con sede tiene su respuesta de ICA y alguien confirmó el resumen.
+ */
+function evaluarImpuestos(h: HechosConfiguracion): Paso {
+  const faltantes: Faltante[] = [];
+  const iva =
+    h.regimenesVigentes.includes('RESPONSABLE_IVA') ||
+    h.regimenesVigentes.includes('NO_RESPONSABLE_IVA');
+
+  // Sin esto no se sabe si la venta lleva IVA: es el dato del que cuelga toda
+  // la liquidación.
+  if (!iva) {
+    faltantes.push({
+      campo: 'iva',
+      etiqueta: 'Si la empresa cobra IVA',
+      detalle:
+        'De ahí sale si la venta lleva IVA y qué cuentas necesita el plan.',
+    });
+  }
+  for (const m of h.impuestos.municipiosSinIca) {
+    faltantes.push({
+      campo: 'ica',
+      etiqueta: `Falta contarme el ICA de ${m}`,
+      detalle:
+        'El ICA es municipal: se contesta por cada municipio donde la empresa tiene sede.',
+    });
+  }
+  if (faltantes.length === 0 && !h.impuestos.confirmado) {
+    faltantes.push({
+      campo: 'confirmar',
+      etiqueta: 'Revisar lo que esto significa para usted',
+      detalle: 'Mire el resumen y confírmelo con «Todo correcto».',
+    });
+  }
+
+  const partes: string[] = [];
+  if (h.regimenesVigentes.includes('RESPONSABLE_IVA')) partes.push('Cobra IVA');
+  else if (h.regimenesVigentes.includes('NO_RESPONSABLE_IVA'))
+    partes.push('No cobra IVA');
+  if (
+    h.regimenesVigentes.includes('AGENTE_RETENEDOR_RENTA') ||
+    h.regimenesVigentes.includes('GRAN_CONTRIBUYENTE')
+  )
+    partes.push('Agente de retención');
+
+  return {
+    clave: 'IMPUESTOS',
+    nombre: 'Impuestos',
+    orden: 4,
+    obligatorio: true,
+    estado: resolver(faltantes, iva || h.impuestos.confirmado),
+    resumen: partes.length === 0 ? 'Sin contestar' : partes.join(' · '),
+    faltantes,
+    opcionales: [],
+  };
+}
+
+/**
  * Sin plan de cuentas no se puede asentar nada, y sin asientos no hay
  * contabilidad: por eso es obligatorio y no un paso opcional más.
  *
- * Está bloqueado por la situación legal porque el plan se deriva de ella. La
- * sugerencia lee el régimen tributario para saber si proponer IVA y
- * retenciones, y la actividad CIIU para saber cuál es la cuenta de ingresos.
- * Armarlo antes obliga a rehacerlo.
+ * Está bloqueado por la situación legal y por los impuestos porque el plan se
+ * deriva de ellos. La sugerencia lee la actividad CIIU para saber cuál es la
+ * cuenta de ingresos, y los impuestos para saber si proponer IVA y las cuentas
+ * de retención. Armarlo antes obliga a rehacerlo.
+ *
+ * El bloqueo es para **entrar** al paso, no para después: con el plan ya
+ * aplicado, que un paso anterior vuelva a quedar pendiente no lo deshace. El
+ * caso típico es una sede nueva en un municipio sin ICA contestado: Impuestos
+ * queda pendiente —el ICA es municipal—, pero las cuentas de ICA del plan
+ * sirven para todos los municipios y el plan sigue listo. Antes se volvía a
+ * «Bloqueado · Requiere impuestos» y el avance bajaba por una cuenta que ya
+ * estaba creada.
  */
-function evaluarPlanCuentas(h: HechosConfiguracion, legalLista: boolean): Paso {
+function evaluarPlanCuentas(
+  h: HechosConfiguracion,
+  legalLista: boolean,
+  impuestosListos: boolean,
+): Paso {
   const comun = {
     clave: 'PLAN_CUENTAS' as const,
     nombre: 'Plan de cuentas',
-    orden: 4,
+    orden: 5,
     obligatorio: true,
   };
 
-  if (!legalLista) {
+  const yaAplicado = h.plan.cuentasActivas > 0;
+  if (!yaAplicado && (!legalLista || !impuestosListos)) {
     return {
       ...comun,
       estado: 'BLOQUEADO',
-      resumen: 'Requiere situación legal',
+      resumen: legalLista ? 'Requiere impuestos' : 'Requiere situación legal',
       faltantes: [],
       opcionales: [],
-      bloqueadoPor: 'SITUACION_LEGAL',
+      bloqueadoPor: legalLista ? 'IMPUESTOS' : 'SITUACION_LEGAL',
     };
   }
 
@@ -337,7 +409,7 @@ function evaluarResoluciones(h: HechosConfiguracion): Paso {
   return {
     clave: 'RESOLUCIONES',
     nombre: 'Resoluciones',
-    orden: 5,
+    orden: 6,
     obligatorio: true,
     estado: resolver(faltantes, r !== null),
     resumen:
@@ -353,12 +425,18 @@ function evaluarResoluciones(h: HechosConfiguracion): Paso {
 
 export function calcularEstado(h: HechosConfiguracion): EstadoConfiguracion {
   const legal = evaluarSituacionLegal(h);
+  const impuestos = evaluarImpuestos(h);
 
   const pasos: Paso[] = [
     evaluarEmpresa(h),
     evaluarSedes(h),
     legal,
-    evaluarPlanCuentas(h, legal.estado === 'LISTO'),
+    impuestos,
+    evaluarPlanCuentas(
+      h,
+      legal.estado === 'LISTO',
+      impuestos.estado === 'LISTO',
+    ),
     evaluarResoluciones(h),
   ];
 
@@ -383,5 +461,6 @@ export function calcularEstado(h: HechosConfiguracion): EstadoConfiguracion {
     completa: completados === obligatorios.length,
     siguiente: siguiente?.clave ?? null,
     modo: h.empresa.modoConfiguracion ?? null,
+    bienvenidaVista: (h.empresa.bienvenidaVistaEn ?? null) !== null,
   };
 }

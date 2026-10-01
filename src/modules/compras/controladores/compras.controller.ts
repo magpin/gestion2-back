@@ -22,6 +22,7 @@ import {
   DevolverPagoDto,
   ListarComprasDto,
   PagarDto,
+  SimularRentaCompraDto,
 } from '../dto/compra.dto';
 import { CompraService } from '../servicios/compra.service';
 
@@ -41,6 +42,20 @@ export class ComprasController {
     return this.compras.listar(ctx, q);
   }
 
+  /** El siguiente número del documento soporte, su resolución y cuántos quedan. */
+  @Roles('DIRECTOR', 'CONTADOR', 'COMPRAS', 'CAJA')
+  @Get('soporte/numeracion')
+  numeracionSoporte(@ActorEmpresa() ctx: CtxEmpresa) {
+    return this.compras.numeracionSoporte(ctx);
+  }
+
+  /** Cómo quedaría la compra en el libro, sin guardarla. */
+  @Roles('DIRECTOR', 'CONTADOR', 'COMPRAS', 'CAJA')
+  @Post('previo')
+  previo(@ActorEmpresa() ctx: CtxEmpresa, @Body() dto: CrearCompraDto) {
+    return this.compras.previo(ctx, dto);
+  }
+
   @Roles('DIRECTOR', 'CONTADOR', 'COMPRAS', 'CONSULTA')
   @Get(':id')
   porId(
@@ -48,6 +63,20 @@ export class ComprasController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.compras.porId(ctx, id);
+  }
+
+  /**
+   * La retención de renta que llevaría la compra, sin registrar nada: el
+   * concepto de cada renglón con su certeza y lo que falta contestar.
+   */
+  @Roles('COMPRAS', 'DIRECTOR', 'CONTADOR')
+  @Post('simular-retencion')
+  @HttpCode(HttpStatus.OK)
+  simularRetencion(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Body() dto: SimularRentaCompraDto,
+  ) {
+    return this.compras.simularRenta(ctx, dto);
   }
 
   @Roles('COMPRAS', 'DIRECTOR')

@@ -23,7 +23,12 @@ export type AccionBitacora =
   | 'RETIRAR_ANUNCIO'
   | 'DESACTIVAR_ADMIN'
   | 'REACTIVAR_ADMIN'
-  | 'RESTABLECER_ADMIN';
+  | 'RESTABLECER_ADMIN'
+  | 'CARGAR_TARIFA_RETENCION'
+  | 'CARGAR_UVT'
+  | 'CARGAR_PARAMETRO_ICA'
+  | 'CARGAR_AUTORRETENCION'
+  | 'RECALCULAR_RETENCIONES';
 
 /**
  * El rastro solo agrega. Un registro que se puede reescribir no sirve.

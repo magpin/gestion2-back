@@ -31,6 +31,7 @@ const facturaVigente: VentaDocumentoDetalle = {
   tercero_nombre: 'Tercero uno',
   tercero_identificacion: 'NIT 900123456-7',
   fecha: '2026-09-01',
+  vence: null,
   estado: 'EMITIDA',
   prefijo: 'SETP',
   consecutivo: 991,
@@ -112,6 +113,10 @@ function ventasFalso(factura: VentaDocumentoDetalle) {
 function txFalso() {
   const tx = {
     query: jest.fn((sql: string, params?: unknown[]) => {
+      // El candado sobre la factura, contra una anulación simultánea.
+      if (sql.includes('FOR SHARE')) {
+        return [{ '?column?': 1 }];
+      }
       if (sql.includes('INSERT INTO venta_documento\n')) {
         const [id, , terceroId, fecha, prefijo, consecutivo, resolucionId] =
           params as unknown[];
@@ -182,7 +187,8 @@ describe('NotaDebitoService.crear', () => {
     const insercionLinea = (tx.query as jest.Mock).mock.calls.find(
       ([sql]: [string]) => sql.includes('INSERT INTO venta_documento_linea'),
     ) as [string, unknown[]];
-    expect(insercionLinea[1]).toHaveLength(10);
+    // Diez de la línea y tres de la de concepto (vacíos en una de producto).
+    expect(insercionLinea[1]).toHaveLength(13);
 
     const [, dtoAsiento] = asentar.mock.calls[0] as unknown as [
       unknown,
@@ -289,6 +295,6 @@ describe('NotaDebitoService.crear', () => {
           { productoId: 'p-flete', cantidad: 1, precioUnitario: 50000 },
         ],
       }),
-    ).rejects.toThrow(/No repitas el mismo producto/);
+    ).rejects.toThrow(/No repita el mismo producto/);
   });
 });

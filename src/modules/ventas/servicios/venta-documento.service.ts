@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,10 +9,12 @@ import type { CtxEmpresa } from '../../../common/ctx';
 import { fila, filas } from '../../../common/db/filas';
 import { armarPagina, type Pagina } from '../../../common/dto/paginacion.dto';
 import { hoyEnColombia } from '../../../common/fecha';
+import { mensajeNotasVivas, type NotaViva } from '../../../common/notas-vivas';
 import { TxService, type Tx } from '../../../common/db/tx.service';
 import { ContabilidadApi } from '../../contabilidad/contabilidad.api';
 import { InventarioApi } from '../../inventario/inventario.api';
 import { NucleoApi } from '../../nucleo/nucleo.api';
+import { RetencionesApi } from '../../retenciones/retenciones.api';
 import { TesoreriaApi } from '../../tesoreria/tesoreria.api';
 import type { CrearCotizacionDto } from '../dto/cotizacion.dto';
 import type {
@@ -23,9 +26,11 @@ import {
   calcularCobro,
   calcularDevolucionCobro,
   calcularLineas,
+  resolverPrecio,
   sumarPagos,
   type LineaVentaEntrada,
 } from './venta.reglas';
+import { cuentaInactiva } from '../../../common/contabilidad/cuenta-inactiva';
 
 /** [BASE] en toda empresa (`preactivacion-cuentas-comercio.md`): cartera, exige tercero. */
 const CODIGO_CUENTA_CARTERA = '130505';
@@ -42,6 +47,8 @@ export interface VentaDocumentoResumen {
   /** Ya formateada para mostrar: `NIT 900123456-7`, `CC 19400748`. */
   tercero_identificacion: string;
   fecha: string;
+  /** Cuándo vence lo pactado. `null` en las anteriores al 28-09-2026: vencen a los 30 días. */
+  vence: string | null;
   estado: string;
   prefijo: string | null;
   consecutivo: number;
@@ -94,15 +101,30 @@ export interface VentaDocumentoResumen {
    * y se cobra, pero no se le hacen notas.
    */
   historica: boolean;
+  /**
+   * Lo que el motor de retenciones encontró al facturar: el cliente retuvo
+   * distinto de la norma, la autorretención que se practicó, falta una tarifa.
+   */
+  retencion_aviso?: string | null;
 }
 
 export interface VentaDocumentoLineaResumen {
   id: string;
   venta_documento_id: string;
   orden: number;
-  producto_id: string;
-  producto_codigo: string;
-  producto_nombre: string;
+  /** `null` en una línea de servicio u otro ingreso (Fase 8). */
+  producto_id: string | null;
+  producto_codigo: string | null;
+  producto_nombre: string | null;
+  /** La línea de concepto: qué concepto, a qué cuenta entró y qué fue. */
+  concepto_id?: string | null;
+  concepto_nombre?: string | null;
+  /** `true` si el concepto es operacional (41, servicio); `false` si es otro ingreso (42). */
+  concepto_operacional?: boolean | null;
+  cuenta_id?: string | null;
+  cuenta_codigo?: string | null;
+  cuenta_nombre?: string | null;
+  detalle?: string | null;
   cantidad: string;
   precio_unitario: string;
   iva_tarifa: string;
@@ -190,9 +212,9 @@ const IDENTIFICACION_TERCERO = `(SELECT concat_ws(' ', x.tipo_documento,
 // quedaron atrás —el `POST /facturas` respondía sin el nombre ni el NIT del
 // cliente, y habría respondido sin el saldo—. Una sola lista, un solo lugar
 // donde agregarle una columna.
-export const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, estado, prefijo, consecutivo,
+export const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, vence, estado, prefijo, consecutivo,
                            resolucion_id, documento_origen_id, subtotal, total_iva, total,
-                           monto_pagado, asiento_id, historica,
+                           monto_pagado, asiento_id, historica, retencion_aviso,
                            (SELECT COALESCE(x.razon_social, concat_ws(' ', x.primer_nombre, x.segundo_nombre, x.primer_apellido, x.segundo_apellido))
                               FROM tercero x WHERE x.id = tercero_id) AS tercero_nombre,
                            ${IDENTIFICACION_TERCERO} AS tercero_identificacion,
@@ -205,7 +227,12 @@ export const CAMPOS_DOCUMENTO = `id, tipo, tercero_id, fecha, estado, prefijo, c
 const CAMPOS_LINEA = `id, venta_documento_id, orden, producto_id, cantidad, precio_unitario,
                        iva_tarifa, subtotal, iva_valor, total, costo_unitario,
                        (SELECT x.codigo FROM producto x WHERE x.id = producto_id) AS producto_codigo,
-                       (SELECT x.nombre FROM producto x WHERE x.id = producto_id) AS producto_nombre`;
+                       (SELECT x.nombre FROM producto x WHERE x.id = producto_id) AS producto_nombre,
+                       concepto_id, cuenta_id, detalle,
+                       (SELECT x.nombre FROM concepto_movimiento x WHERE x.id = concepto_id) AS concepto_nombre,
+                       (SELECT x.codigo LIKE '41%' FROM empresa_cuenta x WHERE x.id = cuenta_id AND concepto_id IS NOT NULL) AS concepto_operacional,
+                       (SELECT x.codigo FROM empresa_cuenta x WHERE x.id = cuenta_id) AS cuenta_codigo,
+                       (SELECT x.nombre FROM empresa_cuenta x WHERE x.id = cuenta_id) AS cuenta_nombre`;
 
 /** Fijo en código: una cotización no es un dato fiscal que alguien elija. */
 const PREFIJO_COTIZACION = 'COT';
@@ -216,9 +243,8 @@ const PREFIJO_COTIZACION = 'COT';
  * y `ContabilidadApi.asentar`, que este servicio deliberadamente no toca.
  *
  * Una cotización no asienta ni mueve el kardex: el precio de cada línea es
- * siempre el vigente del catálogo (nunca lo que mande el cliente — ver
- * "Descuentos por línea o por documento" en `ventas-backend.md`), pero de
- * ahí no sale ningún movimiento de inventario ni ningún asiento.
+ * el que se digitó —el que se pactó con el cliente— o, sin digitar, el de
+ * lista vigente; de ahí no sale ningún movimiento de inventario ni asiento.
  *
  * `anular` y `cobrar` viven acá y no en `FacturaService` porque son
  * operaciones sobre el documento ya existente, no sobre su creación —
@@ -232,6 +258,7 @@ export class VentaDocumentoService {
     private readonly inventario: InventarioApi,
     private readonly contabilidad: ContabilidadApi,
     private readonly tesoreria: TesoreriaApi,
+    private readonly retenciones: RetencionesApi,
   ) {}
 
   /**
@@ -272,22 +299,19 @@ export class VentaDocumentoService {
         );
       }
 
-      // El precio de lista manda cuando existe; el digitado en la línea es
-      // la salida para un producto que todavía no tiene precio —los 1.638
-      // importados llegaron así—. Una cotización no es un dato fiscal: que
-      // quede trabada por un dato que falta en la ficha no le sirve a nadie.
+      // El digitado en la línea manda: es el precio que se le ofrece al
+      // cliente, y la factura que salga de esta cotización lo respeta. Sin
+      // digitar, el de lista. Al cotizar no se bloquea un precio bajo costo
+      // —la pantalla avisa—: el bloqueo es al facturar, donde se pierde plata.
       const precioVigente = await this.inventario.precioVigente(
         ctx,
         l.productoId,
         t,
       );
-      const precio =
-        precioVigente !== null && precioVigente > 0
-          ? precioVigente
-          : l.precioUnitario;
-      if (precio === undefined) {
+      const precio = resolverPrecio(l.precioUnitario, precioVigente);
+      if (precio === null) {
         throw new BadRequestException(
-          `El producto ${producto.codigo} no tiene precio de venta configurado: fijale uno en su ficha, o digitá el precio en la línea.`,
+          `El producto ${producto.codigo} no tiene precio de venta configurado: asígnele uno en su ficha, o digite el precio en la línea.`,
         );
       }
 
@@ -656,7 +680,8 @@ export class VentaDocumentoService {
         await t.query(
           `SELECT tipo, estado, asiento_id, monto_pagado, historica,
                   concat_ws('-', nullif(prefijo, ''), consecutivo::text) AS numero
-             FROM venta_documento WHERE id = $1`,
+             FROM venta_documento WHERE id = $1
+             FOR UPDATE`,
           [id],
         ),
       );
@@ -670,6 +695,26 @@ export class VentaDocumentoService {
       }
       if (documento.estado === 'ANULADA') {
         throw new BadRequestException('Este documento ya está anulado.');
+      }
+      // Con notas vivas no se anula: primero las notas (`notas-vivas.ts`). El
+      // `FOR UPDATE` de arriba es el candado contra una nota que se emita
+      // mientras tanto: la nota bloquea la factura antes de mirarla
+      // (`NotaCreditoService.crear`, `NotaDebitoService.crear`). Una nota no
+      // tiene notas propias: para ella esto no encuentra nada.
+      const notasVivas = filas<NotaViva>(
+        await t.query(
+          `SELECT tipo,
+                  concat_ws('-', nullif(prefijo, ''), consecutivo::text) AS numero
+             FROM venta_documento
+            WHERE documento_origen_id = $1
+              AND tipo IN ('NOTA_CREDITO', 'NOTA_DEBITO')
+              AND estado <> 'ANULADA'
+            ORDER BY fecha, consecutivo`,
+          [id],
+        ),
+      );
+      if (notasVivas.length > 0) {
+        throw new ConflictException(mensajeNotasVivas('factura', notasVivas));
       }
       // La plata ya entró: anular el documento dejaría un cobro colgado de
       // nada y la cartera del cliente en negativo. Lo que corrige una
@@ -686,7 +731,7 @@ export class VentaDocumentoService {
       if (cobrada) {
         throw new BadRequestException(
           documento.historica
-            ? 'Esta factura tiene cobros registrados en el sistema y no se puede anular. Devolvé esos cobros primero.'
+            ? 'Esta factura tiene cobros registrados en el sistema y no se puede anular. Devuelva esos cobros primero.'
             : 'Esta factura tiene cobros registrados y no se puede anular. Para corregirla, emití una nota crédito.',
         );
       }
@@ -725,6 +770,15 @@ export class VentaDocumentoService {
         documento.asiento_id as string,
         hoyEnColombia(),
         `Anulación de ${documento.tipo === 'FACTURA' ? 'la factura' : 'el documento'} ${documento.numero}: ${motivo}`,
+        t,
+      );
+
+      // La autorretención también se anula —la de la factura, o la que una nota
+      // había devuelto—: el asiento ya la reversó, pero el 350 la lee de
+      // `retencion_calculada`.
+      await this.retenciones.anularAutorretencion(
+        ctx,
+        { documentoId: id, fecha: hoyEnColombia(), motivo },
         t,
       );
 
@@ -782,16 +836,48 @@ export class VentaDocumentoService {
   }
 
   /**
+   * La cuenta contable y el nombre de cada caja o banco por donde entra una
+   * factura de contado, para que su asiento lleve la plata directo —un
+   * renglón por medio— en vez de pasar por cartera.
+   */
+  async mediosDeContado(
+    ctx: CtxEmpresa,
+    pagos: CobrarDto['pagos'],
+    t: Tx,
+  ): Promise<Array<{ cuentaId: string; nombre: string; valor: number }>> {
+    const medios: Array<{ cuentaId: string; nombre: string; valor: number }> =
+      [];
+    for (const pago of pagos) {
+      const medio = await this.tesoreria.cuentaDelMedio(
+        ctx,
+        pago.medio === 'CAJA'
+          ? { medio: 'CAJA', cajaId: pago.cajaId! }
+          : { medio: 'BANCO', cuentaBancariaId: pago.cuentaBancariaId! },
+        t,
+      );
+      medios.push({ ...medio, valor: pago.valor });
+    }
+    return medios;
+  }
+
+  /**
    * El cuerpo de `cobrar`, sobre una transacción ya abierta. Lo usa también
    * `FacturaService` para la factura de contado: emitirla y cobrarla es un
    * solo acto, y si el cobro falla —una caja cerrada, una cuenta inactiva—
    * la factura tampoco queda.
+   *
+   * Con `asientoId` —la factura de contado— la plata ya quedó en el asiento
+   * de la factura: acá solo se registra cada movimiento de caja o banco
+   * ligado a ese asiento, sin asentar un cobro aparte.
    */
   async cobrarEnTx(
     ctx: CtxEmpresa,
     id: string,
     dto: CobrarDto,
     t: Tx,
+    /** El documento que agrupa este cobro —«RC-000128»—, para el libro de caja. */
+    referencia?: string,
+    asientoId?: string,
   ): Promise<VentaDocumentoResumen> {
     const documento = fila<{
       tipo: string;
@@ -846,9 +932,7 @@ export class VentaDocumentoService {
       t,
     );
     if (cuentaCartera === null) {
-      throw new BadRequestException(
-        `No existe o está inactiva la cuenta de cartera (${CODIGO_CUENTA_CARTERA}). Actívala en el plan de cuentas.`,
-      );
+      throw cuentaInactiva('cartera', CODIGO_CUENTA_CARTERA);
     }
 
     const numero = `${documento.prefijo}-${String(documento.consecutivo).padStart(6, '0')}`;
@@ -858,10 +942,10 @@ export class VentaDocumentoService {
     // `caja-cartera.md`—: la plata que entra por caja y la que entra por
     // banco se confirman juntas o no entra ninguna.
     //
-    // El `concepto` numera el renglón solo cuando hay más de uno: con un
-    // solo pago el movimiento sale idéntico a como salía antes, y con
-    // varios el libro de caja no muestra dos líneas indistinguibles.
-    for (const [i, pago] of dto.pagos.entries()) {
+    // Con varios renglones el `concepto` dice a dónde fue cada parte —«en
+    // Caja general», «en Bancolombia ···1234»—: el libro no muestra dos
+    // líneas indistinguibles. Con un solo pago sale como siempre.
+    for (const pago of dto.pagos) {
       const medio =
         pago.medio === 'CAJA'
           ? ({ medio: 'CAJA', cajaId: pago.cajaId! } as const)
@@ -870,14 +954,34 @@ export class VentaDocumentoService {
               cuentaBancariaId: pago.cuentaBancariaId!,
             } as const);
       const reparto =
-        dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
+        dto.pagos.length === 1
+          ? ''
+          : ` · en ${(await this.tesoreria.cuentaDelMedio(ctx, medio, t)).nombre}`;
+      if (asientoId !== undefined) {
+        await this.tesoreria.registrarEnAsiento(
+          ctx,
+          {
+            ...medio,
+            fecha: dto.fecha,
+            valor: pago.valor,
+            concepto: `Factura de contado ${numero}${reparto}`,
+            terceroId: documento.tercero_id,
+            documentoTipo: 'FACTURA_VENTA',
+            documentoId: id,
+            asientoId,
+          },
+          'ENTRADA',
+          t,
+        );
+        continue;
+      }
       await this.tesoreria.registrarCobro(
         ctx,
         {
           ...medio,
           fecha: dto.fecha,
           valor: pago.valor,
-          concepto: `Cobro de la factura ${numero}${reparto}`,
+          concepto: `${referencia === undefined ? '' : `${referencia} · `}Cobro de la factura ${numero}${reparto}`,
           cuentaClientesId: cuentaCartera.id,
           terceroId: documento.tercero_id,
           facturaVentaId: id,
@@ -923,75 +1027,141 @@ export class VentaDocumentoService {
     id: string,
     dto: DevolverCobroDto,
   ): Promise<VentaDocumentoResumen> {
-    return this.tx.enContexto(ctx, async (t) => {
-      const documento = fila<{
-        tipo: string;
-        tercero_id: string;
-        estado: string;
-        prefijo: string | null;
-        consecutivo: number;
-        monto_pagado: string;
-      }>(
-        await t.query(
-          `SELECT tipo, tercero_id, estado, prefijo, consecutivo, monto_pagado
+    // Es plata que se le devuelve al cliente: por banco, el 4×1000 sale de
+    // lo que se le devuelve (decisión del dueño, 30 sep).
+    return this.tx.enContexto(ctx, (t) =>
+      this.devolverCobroEnTx(ctx, id, dto, t, undefined, {
+        gmfDelCliente: true,
+      }),
+    );
+  }
+
+  /**
+   * El cuerpo de `devolverCobro`, sobre una transacción ya abierta. Lo usa
+   * también la anulación de un recibo de caja: devolver cada cobro que el
+   * recibo hizo y marcarlo anulado son un solo acto.
+   */
+  async devolverCobroEnTx(
+    ctx: CtxEmpresa,
+    id: string,
+    dto: DevolverCobroDto,
+    t: Tx,
+    /** El documento que se anula —«RC-000128»—, para el libro de caja. */
+    referencia?: string,
+    /**
+     * `gmfDelCliente`: por banco, el 4×1000 sale del valor devuelto —al
+     * cliente le llega el resto— y no es gasto de la empresa. Anular un recibo
+     * no lo usa: ahí no se le devuelve plata a nadie, se corrige un error.
+     */
+    opciones: { gmfDelCliente?: boolean } = {},
+  ): Promise<VentaDocumentoResumen> {
+    const documento = fila<{
+      tipo: string;
+      tercero_id: string;
+      estado: string;
+      prefijo: string | null;
+      consecutivo: number;
+      monto_pagado: string;
+    }>(
+      await t.query(
+        `SELECT tipo, tercero_id, estado, prefijo, consecutivo, monto_pagado
              FROM venta_documento
             WHERE id = $1
             FOR UPDATE`,
+        [id],
+      ),
+    );
+    if (documento === undefined) {
+      throw new NotFoundException('Documento no encontrado');
+    }
+    if (documento.tipo !== 'FACTURA') {
+      throw new BadRequestException(
+        'Solo se puede devolver el cobro de una factura.',
+      );
+    }
+    if (documento.estado !== 'EMITIDA') {
+      throw new BadRequestException('Esta factura no está vigente.');
+    }
+
+    // Contra lo cobrado, no contra el saldo: lo que se devuelve es plata
+    // que entró, y cuánto vale hoy la factura no cambia esa cuenta.
+    const valorTotal = sumarPagos(dto.pagos.map((p) => p.valor));
+    // Lo que se saldó con un descuento por pronto pago no entró como plata:
+    // no se puede devolver en efectivo. Se descuenta de lo cobrado para medir
+    // y se vuelve a sumar al guardar.
+    const descontado = Number(
+      fila<{ total: string }>(
+        await t.query(
+          `SELECT coalesce(sum(a.descuento), 0) AS total
+             FROM recibo_caja_aplicacion a
+             JOIN recibo_caja r ON r.id = a.recibo_id AND r.estado = 'VIGENTE'
+            WHERE a.venta_documento_id = $1`,
           [id],
         ),
-      );
-      if (documento === undefined) {
-        throw new NotFoundException('Documento no encontrado');
-      }
-      if (documento.tipo !== 'FACTURA') {
-        throw new BadRequestException(
-          'Solo se puede devolver el cobro de una factura.',
-        );
-      }
-      if (documento.estado !== 'EMITIDA') {
-        throw new BadRequestException('Esta factura no está vigente.');
-      }
+      )?.total ?? 0,
+    );
+    const medido = calcularDevolucionCobro(
+      Number(documento.monto_pagado) - descontado,
+      valorTotal,
+    );
+    if (!medido.ok) {
+      throw new BadRequestException(medido.motivo);
+    }
+    const resultado = { montoPagado: medido.montoPagado + descontado };
 
-      // Contra lo cobrado, no contra el saldo: lo que se devuelve es plata
-      // que entró, y cuánto vale hoy la factura no cambia esa cuenta.
-      const valorTotal = sumarPagos(dto.pagos.map((p) => p.valor));
-      const resultado = calcularDevolucionCobro(
-        Number(documento.monto_pagado),
-        valorTotal,
-      );
-      if (!resultado.ok) {
-        throw new BadRequestException(resultado.motivo);
-      }
+    const cuentaCartera = await this.nucleo.cuenta(
+      ctx,
+      CODIGO_CUENTA_CARTERA,
+      t,
+    );
+    if (cuentaCartera === null) {
+      throw cuentaInactiva('cartera', CODIGO_CUENTA_CARTERA);
+    }
 
-      const cuentaCartera = await this.nucleo.cuenta(
+    const numero = `${documento.prefijo}-${String(documento.consecutivo).padStart(6, '0')}`;
+    for (const [i, pago] of dto.pagos.entries()) {
+      const medio =
+        pago.medio === 'CAJA'
+          ? ({ medio: 'CAJA', cajaId: pago.cajaId! } as const)
+          : ({
+              medio: 'BANCO',
+              cuentaBancariaId: pago.cuentaBancariaId!,
+            } as const);
+      const reparto =
+        dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
+      const gmf =
+        opciones.gmfDelCliente && medio.medio === 'BANCO'
+          ? await this.tesoreria.gmfIncluidoEn(
+              ctx,
+              medio.cuentaBancariaId,
+              pago.valor,
+              t,
+            )
+          : 0;
+      const concepto = `${referencia === undefined ? '' : `${referencia} · `}Devolución de cobro de la factura ${numero}${reparto}`;
+      await this.tesoreria.registrarDevolucionCobro(
         ctx,
-        CODIGO_CUENTA_CARTERA,
+        {
+          ...medio,
+          fecha: dto.fecha,
+          valor: Math.round((pago.valor - gmf) * 100) / 100,
+          concepto,
+          cuentaClientesId: cuentaCartera.id,
+          terceroId: documento.tercero_id,
+          facturaVentaId: id,
+        },
         t,
       );
-      if (cuentaCartera === null) {
-        throw new BadRequestException(
-          `No existe o está inactiva la cuenta de cartera (${CODIGO_CUENTA_CARTERA}). Actívala en el plan de cuentas.`,
-        );
-      }
-
-      const numero = `${documento.prefijo}-${String(documento.consecutivo).padStart(6, '0')}`;
-      for (const [i, pago] of dto.pagos.entries()) {
-        const medio =
-          pago.medio === 'CAJA'
-            ? ({ medio: 'CAJA', cajaId: pago.cajaId! } as const)
-            : ({
-                medio: 'BANCO',
-                cuentaBancariaId: pago.cuentaBancariaId!,
-              } as const);
-        const reparto =
-          dto.pagos.length === 1 ? '' : ` (${i + 1} de ${dto.pagos.length})`;
+      // El 4×1000 de esa transferencia sale de la misma cuenta y también
+      // contra Clientes: lo paga el cliente con lo que se le devolvía.
+      if (gmf > 0) {
         await this.tesoreria.registrarDevolucionCobro(
           ctx,
           {
             ...medio,
             fecha: dto.fecha,
-            valor: pago.valor,
-            concepto: `Devolución de cobro de la factura ${numero}${reparto}`,
+            valor: gmf,
+            concepto: `${concepto} · 4×1000, lo asume el cliente`,
             cuentaClientesId: cuentaCartera.id,
             terceroId: documento.tercero_id,
             facturaVentaId: id,
@@ -999,20 +1169,84 @@ export class VentaDocumentoService {
           t,
         );
       }
+    }
 
-      const actualizado = fila<VentaDocumentoResumen>(
-        await t.query(
-          `UPDATE venta_documento SET monto_pagado = $2
+    const actualizado = fila<VentaDocumentoResumen>(
+      await t.query(
+        `UPDATE venta_documento SET monto_pagado = $2
             WHERE id = $1
           RETURNING ${CAMPOS_DOCUMENTO}`,
-          [id, resultado.montoPagado],
-        ),
+        [id, resultado.montoPagado],
+      ),
+    );
+    if (actualizado === undefined) {
+      throw new BadRequestException('No se pudo registrar la devolución.');
+    }
+    return actualizado;
+  }
+
+  /**
+   * Mueve lo pagado de una factura sin que entre ni salga plata: un
+   * descuento por pronto pago la salda, un anticipo del cliente se le
+   * aplica, un saldo a favor pasa de una factura a otra. Quien llama asienta
+   * lo que corresponda; esto solo mantiene `monto_pagado` en su verdad.
+   *
+   * Positivo baja lo que se debe y no puede pasar del pendiente. Negativo lo
+   * sube de vuelta y no puede dejar lo pagado bajo cero. `restituir` deja
+   * que un positivo pase del pendiente: es devolverle a una factura el saldo
+   * a favor que ya tenía, al anular el cruce que se lo llevó.
+   */
+  async ajustarPagadoEnTx(
+    ctx: CtxEmpresa,
+    id: string,
+    delta: number,
+    t: Tx,
+    opciones: { restituir?: boolean } = {},
+  ): Promise<VentaDocumentoResumen> {
+    const documento = fila<{
+      tipo: string;
+      estado: string;
+      monto_pagado: string;
+      por_cobrar: string;
+      prefijo: string | null;
+      consecutivo: number;
+    }>(
+      await t.query(
+        `SELECT tipo, estado, monto_pagado, ${POR_COBRAR} AS por_cobrar, prefijo, consecutivo
+           FROM venta_documento WHERE id = $1 FOR UPDATE`,
+        [id],
+      ),
+    );
+    if (documento === undefined)
+      throw new NotFoundException('Documento no encontrado');
+    if (documento.tipo !== 'FACTURA' || documento.estado !== 'EMITIDA') {
+      throw new BadRequestException(
+        'Solo se ajusta lo pagado de una factura vigente.',
       );
-      if (actualizado === undefined) {
-        throw new BadRequestException('No se pudo registrar la devolución.');
-      }
-      return actualizado;
-    });
+    }
+    const numero = `${documento.prefijo}-${String(documento.consecutivo).padStart(6, '0')}`;
+    const pagado = Math.round(Number(documento.monto_pagado) * 100);
+    const cambio = Math.round(delta * 100);
+    const pendiente = Math.round(Number(documento.por_cobrar) * 100) - pagado;
+    if (cambio > 0 && !opciones.restituir && cambio > pendiente) {
+      throw new BadRequestException(
+        `A ${numero} solo le faltan ${Math.max(pendiente, 0) / 100}: no se le puede aplicar ${delta}.`,
+      );
+    }
+    if (cambio < 0 && -cambio > pagado) {
+      throw new BadRequestException(
+        `De ${numero} no hay tanto pagado para devolver.`,
+      );
+    }
+    const actualizado = fila<VentaDocumentoResumen>(
+      await t.query(
+        `UPDATE venta_documento SET monto_pagado = $2 WHERE id = $1 RETURNING ${CAMPOS_DOCUMENTO}`,
+        [id, (pagado + cambio) / 100],
+      ),
+    );
+    if (actualizado === undefined)
+      throw new BadRequestException('No se pudo ajustar la factura.');
+    return actualizado;
   }
 
   // ---------------------------------------------------------------------------

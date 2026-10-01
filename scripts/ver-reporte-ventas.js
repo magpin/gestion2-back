@@ -25,7 +25,7 @@ const PUERTO = 3021;
 const RANGO = { desde: '2026-09-01', hasta: '2026-09-30', etiqueta: 'este mes' };
 
 /**
- * Los del diseño, en `docs/reportes-pdf-diseno/VentasPorCliente-pag2.dc.html`.
+ * Los del diseño, en `docs/mocks/reportes-pdf-diseno/VentasPorCliente-pag2.dc.html`.
  *
  * **Con una fecha cambiada, y hay que decirlo.** El diseño muestra la FV-1038
  * como vencida con fecha del 12 de septiembre, a dieciocho días del corte. Eso

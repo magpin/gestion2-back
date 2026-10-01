@@ -2,7 +2,7 @@ import { armar, tramoDe } from './antiguedad-cartera';
 import type { FacturaLeida } from './ventas-por-cliente';
 
 /**
- * El fixture sale de `docs/reportes-pdf-diseno/AntiguedadDeCartera.dc.html`:
+ * El fixture sale de `docs/mocks/reportes-pdf-diseno/AntiguedadDeCartera.dc.html`:
  * ocho clientes, $ 40.070.000 repartidos en cinco tramos que suman exacto.
  *
  * Las fechas se eligieron para que cada factura caiga en el tramo que el diseño

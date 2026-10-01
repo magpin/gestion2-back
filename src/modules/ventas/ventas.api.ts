@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../common/ctx';
-import { fila } from '../../common/db/filas';
+import { fila, filas } from '../../common/db/filas';
 import { TxService, type Tx } from '../../common/db/tx.service';
 import {
   ContabilidadApi,
@@ -9,6 +9,17 @@ import {
 } from '../contabilidad/contabilidad.api';
 import type { CrearFacturaDto } from './dto/factura.dto';
 import type { CobrarDto } from './dto/venta.dto';
+import {
+  HistoricoService,
+  type ResultadoCarga,
+} from './servicios/historico.service';
+import {
+  numeroComoTexto,
+  partirNumero,
+  type FacturaHistoricaEntrada,
+} from './servicios/historico.reglas';
+import { calcularLineas } from './servicios/venta.reglas';
+import { ReciboCajaService } from './servicios/recibo-caja.service';
 import {
   FacturaService,
   type OrigenDeLaFactura,
@@ -46,7 +57,86 @@ export class VentasApi {
     private readonly tx: TxService,
     private readonly contabilidad: ContabilidadApi,
     private readonly facturas: FacturaService,
+    private readonly historico: HistoricoService,
+    private readonly recibos: ReciboCajaService,
   ) {}
+
+  /** Lo que falta cobrar, con su vencimiento. Lo lee el flujo de caja proyectado. */
+  pendientesPorCobrar(ctx: CtxEmpresa, tx?: Tx) {
+    return this.recibos.pendientesConVence(ctx, tx);
+  }
+
+  /** La cartera por cliente, lo más vencido primero. La lee el tablero de Inicio. */
+  cartera(ctx: CtxEmpresa, tx?: Tx) {
+    return this.recibos.porCobrar(ctx, tx);
+  }
+
+  /**
+   * Cuáles de estos números de factura ya están en el sistema —emitidas acá o
+   * cargadas como históricas—, comparados como los compara la carga: «FEV
+   * 13892» y «FEV-013892» son la misma. Una histórica anulada no cuenta:
+   * anularla es la forma de volver a cargarla. La llave es el número tal como
+   * llegó.
+   */
+  async facturasExistentes(
+    ctx: CtxEmpresa,
+    numeros: string[],
+  ): Promise<Map<string, { id: string; numero: string }>> {
+    const buscados = new Map<string, string[]>();
+    for (const n of numeros) {
+      const partido = partirNumero(n);
+      if (partido === null) continue;
+      const llave = numeroComoTexto(partido);
+      buscados.set(llave, [...(buscados.get(llave) ?? []), n]);
+    }
+    const encontrados = new Map<string, { id: string; numero: string }>();
+    if (buscados.size === 0) return encontrados;
+
+    const existentes = await this.tx.enContexto(ctx, async (t) =>
+      filas<{ id: string; prefijo: string | null; consecutivo: number }>(
+        await t.query(`
+          SELECT id, prefijo, consecutivo FROM venta_documento
+           WHERE tipo = 'FACTURA' AND NOT (historica AND estado = 'ANULADA')`),
+      ),
+    );
+    for (const e of existentes) {
+      const llave = numeroComoTexto({
+        prefijo:
+          e.prefijo === null || e.prefijo === ''
+            ? null
+            : e.prefijo.toUpperCase(),
+        consecutivo: Number(e.consecutivo),
+      });
+      for (const original of buscados.get(llave) ?? []) {
+        encontrados.set(original, { id: e.id, numero: llave });
+      }
+    }
+    return encontrados;
+  }
+
+  /**
+   * Carga facturas históricas por **la misma puerta que el Excel** (fase 10):
+   * número y fecha originales, sin resolución, sin asiento y sin kardex, y
+   * todas o ninguna. «Pagada» es lo pagado igual al total que da la factura
+   * calculada, no el impreso: la carga no acepta pagar de más ni un centavo.
+   *
+   * No mira roles: los mira quien llama, con los de `POST /facturas-historicas`.
+   */
+  cargarHistoricas(
+    ctx: CtxEmpresa,
+    facturas: Array<
+      Omit<FacturaHistoricaEntrada, 'pagado'> & { pagada: boolean }
+    >,
+  ): Promise<ResultadoCarga> {
+    return this.historico.cargar(
+      ctx,
+      facturas.map(({ pagada, ...f }) => ({
+        ...f,
+        pagado: pagada ? calcularLineas(f.lineas).totales.total : 0,
+      })),
+      false,
+    );
+  }
 
   /**
    * Emite una factura. **La misma puerta que `POST /facturas`**: el mismo

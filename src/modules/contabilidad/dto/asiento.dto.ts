@@ -13,6 +13,7 @@ import {
 } from 'class-validator';
 
 import { PaginacionDto } from '../../../common/dto/paginacion.dto';
+import { SoporteAsientoDto } from './comprobante-manual.dto';
 import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
 
 /**
@@ -34,6 +35,14 @@ export class LineaAsientoDto {
   @IsOptional()
   @IsUUID()
   centroCostoId?: string;
+
+  /**
+   * El concepto de ingreso o egreso del que salió la línea. Es lo que deja
+   * armar el flujo de caja por actividad sin volver a clasificar nada.
+   */
+  @IsOptional()
+  @IsUUID()
+  conceptoId?: string;
 
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
@@ -81,6 +90,12 @@ export class CrearAsientoDto {
   @ValidateNested({ each: true })
   @Type(() => LineaAsientoDto)
   lineas!: LineaAsientoDto[];
+
+  /** Solo el comprobante manual: el documento que lo respalda, ya subido (Fase 9). */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SoporteAsientoDto)
+  soporte?: SoporteAsientoDto;
 }
 
 export class AnularAsientoDto {

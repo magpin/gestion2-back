@@ -64,12 +64,14 @@ function nucleoFalso(
     tercero?: Record<string, unknown> | null;
     responsableIva?: boolean;
     cuentas?: Record<string, { id: string } | null>;
+    conceptos?: Record<string, Record<string, unknown>>;
   } = {},
 ) {
   const {
     tercero = clienteActivo,
     responsableIva = true,
     cuentas = { '130505': { id: 'cta-cartera' }, '240805': { id: 'cta-iva' } },
+    conceptos = {},
   } = opciones;
   // Referencias sueltas, sin pasar por el cast: leerlas a través del objeto
   // casteado dispara `unbound-method` porque el tipo declarado (`NucleoApi`)
@@ -83,6 +85,9 @@ function nucleoFalso(
     esResponsableDeIva: jest.fn(() => Promise.resolve(responsableIva)),
     cuenta,
     tomarConsecutivo,
+    concepto: jest.fn((_ctx: unknown, id: string) =>
+      Promise.resolve(conceptos[id]),
+    ),
   } as unknown as ConstructorParameters<typeof FacturaService>[1];
   return { fake, cuenta, tomarConsecutivo };
 }
@@ -134,6 +139,7 @@ const cotizacionEmitida: VentaDocumentoDetalle = {
   tercero_nombre: 'Tercero uno',
   tercero_identificacion: 'NIT 900123456-7',
   fecha: '2026-09-01',
+  vence: null,
   estado: 'EMITIDA',
   prefijo: 'COT',
   consecutivo: 5,
@@ -193,9 +199,25 @@ function ventasConCobro(cotizacion: VentaDocumentoDetalle = cotizacionEmitida) {
         pendiente: '0',
       }),
   );
+  // La cuenta y el nombre de cada caja o banco, para el asiento de contado.
+  const mediosDeContado = jest.fn(
+    (_ctx: unknown, pagos: Array<{ medio: string; valor: number }>) =>
+      Promise.resolve(
+        pagos.map((p) =>
+          p.medio === 'CAJA'
+            ? { cuentaId: 'cta-caja', nombre: 'Caja general', valor: p.valor }
+            : {
+                cuentaId: 'cta-banco',
+                nombre: 'Bancolombia ···1234',
+                valor: p.valor,
+              },
+        ),
+      ),
+  );
   const fake = {
     porId: jest.fn(() => Promise.resolve(cotizacion)),
     cobrarEnTx,
+    mediosDeContado,
   } as unknown as ConstructorParameters<typeof FacturaService>[4];
   return { fake, cobrarEnTx };
 }
@@ -211,6 +233,8 @@ function txFalso(opciones: { estadoCotizacion?: string | null } = {}) {
   const lineasInsertadas: unknown[][] = [];
   const tx = {
     query: jest.fn((sql: string, params?: unknown[]) => {
+      // El plazo del tercero (PC25): sin plazo, el vence queda como venga.
+      if (sql.includes('dias_plazo_')) return Promise.resolve([]);
       if (sql.includes("WHERE id = $1 AND tipo = 'COTIZACION'")) {
         return estadoCotizacion === null || estadoCotizacion === undefined
           ? []
@@ -293,6 +317,141 @@ function txFalso(opciones: { estadoCotizacion?: string | null } = {}) {
   return { tx, faltantesInsertados, lineasInsertadas };
 }
 
+/** Un concepto de ingreso sembrado: servicio operacional a 415595. */
+const conceptoServicio = {
+  id: 'con-flete',
+  nombre: 'Fletes cobrados',
+  tipo: 'INGRESO',
+  activo: true,
+  automatico: false,
+  cuenta: { id: 'cta-servicio', codigo: '414505', nombre: 'Transporte' },
+};
+
+describe('FacturaService.crear — servicios y otros ingresos (Fase 8)', () => {
+  const motor = {
+    confirmarVenta: jest.fn(() =>
+      Promise.resolve({ lineasAsiento: [], aviso: null }),
+    ),
+  } as never;
+
+  it('la línea de concepto acredita su cuenta, no costea ni toca el kardex', async () => {
+    const { tx, lineasInsertadas } = txFalso();
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+    const inventario = inventarioFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso({ conceptos: { 'con-flete': conceptoServicio } }).fake,
+      inventario,
+      contabilidad,
+      {} as never,
+      motor,
+    );
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CREDITO',
+      lineas: [
+        { productoId: 'p-1', cantidad: 1 },
+        {
+          conceptoId: 'con-flete',
+          detalle: 'Transporte a Turbo',
+          cantidad: 1,
+          precioUnitario: 120000,
+          ivaTarifa: 19,
+        },
+      ],
+    });
+
+    const [, dtoAsiento] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      { lineas: Array<{ cuentaId: string; debito: number; credito: number }> },
+    ];
+    // Ingreso del producto y del servicio, cada uno a su cuenta; un solo par
+    // costo/inventario, el del producto.
+    expect(dtoAsiento.lineas).toContainEqual({
+      cuentaId: 'cta-servicio',
+      debito: 0,
+      credito: 120000,
+    });
+    expect(
+      dtoAsiento.lineas.filter((l) => l.cuentaId === 'cta-costo'),
+    ).toHaveLength(1);
+    const d = dtoAsiento.lineas.reduce((x, l) => x + l.debito, 0);
+    const c = dtoAsiento.lineas.reduce((x, l) => x + l.credito, 0);
+    expect(d).toBe(c);
+
+    const inv = inventario as unknown as {
+      costearSalida: jest.Mock;
+      descontarPorVenta: jest.Mock;
+    };
+    expect(inv.costearSalida).toHaveBeenCalledTimes(1);
+    expect(inv.descontarPorVenta).toHaveBeenCalledTimes(1);
+
+    // La línea del servicio: sin producto ni costo, con concepto, cuenta y detalle.
+    const linea = lineasInsertadas[1];
+    expect(linea[3]).toBeNull();
+    expect(linea[10]).toBeNull();
+    expect(linea.slice(12)).toEqual([
+      'con-flete',
+      'cta-servicio',
+      'Transporte a Turbo',
+    ]);
+  });
+
+  it('rechaza un concepto que no es de ingreso', async () => {
+    const { tx } = txFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso({
+        conceptos: {
+          'con-gasto': { ...conceptoServicio, id: 'con-gasto', tipo: 'GASTO' },
+        },
+      }).fake,
+      inventarioFalso(),
+      contabilidadFalso().fake,
+      {} as never,
+      motor,
+    );
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        formaPago: 'CREDITO',
+        lineas: [
+          {
+            conceptoId: 'con-gasto',
+            detalle: 'Algo',
+            cantidad: 1,
+            precioUnitario: 1000,
+            ivaTarifa: 0,
+          },
+        ],
+      }),
+    ).rejects.toThrow('elija un concepto de ingreso');
+  });
+
+  it('rechaza una línea con producto y concepto a la vez', async () => {
+    const { tx } = txFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso(),
+      contabilidadFalso().fake,
+      {} as never,
+      motor,
+    );
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        formaPago: 'CREDITO',
+        lineas: [{ productoId: 'p-1', conceptoId: 'con-flete', cantidad: 1 }],
+      }),
+    ).rejects.toThrow('elija uno de los dos');
+  });
+});
+
 describe('FacturaService.crear', () => {
   it('arma el asiento completo (cartera, ingreso, IVA, costo, inventario) y descuenta el kardex', async () => {
     const { tx } = txFalso();
@@ -303,8 +462,13 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidad,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     const factura = await servicio.crear(ctx, {
@@ -358,8 +522,13 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     const factura = await servicio.crear(ctx, {
@@ -384,8 +553,13 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidadFalso({ periodoAbierto: false }).fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -413,8 +587,13 @@ describe('FacturaService.crear', () => {
         inventarioFalso(),
         contabilidadFalso().fake,
         {} as never,
-        // RetencionesApi: ninguno de estos casos trae retenciones.
-        {} as never,
+        // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+        // autorretiene nada ni avisa.
+        {
+          confirmarVenta: jest.fn(() =>
+            Promise.resolve({ lineasAsiento: [], aviso: null }),
+          ),
+        } as never,
       );
 
       await expect(
@@ -440,8 +619,13 @@ describe('FacturaService.crear', () => {
       }),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await servicio.crear(ctx, {
@@ -472,8 +656,13 @@ describe('FacturaService.crear', () => {
       }),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -497,8 +686,13 @@ describe('FacturaService.crear', () => {
       }),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -523,8 +717,13 @@ describe('FacturaService.crear', () => {
       }),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await servicio.crear(
@@ -538,9 +737,9 @@ describe('FacturaService.crear', () => {
       },
     );
 
-    // El último parámetro del INSERT de la línea es quién autorizó.
+    // El duodécimo parámetro del INSERT de la línea es quién autorizó.
     const linea = lineasInsertadas[0];
-    expect(linea[linea.length - 1]).toBe('u-1');
+    expect(linea[11]).toBe('u-1');
   });
 
   it('no anota nada cuando había existencia', async () => {
@@ -551,8 +750,13 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await servicio.crear(ctx, {
@@ -574,8 +778,13 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -588,7 +797,7 @@ describe('FacturaService.crear', () => {
           { productoId: 'p-1', cantidad: 2 },
         ],
       }),
-    ).rejects.toThrow(/No repitas el mismo producto/);
+    ).rejects.toThrow(/No repita el mismo producto/);
   });
 
   it('rechaza si el tercero no existe', async () => {
@@ -599,8 +808,13 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -623,8 +837,13 @@ describe('FacturaService.crear', () => {
       }),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -647,8 +866,13 @@ describe('FacturaService.crear', () => {
       }),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -669,8 +893,13 @@ describe('FacturaService.crear', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       {} as never,
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -693,8 +922,13 @@ describe('FacturaService.convertirCotizacion', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       ventasFalso(),
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     const factura = await servicio.convertirCotizacion(ctx, 'cot-1', {
@@ -719,8 +953,13 @@ describe('FacturaService.convertirCotizacion', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       ventasFalso(),
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -739,8 +978,13 @@ describe('FacturaService.convertirCotizacion', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       ventasFalso(),
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -759,8 +1003,13 @@ describe('FacturaService.convertirCotizacion', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       ventasFalso(),
-      // RetencionesApi: ninguno de estos casos trae retenciones.
-      {} as never,
+      // RetencionesApi: ninguno de estos casos trae retenciones. El motor de ventas no
+      // autorretiene nada ni avisa.
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     await expect(
@@ -784,7 +1033,11 @@ describe('FacturaService.crear — forma de pago', () => {
       inventarioFalso(),
       contabilidad,
       ventas,
-      {} as never,
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
     return { servicio, asentar };
   }
@@ -821,9 +1074,9 @@ describe('FacturaService.crear — forma de pago', () => {
     expect(factura.lineas).toHaveLength(1);
   });
 
-  it('de contado acepta el cobro repartido entre caja y banco', async () => {
+  it('de contado repartido entre caja y banco queda en un solo asiento', async () => {
     const { fake, cobrarEnTx } = ventasConCobro();
-    const { servicio } = servicioCon(fake);
+    const { servicio, asentar } = servicioCon(fake);
 
     await servicio.crear(ctx, {
       terceroId: 'ter-1',
@@ -837,6 +1090,35 @@ describe('FacturaService.crear — forma de pago', () => {
     });
 
     expect(cobrarEnTx).toHaveBeenCalledTimes(1);
+    // El cobro se liga al asiento de la factura en vez de asentar otro.
+    expect((cobrarEnTx.mock.calls[0] as unknown[])[5]).toBe('asiento-1');
+    // La factura (y su costo) es el único asiento: la plata entra directo a
+    // caja y banco, cada renglón dice dónde, y cartera no se toca.
+    expect(asentar).toHaveBeenCalledTimes(1);
+    const asiento = (asentar.mock.calls[0] as unknown[])[1] as {
+      glosa: string;
+      lineas: Array<{ cuentaId: string; debito: number; detalle?: string }>;
+    };
+    expect(asiento.glosa).toMatch(
+      / · de contado, repartida entre Caja general y Bancolombia ···1234$/,
+    );
+    expect(asiento.lineas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          cuentaId: 'cta-caja',
+          debito: 144981,
+          detalle: 'Recibido en Caja general',
+        }),
+        expect.objectContaining({
+          cuentaId: 'cta-banco',
+          debito: 200000,
+          detalle: 'Recibido en Bancolombia ···1234',
+        }),
+      ]),
+    );
+    expect(asiento.lineas.some((l) => l.cuentaId === 'cta-cartera')).toBe(
+      false,
+    );
   });
 
   it('el medio sin valor se lleva lo que falte de la factura', async () => {
@@ -893,7 +1175,7 @@ describe('FacturaService.crear — forma de pago', () => {
     ).rejects.toThrow(/al menos un medio de pago/);
   });
 
-  it('a crédito con medios de pago se rechaza: la plata no entraría a ninguna parte', async () => {
+  it('a crédito con medios de pago se rechaza: el dinero no entraría a ninguna parte', async () => {
     const { fake, cobrarEnTx } = ventasConCobro();
     const { servicio } = servicioCon(fake);
 
@@ -932,7 +1214,11 @@ describe('FacturaService.crear — forma de pago', () => {
       inventarioFalso(),
       contabilidadFalso().fake,
       fake,
-      {} as never,
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
     );
 
     const factura = await servicio.convertirCotizacion(ctx, 'cot-1', {
@@ -943,5 +1229,487 @@ describe('FacturaService.crear — forma de pago', () => {
 
     expect(cobrarEnTx).toHaveBeenCalledTimes(1);
     expect(factura.monto_pagado).toBe(String(TOTAL));
+  });
+});
+
+describe('FacturaService — precio de la línea, conversión y existencia', () => {
+  const motorSinNada = {
+    confirmarVenta: jest.fn(() =>
+      Promise.resolve({ lineasAsiento: [], aviso: null }),
+    ),
+  } as never;
+
+  function nucleoConHecho(vendeSinExistencia: boolean) {
+    return {
+      ...(nucleoFalso().fake as object),
+      tieneHechoOperativo: jest.fn(() => Promise.resolve(vendeSinExistencia)),
+    } as unknown as ConstructorParameters<typeof FacturaService>[1];
+  }
+
+  function inventarioQueNoAlcanza() {
+    return {
+      ...(inventarioFalso() as object),
+      costearSalida: jest.fn(() =>
+        Promise.reject(
+          new BadRequestException(
+            'Solo hay 3 en existencia; no se puede sacar 10.',
+          ),
+        ),
+      ),
+    } as unknown as ConstructorParameters<typeof FacturaService>[2];
+  }
+
+  it('el precio digitado queda en la línea, el asiento y los totales', async () => {
+    const { tx } = txFalso();
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso(),
+      contabilidad,
+      {} as never,
+      motorSinNada,
+    );
+
+    const factura = await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CREDITO',
+      lineas: [{ productoId: 'p-1', cantidad: 2, precioUnitario: 250000 }],
+    });
+
+    expect(factura.lineas[0].precio_unitario).toBe('250000');
+    expect(factura.subtotal).toBe('500000');
+    expect(factura.total_iva).toBe('95000');
+    const [, dtoAsiento] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      { lineas: Array<{ cuentaId: string; credito: number }> },
+    ];
+    expect(
+      dtoAsiento.lineas.find((l) => l.cuentaId === 'cta-ingreso')?.credito,
+    ).toBe(500000);
+  });
+
+  it('sin precio de lista pero con precio digitado, emite', async () => {
+    const { tx } = txFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso({ precio: null }),
+      contabilidadFalso().fake,
+      {} as never,
+      motorSinNada,
+    );
+
+    const factura = await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CREDITO',
+      lineas: [{ productoId: 'p-1', cantidad: 1, precioUnitario: 300000 }],
+    });
+    expect(factura.subtotal).toBe('300000');
+  });
+
+  it('sin precio de lista y sin digitar, rechaza', async () => {
+    const { tx } = txFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso({ precio: null }),
+      contabilidadFalso().fake,
+      {} as never,
+      motorSinNada,
+    );
+
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        formaPago: 'CREDITO',
+        lineas: [{ productoId: 'p-1', cantidad: 1 }],
+      }),
+    ).rejects.toThrow(/no tiene un precio de venta configurado/);
+  });
+
+  it('un precio digitado bajo el costo se bloquea, con el precio de la línea en el mensaje', async () => {
+    const { tx } = txFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso(),
+      contabilidadFalso().fake,
+      {} as never,
+      motorSinNada,
+    );
+
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        formaPago: 'CREDITO',
+        lineas: [{ productoId: 'p-1', cantidad: 1, precioUnitario: 150000 }],
+      }),
+    ).rejects.toThrow(/por debajo de su costo.*precio de la línea es 150000/);
+  });
+
+  it('la conversión factura al precio cotizado aunque el de lista sea otro', async () => {
+    const { tx } = txFalso({ estadoCotizacion: 'EMITIDA' });
+    const cotizada = {
+      ...cotizacionEmitida,
+      lineas: [{ ...cotizacionEmitida.lineas[0], precio_unitario: '260000' }],
+    };
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso({ precio: 289900 }),
+      contabilidadFalso().fake,
+      ventasFalso(cotizada),
+      motorSinNada,
+    );
+
+    const factura = await servicio.convertirCotizacion(ctx, 'cot-1', {
+      fecha: HOY,
+      formaPago: 'CREDITO',
+    });
+    expect(factura.lineas[0].precio_unitario).toBe('260000');
+  });
+
+  it('la cotización de un producto sin lista ya no falla al convertir', async () => {
+    const { tx } = txFalso({ estadoCotizacion: 'EMITIDA' });
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso({ precio: null }),
+      contabilidadFalso().fake,
+      ventasFalso(),
+      motorSinNada,
+    );
+
+    const factura = await servicio.convertirCotizacion(ctx, 'cot-1', {
+      fecha: HOY,
+      formaPago: 'CREDITO',
+    });
+    expect(factura.subtotal).toBe('289900');
+  });
+
+  it('el mensaje de existencia lleva el código del producto', async () => {
+    const { tx } = txFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoConHecho(true),
+      inventarioQueNoAlcanza(),
+      contabilidadFalso().fake,
+      {} as never,
+      motorSinNada,
+    );
+
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        formaPago: 'CREDITO',
+        lineas: [{ productoId: 'p-1', cantidad: 10 }],
+      }),
+    ).rejects.toThrow(/^FER-001: Solo hay 3 en existencia/);
+  });
+
+  it('con confirmación pero sin el hecho, dice que la empresa no vende sin existencia', async () => {
+    const { tx } = txFalso();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoConHecho(false),
+      inventarioQueNoAlcanza(),
+      contabilidadFalso().fake,
+      {} as never,
+      motorSinNada,
+    );
+
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        formaPago: 'CREDITO',
+        confirmaSinExistencia: true,
+        lineas: [{ productoId: 'p-1', cantidad: 10 }],
+      }),
+    ).rejects.toThrow(/esta empresa no vende sin existencia/i);
+  });
+
+  describe('existencia', () => {
+    function servicioCon(
+      saldos: Record<
+        string,
+        { cantidad: number; costoPromedio: number } | null
+      >,
+      vendeSinExistencia = false,
+    ) {
+      const inventario = {
+        producto: jest.fn((_c: unknown, id: string) =>
+          Promise.resolve({ ...productoActivo, id, codigo: 'C-' + id }),
+        ),
+        saldoActual: jest.fn((_c: unknown, id: string) =>
+          Promise.resolve(saldos[id] ?? null),
+        ),
+      } as unknown as ConstructorParameters<typeof FacturaService>[2];
+      return new FacturaService(
+        txServiceFalso({} as Tx),
+        nucleoConHecho(vendeSinExistencia),
+        inventario,
+        contabilidadFalso().fake,
+        {} as never,
+        motorSinNada,
+      );
+    }
+
+    it('lista los que no alcanzan y suma los repetidos', async () => {
+      const r = await servicioCon({
+        a: { cantidad: 5, costoPromedio: 100 },
+        b: { cantidad: 10, costoPromedio: 100 },
+      }).existencia(ctx, [
+        { productoId: 'a', cantidad: 3 },
+        { productoId: 'a', cantidad: 4 },
+        { productoId: 'b', cantidad: 2 },
+      ]);
+      expect(r.vendeSinExistencia).toBe(false);
+      expect(r.faltantes).toEqual([
+        {
+          productoId: 'a',
+          codigo: 'C-a',
+          nombre: 'Taladro',
+          pide: 7,
+          hay: 5,
+          faltan: 2,
+          nuncaTuvoEntrada: false,
+        },
+      ]);
+    });
+
+    it('marca el que nunca tuvo entrada y dice si la empresa vende sin existencia', async () => {
+      const r = await servicioCon({ a: null }, true).existencia(ctx, [
+        { productoId: 'a', cantidad: 1 },
+      ]);
+      expect(r.vendeSinExistencia).toBe(true);
+      expect(r.faltantes[0].nuncaTuvoEntrada).toBe(true);
+      expect(r.faltantes[0].hay).toBe(0);
+    });
+  });
+
+  it('la conversión pasa las retenciones', async () => {
+    const { tx } = txFalso({ estadoCotizacion: 'EMITIDA' });
+    const calcular = jest.fn(() => Promise.resolve(null));
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso(),
+      contabilidadFalso().fake,
+      ventasFalso(),
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+        calcular,
+      } as never,
+    );
+
+    await servicio.convertirCotizacion(ctx, 'cot-1', {
+      fecha: HOY,
+      formaPago: 'CREDITO',
+      retenciones: [{ conceptoId: 'c-1', base: 289900 }],
+    });
+    expect(calcular).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('FacturaService.previo — de contado repartido', () => {
+  it('devuelve por dónde entra el dinero, con el resto en el renglón en blanco', async () => {
+    const base = txFalso();
+    const { query: delegado } = base.tx as unknown as { query: jest.Mock };
+    const tx = {
+      query: jest.fn((sql: string, params?: unknown[]) => {
+        if (sql.includes('SAVEPOINT')) return Promise.resolve([]);
+        if (sql.startsWith('SELECT asiento_id, vence'))
+          return Promise.resolve([{ asiento_id: 'asiento-1', vence: null }]);
+        if (sql.startsWith('SELECT c.codigo, c.nombre, l.debito'))
+          return Promise.resolve([]);
+        if (sql.startsWith('SELECT r.tipo')) return Promise.resolve([]);
+        if (sql.includes('sum(round(cantidad'))
+          return Promise.resolve([{ costo: '200000' }]);
+        if (sql.startsWith('SELECT nombre FROM caja'))
+          return Promise.resolve([{ nombre: 'Caja principal' }]);
+        if (sql.startsWith('SELECT banco ||'))
+          return Promise.resolve([{ nombre: 'Bancolombia ···1234' }]);
+        return delegado(sql, params) as Promise<unknown>;
+      }),
+    } as unknown as Tx;
+    const { fake: ventas } = ventasConCobro();
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventarioFalso(),
+      contabilidadFalso().fake,
+      ventas,
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
+    );
+
+    const previa = await servicio.previo(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CONTADO',
+      lineas: [{ productoId: 'p-1', cantidad: 1 }],
+      pagos: [
+        { medio: 'CAJA', cajaId: 'caja-1', valor: 100000 },
+        { medio: 'BANCO', cuentaBancariaId: 'cb-1' },
+      ],
+    });
+
+    // Total 344.981: 100.000 por caja y el resto, 244.981, por el banco.
+    expect(previa.pagos).toEqual([
+      { medio: 'CAJA', nombre: 'Caja principal', valor: 100000 },
+      { medio: 'BANCO', nombre: 'Bancolombia ···1234', valor: 244981 },
+    ]);
+  });
+});
+
+describe('FacturaService.crear — con anticipo del cliente', () => {
+  // 1 x 289900 + 19% = 344981.
+  const TOTAL = 344981;
+
+  function servicioConAnticipo() {
+    const { tx } = txFalso();
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+    const nucleo = nucleoFalso().fake as unknown as Record<string, unknown>;
+    nucleo.conceptoPorCodigo = jest.fn(() =>
+      Promise.resolve({
+        id: 'con-anticipo',
+        cuenta: { id: 'cta-anticipos' },
+      }),
+    );
+    const { fake: ventas, cobrarEnTx } = ventasConCobro();
+    (ventas as unknown as Record<string, unknown>).ajustarPagadoEnTx = jest.fn(
+      (_ctx: unknown, id: string) =>
+        Promise.resolve({ id, monto_pagado: String(TOTAL), pendiente: '0' }),
+    );
+    const validarAlFacturar = jest.fn(() => Promise.resolve());
+    const registrarAlFacturar = jest.fn(() => Promise.resolve());
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleo as never,
+      inventarioFalso(),
+      contabilidad,
+      ventas,
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
+      { validarAlFacturar, registrarAlFacturar } as never,
+    );
+    const lineasDelAsiento = () =>
+      (
+        (asentar.mock.calls[0] as unknown[])[1] as {
+          lineas: Array<{ cuentaId: string; debito: number }>;
+        }
+      ).lineas;
+    return {
+      servicio,
+      cobrarEnTx,
+      validarAlFacturar,
+      registrarAlFacturar,
+      lineasDelAsiento,
+    };
+  }
+
+  it('el anticipo paga una parte sin mover caja y el resto entra por caja, en el mismo asiento', async () => {
+    const { servicio, cobrarEnTx, registrarAlFacturar, lineasDelAsiento } =
+      servicioConAnticipo();
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CONTADO',
+      pagos: [{ medio: 'CAJA', cajaId: 'caja-1' }],
+      aplicar: [{ tipo: 'ANTICIPO', origenId: 'ant-1', valor: 100000 }],
+      lineas: [{ productoId: 'p-1', cantidad: 1 }],
+    });
+
+    const lineas = lineasDelAsiento();
+    expect(lineas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ cuentaId: 'cta-anticipos', debito: 100000 }),
+        expect.objectContaining({
+          cuentaId: 'cta-caja',
+          debito: TOTAL - 100000,
+        }),
+      ]),
+    );
+    expect(lineas.some((l) => l.cuentaId === 'cta-cartera')).toBe(false);
+    // Caja cobra solo lo que falta.
+    const [, , dto] = cobrarEnTx.mock.calls[0] as unknown as [
+      unknown,
+      string,
+      { pagos: Array<{ valor: number }> },
+    ];
+    expect(dto.pagos).toEqual([
+      expect.objectContaining({ valor: TOTAL - 100000 }),
+    ]);
+    expect(registrarAlFacturar).toHaveBeenCalledTimes(1);
+  });
+
+  it('si el anticipo la cubre entera, no se cobra nada ni se toca cartera', async () => {
+    const { servicio, cobrarEnTx, lineasDelAsiento } = servicioConAnticipo();
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CONTADO',
+      aplicar: [{ tipo: 'ANTICIPO', origenId: 'ant-1', valor: TOTAL }],
+      lineas: [{ productoId: 'p-1', cantidad: 1 }],
+    });
+
+    expect(cobrarEnTx).not.toHaveBeenCalled();
+    const lineas = lineasDelAsiento();
+    expect(lineas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ cuentaId: 'cta-anticipos', debito: TOTAL }),
+      ]),
+    );
+    expect(lineas.some((l) => l.cuentaId === 'cta-cartera')).toBe(false);
+  });
+
+  it('a crédito, lo que falta queda en cartera', async () => {
+    const { servicio, lineasDelAsiento } = servicioConAnticipo();
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CREDITO',
+      aplicar: [{ tipo: 'ANTICIPO', origenId: 'ant-1', valor: 44981 }],
+      lineas: [{ productoId: 'p-1', cantidad: 1 }],
+    });
+
+    expect(lineasDelAsiento()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ cuentaId: 'cta-anticipos', debito: 44981 }),
+        expect.objectContaining({ cuentaId: 'cta-cartera', debito: 300000 }),
+      ]),
+    );
+  });
+
+  it('rechaza aplicar más de lo que vale la factura', async () => {
+    const { servicio } = servicioConAnticipo();
+
+    await expect(
+      servicio.crear(ctx, {
+        terceroId: 'ter-1',
+        fecha: HOY,
+        formaPago: 'CONTADO',
+        aplicar: [{ tipo: 'ANTICIPO', origenId: 'ant-1', valor: TOTAL + 1 }],
+        lineas: [{ productoId: 'p-1', cantidad: 1 }],
+      }),
+    ).rejects.toThrow(/sobra lo aplicado/);
   });
 });

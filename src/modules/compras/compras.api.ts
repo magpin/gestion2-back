@@ -14,6 +14,8 @@ import {
   type OrigenDeLaCompra,
   type CompraDocumentoResumen,
 } from './servicios/compra.service';
+import { ComprobanteEgresoService } from './servicios/comprobante-egreso.service';
+import { PagoProgramadoService } from './servicios/pago-programado.service';
 
 /** Una compra, tal como la ve quien la va a pagar. */
 export interface CompraParaPagar {
@@ -40,7 +42,45 @@ export class ComprasApi {
     private readonly compras: CompraService,
     private readonly tx: TxService,
     private readonly contabilidad: ContabilidadApi,
+    private readonly comprobantes: ComprobanteEgresoService,
+    private readonly programados: PagoProgramadoService,
   ) {}
+
+  /** Lo que falta pagar, con su vencimiento. Lo lee el flujo de caja proyectado. */
+  async pendientesPorPagar(
+    ctx: CtxEmpresa,
+    tx?: Tx,
+  ): Promise<Array<{ vence: string; pendiente: number }>> {
+    const porPagar = await this.comprobantes.porPagar(ctx, tx);
+    return porPagar.proveedores.flatMap((p) =>
+      p.compras.map((c) => ({
+        vence: c.venceEfectivo,
+        pendiente: c.pendiente,
+      })),
+    );
+  }
+
+  /** Lo que falta pagar por proveedor, lo que vence primero arriba. Lo lee el tablero de Inicio. */
+  porPagar(ctx: CtxEmpresa, tx?: Tx) {
+    return this.comprobantes.porPagar(ctx, tx);
+  }
+
+  /** Los pagos programados que siguen pendientes, con su fecha. */
+  async programadosPendientes(ctx: CtxEmpresa): Promise<
+    Array<{
+      fecha: string;
+      valor: number;
+      descripcion: string;
+      compraId: string | null;
+    }>
+  > {
+    return (await this.programados.listar(ctx, true)).map((p) => ({
+      fecha: p.fecha,
+      valor: p.valor,
+      descripcion: p.descripcion,
+      compraId: p.compraId,
+    }));
+  }
 
   /**
    * Las compras vigentes con ese número de factura del proveedor. El número
@@ -108,6 +148,23 @@ export class ComprasApi {
    * escriba junto con la compra —lo que María aprendió de la factura— entra o
    * no entra con ella.
    */
+  /** La retención de renta que llevaría una compra, sin registrarla. */
+  simularRenta(
+    ctx: CtxEmpresa,
+    dto: Pick<
+      CrearCompraDto,
+      | 'terceroId'
+      | 'fecha'
+      | 'lineas'
+      | 'conceptosRenta'
+      | 'zomacEnFactura'
+      | 'pagadaConTarjeta'
+      | 'municipioCodigo'
+    >,
+  ) {
+    return this.compras.simularRenta(ctx, dto);
+  }
+
   async registrar(
     ctx: CtxEmpresa,
     dto: CrearCompraDto,

@@ -62,7 +62,7 @@ export async function nombreCiiuOficial(
   );
   if (fila === undefined) {
     throw new BadRequestException(
-      `La actividad CIIU "${codigo}" no existe en el catalogo DANE. Buscala en /catalogos/ciiu.`,
+      `La actividad CIIU "${codigo}" no existe en el catalogo DANE. Búsquela en /catalogos/ciiu.`,
     );
   }
   return fila.nombre;
@@ -78,7 +78,7 @@ export async function exigirFormaAsociativa(
   );
   if (filas.length === 0) {
     throw new BadRequestException(
-      `La forma asociativa "${codigo}" no existe. Consultala en /catalogos/formas-asociativas.`,
+      `La forma asociativa "${codigo}" no existe. Consúltela en /catalogos/formas-asociativas.`,
     );
   }
 }

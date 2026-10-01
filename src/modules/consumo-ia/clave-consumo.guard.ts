@@ -57,7 +57,7 @@ export class ClaveConsumoGuard implements CanActivate {
     const registro = this.fallos.get(ip);
     if (registro !== undefined && registro.cerradaHasta > ahora) {
       throw new HttpException(
-        'Demasiados intentos. Esperá unos minutos.',
+        'Demasiados intentos. Espere unos minutos.',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }

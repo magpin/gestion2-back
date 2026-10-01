@@ -47,8 +47,9 @@ describe('herramientasPara — el modelo ve lo que el rol puede ver', () => {
     ]);
   });
 
-  it('CONTADOR: los seis orígenes, buscar, saldos, existencias y la revisión', () => {
-    expect(nombres(['CONTADOR'])).toHaveLength(10);
+  it('CONTADOR: los seis orígenes, buscar, saldos, existencias, las retenciones y la revisión', () => {
+    expect(nombres(['CONTADOR'])).toHaveLength(11);
+    expect(nombres(['CONTADOR'])).toContain('consultar_retenciones');
   });
 
   it('un rol sin orígenes no recibe ninguna herramienta, ni la de buscar', () => {

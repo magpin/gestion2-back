@@ -20,8 +20,14 @@ export class SecuenciaMovimientos1787000036000 implements MigrationInterface {
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     // Los saldos recalculados se quedan: eran los correctos. Solo se va la columna.
-    await queryRunner.query('ALTER TABLE producto_movimiento DROP COLUMN secuencia');
-    await queryRunner.query('ALTER TABLE caja_movimiento DROP COLUMN secuencia');
-    await queryRunner.query('ALTER TABLE banco_movimiento DROP COLUMN secuencia');
+    await queryRunner.query(
+      'ALTER TABLE producto_movimiento DROP COLUMN secuencia',
+    );
+    await queryRunner.query(
+      'ALTER TABLE caja_movimiento DROP COLUMN secuencia',
+    );
+    await queryRunner.query(
+      'ALTER TABLE banco_movimiento DROP COLUMN secuencia',
+    );
   }
 }

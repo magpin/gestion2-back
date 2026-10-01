@@ -37,6 +37,16 @@ export interface RespuestasDeFactura {
     cuentaId?: string;
   }>;
   formaPago?: 'CREDITO' | 'CONTADO';
+  /**
+   * El concepto de retención de renta de los renglones que lo necesitaban,
+   * **por el orden del renglón en el papel** (plan motor de retenciones,
+   * Fase 1, §1.6). Lo visto claro no hace falta mandarlo.
+   */
+  conceptosRenta?: Array<{ orden: number; conceptoCodigo: string }>;
+  /** «Sin retención», con el porqué. */
+  sinRetencionMotivo?: string;
+  /** Si la factura informa la categoría ZOMAC del proveedor. */
+  zomacEnFactura?: boolean;
 }
 
 @Injectable()
@@ -54,6 +64,139 @@ export class ConfirmacionFacturaService {
     ctx: CtxEmpresa,
     documentoId: string,
     respuestas: RespuestasDeFactura = {},
+  ) {
+    const { cruzada, terceroId, lineas, conPrefijo, aLinea } =
+      await this.preparar(ctx, documentoId, respuestas, true);
+
+    // Lo que una persona contestó, para no volver a preguntarlo. Solo eso: lo
+    // que el cruce encontró solo no se aprende nunca.
+    const aprendizajes = queAprender(
+      cruzada.renglones,
+      respuestas.renglones ?? [],
+    );
+
+    // La compra y lo aprendido van en la misma transacción: si la compra no
+    // entra, no se aprende nada. Contestar no es comprometerse; registrar sí.
+    const compra = await this.tx.enContexto(ctx, async (t) => {
+      const registrada = await this.compras.registrar(
+        ctx,
+        {
+          terceroId,
+          fecha: cruzada.factura.fecha,
+          numeroFacturaProveedor: conPrefijo,
+          lineas,
+          // Crédito salvo que digan otra cosa: contado exige rol CAJA o
+          // DIRECTOR y los medios de pago, que no salen de la factura.
+          formaPago: respuestas.formaPago ?? 'CREDITO',
+          // Renta por la misma puerta que la compra manual: el motor.
+          conceptosRenta: this.conceptosEnLineas(respuestas, aLinea),
+          sinRetencionMotivo: respuestas.sinRetencionMotivo,
+          zomacEnFactura: respuestas.zomacEnFactura,
+        },
+        // De qué documento salió y qué retención traía impresa. Va por acá y
+        // no en el cuerpo de la petición: si viniera del navegador,
+        // cualquiera podría decir que una compra digitada salió de un
+        // documento que María leyó.
+        {
+          documentoLeidoId: documentoId,
+          retencionImpresa: cruzada.factura.impreso?.retencion ?? null,
+        },
+        t,
+      );
+      await this.memoria.aprender(
+        ctx,
+        terceroId,
+        registrada.id,
+        aprendizajes,
+        t,
+      );
+      return registrada;
+    });
+
+    this.log.log(
+      `Factura ${documentoId} registrada como compra ${compra.id} (${conPrefijo}), ${lineas.length} líneas, ${aprendizajes.length} renglones aprendidos.`,
+    );
+
+    return compra;
+  }
+
+  /**
+   * La retención de renta que llevaría la factura, sin registrar nada, con los
+   * renglones por **su orden en el papel** y la retención que el papel trae
+   * impresa al lado. Es lo que muestra «Revisar y aprobar».
+   */
+  async simularRetencion(
+    ctx: CtxEmpresa,
+    documentoId: string,
+    respuestas: RespuestasDeFactura = {},
+  ) {
+    const { cruzada, terceroId, lineas, aLinea } = await this.preparar(
+      ctx,
+      documentoId,
+      respuestas,
+      false,
+    );
+    const propuesta = await this.compras.simularRenta(ctx, {
+      terceroId,
+      fecha: cruzada.factura.fecha,
+      lineas,
+      conceptosRenta: this.conceptosEnLineas(respuestas, aLinea),
+      zomacEnFactura: respuestas.zomacEnFactura,
+    });
+
+    // De línea de la compra a renglón del papel: dos renglones del mismo
+    // producto se juntan en una línea, y la pantalla habla del papel.
+    const aRenglones = new Map<number, number[]>();
+    for (const [renglon, linea] of aLinea) {
+      aRenglones.set(linea, [...(aRenglones.get(linea) ?? []), renglon]);
+    }
+    const calculada = propuesta.retenciones.reduce((s, r) => s + r.valor, 0);
+    const impresa = cruzada.factura.impreso?.retencion ?? null;
+
+    return {
+      ...propuesta,
+      renglones: propuesta.renglones.flatMap((r) =>
+        (aRenglones.get(r.orden) ?? [r.orden]).map((orden) => ({
+          ...r,
+          orden,
+        })),
+      ),
+      retenciones: propuesta.retenciones.map((r) => ({
+        ...r,
+        renglones: r.renglones.flatMap((o) => aRenglones.get(o) ?? [o]),
+      })),
+      calculada,
+      impresa,
+      difiere: impresa !== null && Math.abs(impresa - calculada) >= 1,
+    };
+  }
+
+  /** Lo contestado por renglón del papel, pasado a línea de la compra. */
+  private conceptosEnLineas(
+    respuestas: RespuestasDeFactura,
+    aLinea: Map<number, number>,
+  ) {
+    const porLinea = new Map<number, string>();
+    for (const c of respuestas.conceptosRenta ?? []) {
+      const linea = aLinea.get(c.orden);
+      if (linea !== undefined) porLinea.set(linea, c.conceptoCodigo);
+    }
+    return [...porLinea].map(([orden, conceptoCodigo]) => ({
+      orden,
+      conceptoCodigo,
+    }));
+  }
+
+  /**
+   * Lo que registrar y simular necesitan por igual: la factura leída
+   * validada, el proveedor y las líneas. Simular no exige el número: se puede
+   * ver la retención antes de haberlo contestado.
+   */
+  private async preparar(
+    ctx: CtxEmpresa,
+    documentoId: string,
+    respuestas: RespuestasDeFactura,
+    exigirNumero: boolean,
   ) {
     const documento = await this.documentos.porId(ctx, documentoId);
     if (documento.tipo !== 'FACTURA_COMPRA') {
@@ -85,8 +228,8 @@ export class ConfirmacionFacturaService {
       );
     }
 
-    const numero = respuestas.numero?.trim() ?? cruzada.factura.numero;
-    if (numero === null || numero === '') {
+    const numero = respuestas.numero?.trim() ?? cruzada.factura.numero ?? '';
+    if (exigirNumero && numero === '') {
       throw new BadRequestException(
         'Falta el número de la factura del proveedor.',
       );
@@ -97,7 +240,7 @@ export class ConfirmacionFacturaService {
       throw new BadRequestException('Falta decir quién es el proveedor.');
     }
 
-    const lineas = this.armarLineas(cruzada, respuestas);
+    const { lineas, aLinea } = this.armarLineas(cruzada, respuestas);
 
     // El prefijo va pegado al número, como lo imprime el proveedor: es así como
     // alguien lo va a buscar después.
@@ -106,48 +249,7 @@ export class ConfirmacionFacturaService {
         ? numero
         : `${cruzada.factura.prefijo}-${numero}`;
 
-    // Lo que una persona contestó, para no volver a preguntarlo. Solo eso: lo
-    // que el cruce encontró solo no se aprende nunca.
-    const aprendizajes = queAprender(
-      cruzada.renglones,
-      respuestas.renglones ?? [],
-    );
-
-    // La compra y lo aprendido van en la misma transacción: si la compra no
-    // entra, no se aprende nada. Contestar no es comprometerse; registrar sí.
-    const compra = await this.tx.enContexto(ctx, async (t) => {
-      const registrada = await this.compras.registrar(
-        ctx,
-        {
-          terceroId,
-          fecha: cruzada.factura.fecha,
-          numeroFacturaProveedor: conPrefijo,
-          lineas,
-          // Crédito salvo que digan otra cosa: contado exige rol CAJA o
-          // DIRECTOR y los medios de pago, que no salen de la factura.
-          formaPago: respuestas.formaPago ?? 'CREDITO',
-        },
-        // De qué documento salió. Va por acá y no en el cuerpo de la petición:
-        // si viniera del navegador, cualquiera podría decir que una compra
-        // digitada salió de un documento que María leyó.
-        { documentoLeidoId: documentoId },
-        t,
-      );
-      await this.memoria.aprender(
-        ctx,
-        terceroId,
-        registrada.id,
-        aprendizajes,
-        t,
-      );
-      return registrada;
-    });
-
-    this.log.log(
-      `Factura ${documentoId} registrada como compra ${compra.id} (${conPrefijo}), ${lineas.length} líneas, ${aprendizajes.length} renglones aprendidos.`,
-    );
-
-    return compra;
+    return { cruzada, terceroId, lineas, conPrefijo, aLinea };
   }
 
   /**
@@ -166,6 +268,7 @@ export class ConfirmacionFacturaService {
       (respuestas.renglones ?? []).map((r) => [r.orden, r]),
     );
 
+    const renglonesOrden = cruzada.renglones.map((r) => r.orden);
     const lineas = cruzada.renglones.map((renglon) => {
       const respuesta = aMano.get(renglon.orden);
       const productoId = respuesta?.productoId ?? idSi(renglon, 'PRODUCTO');
@@ -201,7 +304,9 @@ export class ConfirmacionFacturaService {
     // sesenta renglones lo trae. Se juntan al promedio ponderado: tomar el
     // primero o el último cambiaría el costo del inventario según el orden.
     const juntas: typeof lineas = [];
-    for (const linea of lineas) {
+    /** Renglón del papel → línea de la compra (empezando en 1). */
+    const aLinea = new Map<number, number>();
+    for (const [i, linea] of lineas.entries()) {
       const previa =
         'productoId' in linea && linea.productoId !== undefined
           ? juntas.find(
@@ -211,8 +316,10 @@ export class ConfirmacionFacturaService {
 
       if (previa === undefined) {
         juntas.push(linea);
+        aLinea.set(renglonesOrden[i], juntas.length);
         continue;
       }
+      aLinea.set(renglonesOrden[i], juntas.indexOf(previa) + 1);
 
       const valor =
         previa.cantidad * previa.costoUnitario +
@@ -221,7 +328,7 @@ export class ConfirmacionFacturaService {
       previa.costoUnitario = Math.round((valor / previa.cantidad) * 1e6) / 1e6;
     }
 
-    return juntas;
+    return { lineas: juntas, aLinea };
   }
 }
 

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export class AbrirPeriodoDto {
   @Type(() => Number)
@@ -22,4 +22,10 @@ export class ListarPeriodosDto {
   @Min(2000)
   @Max(2100)
   anio?: number;
+}
+
+/** Cómo se agrupan los meses en la vista del calendario. */
+export class ResumenPeriodosDto extends ListarPeriodosDto {
+  @IsIn(['MENSUAL', 'TRIMESTRAL', 'SEMESTRAL', 'ANUAL'])
+  agrupacion!: 'MENSUAL' | 'TRIMESTRAL' | 'SEMESTRAL' | 'ANUAL';
 }

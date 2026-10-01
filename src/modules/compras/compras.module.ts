@@ -9,6 +9,12 @@ import { NotasCompraController } from './controladores/notas-compra.controller';
 import { CompraNotaService } from './servicios/compra-nota.service';
 import { CompraService } from './servicios/compra.service';
 import { ComprasApi } from './compras.api';
+import { PagosController } from './controladores/pagos.controller';
+import { ComprobanteEgresoService } from './servicios/comprobante-egreso.service';
+import { AnticiposProveedorService } from './servicios/anticipos-proveedor.service';
+import { EgresosService } from './servicios/egresos.service';
+import { CrucePagoService } from './servicios/cruce-pago.service';
+import { PagoProgramadoService } from './servicios/pago-programado.service';
 
 /**
  * Compras — módulo #5 de la secuencia. Factura de compra, su entrada al
@@ -30,8 +36,17 @@ import { ComprasApi } from './compras.api';
     InventarioModule,
     TesoreriaModule,
   ],
-  controllers: [ComprasController, NotasCompraController],
-  providers: [CompraService, CompraNotaService, ComprasApi],
+  controllers: [ComprasController, NotasCompraController, PagosController],
+  providers: [
+    CompraService,
+    CompraNotaService,
+    ComprobanteEgresoService,
+    CrucePagoService,
+    EgresosService,
+    AnticiposProveedorService,
+    PagoProgramadoService,
+    ComprasApi,
+  ],
   exports: [ComprasApi],
 })
 export class ComprasModule {}

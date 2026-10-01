@@ -3,11 +3,14 @@ import {
   ArrayMinSize,
   IsBoolean,
   IsIn,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   Length,
+  Matches,
+  Max,
   Min,
   ValidateIf,
   ValidateNested,
@@ -38,16 +41,34 @@ export type ConceptoRetencion = (typeof CONCEPTOS_RETENCION)[number];
  * Los dos a la vez no: una línea se debita contra una sola cuenta.
  */
 export class LineaCompraDto {
-  @ValidateIf((o: LineaCompraDto) => o.cuentaId === undefined)
+  @ValidateIf(
+    (o: LineaCompraDto) =>
+      o.cuentaId === undefined && o.conceptoId === undefined,
+  )
   @IsUUID()
   productoId?: string;
+
+  /**
+   * Qué es el gasto: «Arriendo», «Transporte, fletes y acarreos». La cuenta
+   * la pone el concepto. Es lo normal desde la Fase 6 del menú nuevo; la
+   * cuenta suelta queda para el contador.
+   */
+  @ValidateIf(
+    (o: LineaCompraDto) =>
+      o.productoId === undefined && o.cuentaId === undefined,
+  )
+  @IsUUID()
+  conceptoId?: string;
 
   /**
    * La cuenta contra la que se debita el gasto. Una auxiliar activa del plan
    * de la empresa; el servicio verifica que reciba movimientos y que sea de
    * una clase donde un gasto tenga sentido.
    */
-  @ValidateIf((o: LineaCompraDto) => o.productoId === undefined)
+  @ValidateIf(
+    (o: LineaCompraDto) =>
+      o.productoId === undefined && o.conceptoId === undefined,
+  )
   @IsUUID()
   cuentaId?: string;
 
@@ -99,6 +120,14 @@ export class LineaCompraDto {
   @IsOptional()
   @IsBoolean()
   sinIva?: boolean;
+
+  /**
+   * Si este renglón se causa en otro municipio que la compra —un servicio que
+   * se presta en otra ciudad—. Decide dónde va su ReteICA (caso borde 9).
+   */
+  @IsOptional()
+  @Matches(/^[0-9]{5}$/)
+  municipioCodigo?: string;
 }
 
 /**
@@ -143,6 +172,47 @@ export class RetencionCompraDto {
 export const FORMAS_PAGO = ['CREDITO', 'CONTADO'] as const;
 export type FormaPago = (typeof FORMAS_PAGO)[number];
 
+/**
+ * El concepto de retención de renta de un renglón, cuando hacía falta
+ * contestarlo: «La deduje» aceptada o cambiada, o «Te pregunto» respondida.
+ * Lo que el sistema vio claro no hace falta mandarlo.
+ */
+export class ConceptoRentaDto {
+  /** El renglón, empezando en 1, en el orden de `lineas`. */
+  @IsInt()
+  @Min(1)
+  orden!: number;
+
+  /** Un concepto de la ley: `COMPRAS_GENERALES`, `HONORARIOS`… */
+  @IsString()
+  @Length(2, 40)
+  conceptoCodigo!: string;
+}
+
+/**
+ * El AIU de un renglón, cuando la factura lo discrimina: temporales, aseo y
+ * vigilancia retienen sobre el AIU (Fase 8, §8.13).
+ */
+export class AiuRenglonDto {
+  @IsInt()
+  @Min(1)
+  orden!: number;
+
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  aiu!: number;
+}
+
+/** El convenio que la persona eligió aplicar a un renglón (Fase 8, §8.15). */
+export class ConvenioRentaDto {
+  @IsInt()
+  @Min(1)
+  orden!: number;
+
+  @IsIn(['INTERESES', 'REGALIAS'])
+  tipo!: 'INTERESES' | 'REGALIAS';
+}
+
 export class CrearCompraDto {
   @IsUUID()
   terceroId!: string;
@@ -150,20 +220,101 @@ export class CrearCompraDto {
   @EsFechaCalendario()
   fecha!: string;
 
-  /** El número que el proveedor le puso a SU factura — dato externo. */
+  /**
+   * El número que el proveedor le puso a SU factura — dato externo. En el
+   * documento soporte no se manda: lo pone la resolución de la empresa.
+   */
+  @ValidateIf((o: CrearCompraDto) => o.claseDocumento !== 'DOCUMENTO_SOPORTE')
   @IsString()
   @Length(1, 60)
   numeroFacturaProveedor!: string;
+
+  /**
+   * Factura electrónica del proveedor, o documento soporte que emite la
+   * empresa cuando el vendedor no está obligado a facturar (Fase 7).
+   */
+  @IsOptional()
+  @IsIn(['FACTURA_ELECTRONICA', 'DOCUMENTO_SOPORTE'])
+  claseDocumento?: 'FACTURA_ELECTRONICA' | 'DOCUMENTO_SOPORTE';
+
+  /** El CUFE de la factura electrónica, como dato: no se valida en la DIAN (PC2). */
+  @IsOptional()
+  @IsString()
+  @Length(20, 200, {
+    message:
+      'El CUFE tiene entre 20 y 200 caracteres: cópielo completo o déjelo vacío.',
+  })
+  cufe?: string;
 
   @ValidateNested({ each: true })
   @Type(() => LineaCompraDto)
   @ArrayMinSize(1, { message: 'Una compra necesita al menos una línea' })
   lineas!: LineaCompraDto[];
 
+  /**
+   * El camino anterior, de antes del motor. **Ya no se usa en compras**: las
+   * retenciones —renta, IVA e ICA— las calcula el motor con la ley a la fecha
+   * de la compra, y el servicio rechaza las que lleguen por acá.
+   */
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => RetencionCompraDto)
   retenciones?: RetencionCompraDto[];
+
+  /** Los conceptos de renta contestados por renglón (plan motor, Fase 1). */
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => ConceptoRentaDto)
+  conceptosRenta?: ConceptoRentaDto[];
+
+  /**
+   * «Sin retención», con el porqué. Queda escrito en la compra y la revisión
+   * lo respeta; sin motivo no se acepta.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(5, 300)
+  sinRetencionMotivo?: string;
+
+  /**
+   * Los aportes a salud y pensión que el proveedor persona natural soporta
+   * con su planilla: bajan la base de la tabla del art. 383 (Fase 8, §8.14).
+   */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  aportesSeguridadSocial?: number;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => AiuRenglonDto)
+  aiuRenglones?: AiuRenglonDto[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => ConvenioRentaDto)
+  conveniosRenta?: ConvenioRentaDto[];
+
+  /** Si la factura informa la categoría ZOMAC del proveedor. */
+  @IsOptional()
+  @IsBoolean()
+  zomacEnFactura?: boolean;
+
+  /**
+   * Pagada con tarjeta débito o crédito: la retención la practica la entidad
+   * de la tarjeta, no la empresa (caso borde 6).
+   */
+  @IsOptional()
+  @IsBoolean()
+  pagadaConTarjeta?: boolean;
+
+  /**
+   * El municipio de la sede que recibe la compra. Sin dato, el de la sede
+   * principal. Decide dónde se causa la ReteICA (Fase 3).
+   */
+  @IsOptional()
+  @Matches(/^[0-9]{5}$/)
+  municipioCodigo?: string;
 
   /**
    * `CONTADO` paga la compra entera —el neto, después de retenciones— en la
@@ -180,6 +331,81 @@ export class CrearCompraDto {
   @ValidateNested({ each: true })
   @Type(() => MedioPagoAlRegistrarDto)
   pagos?: MedioPagoAlRegistrarDto[];
+
+  /**
+   * Cuándo vence, si es a crédito. Sin ella, «Por pagar» cuenta 30 días desde
+   * la fecha de la factura.
+   */
+  @IsOptional()
+  @EsFechaCalendario()
+  vence?: string;
+
+  /**
+   * La condición de pronto pago que trae la factura: «2 % pagando antes del
+   * 30». Van juntos o ninguno; el comprobante de egreso la propone sola.
+   */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(99.99)
+  descuentoProntoPagoPct?: number;
+
+  @IsOptional()
+  @EsFechaCalendario()
+  descuentoProntoPagoHasta?: string;
+}
+
+/**
+ * Lo que hace falta para ver las retenciones antes de registrar: lo mismo que
+ * la compra, sin forma de pago. Nada se guarda.
+ */
+export class SimularRentaCompraDto {
+  @IsUUID()
+  terceroId!: string;
+
+  @EsFechaCalendario()
+  fecha!: string;
+
+  @ValidateNested({ each: true })
+  @Type(() => LineaCompraDto)
+  @ArrayMinSize(1, { message: 'Una compra necesita al menos una línea' })
+  lineas!: LineaCompraDto[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => ConceptoRentaDto)
+  conceptosRenta?: ConceptoRentaDto[];
+
+  @IsOptional()
+  @IsBoolean()
+  zomacEnFactura?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  pagadaConTarjeta?: boolean;
+
+  @IsOptional()
+  @Matches(/^[0-9]{5}$/)
+  municipioCodigo?: string;
+
+  /**
+   * Los aportes a salud y pensión que el proveedor persona natural soporta
+   * con su planilla: bajan la base de la tabla del art. 383 (Fase 8, §8.14).
+   */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  aportesSeguridadSocial?: number;
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => AiuRenglonDto)
+  aiuRenglones?: AiuRenglonDto[];
+
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => ConvenioRentaDto)
+  conveniosRenta?: ConvenioRentaDto[];
 }
 
 export class ListarComprasDto extends PaginacionDto {

@@ -1,5 +1,6 @@
 import {
   armarCorte,
+  problemaCuentaDeBanco,
   calcularEgresoBanco,
   calcularIngresoBanco,
   calcularSaldoBancoEsperado,
@@ -495,5 +496,35 @@ describe('armarCorte', () => {
 
   it('admite sobregiro', () => {
     expect(armarCorte(10_000, 0, 50_000).saldoFinal).toBe(-40_000);
+  });
+});
+
+describe('problemaCuentaDeBanco', () => {
+  const cuenta = (
+    codigo: string,
+    o: Partial<{ activa: boolean; esAuxiliar: boolean }> = {},
+  ) => ({
+    codigo,
+    activa: true,
+    esAuxiliar: true,
+    ...o,
+  });
+
+  it('bajo 1110 o 1120 sirve', () => {
+    expect(problemaCuentaDeBanco(cuenta('11100501'))).toBeNull();
+    expect(problemaCuentaDeBanco(cuenta('11200501'))).toBeNull();
+  });
+
+  it('bajo caja no', () => {
+    expect(problemaCuentaDeBanco(cuenta('11050501'))).toMatch(/1110/);
+  });
+
+  it('inactiva o que agrupa, no', () => {
+    expect(
+      problemaCuentaDeBanco(cuenta('111005', { esAuxiliar: false })),
+    ).toMatch(/agrupa/);
+    expect(
+      problemaCuentaDeBanco(cuenta('11100501', { activa: false })),
+    ).toMatch(/inactiva/);
   });
 });

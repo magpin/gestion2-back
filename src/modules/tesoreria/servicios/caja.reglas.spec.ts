@@ -59,11 +59,11 @@ describe('calcularDiferenciaArqueo', () => {
     expect(calcularDiferenciaArqueo(100_000, 100_000)).toBe(0);
   });
 
-  it('es positiva cuando sobra plata', () => {
+  it('es positiva cuando sobra dinero', () => {
     expect(calcularDiferenciaArqueo(100_000, 105_000)).toBe(5_000);
   });
 
-  it('es negativa cuando falta plata', () => {
+  it('es negativa cuando falta dinero', () => {
     expect(calcularDiferenciaArqueo(100_000, 92_000)).toBe(-8_000);
   });
 });
@@ -77,7 +77,7 @@ describe('verificarPuedeAbrirArqueo', () => {
     expect(verificarPuedeAbrirArqueo(true)).toEqual({
       ok: false,
       motivo:
-        'Ya hay un arqueo abierto para esta caja. Cerralo antes de abrir uno nuevo.',
+        'Ya hay un arqueo abierto para esta caja. Ciérrelo antes de abrir uno nuevo.',
     });
   });
 });

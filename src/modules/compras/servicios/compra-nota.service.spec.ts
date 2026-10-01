@@ -620,6 +620,6 @@ describe('CompraNotaService.crearNotaDebito', () => {
           { productoId: 'p-flete', cantidad: 1, costoUnitario: 20000 },
         ],
       }),
-    ).rejects.toThrow(/No repitas el mismo producto/);
+    ).rejects.toThrow(/No repita el mismo producto/);
   });
 });

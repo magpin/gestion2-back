@@ -428,7 +428,7 @@ describe('FacturaService.crear — servicios y otros ingresos (Fase 8)', () => {
           },
         ],
       }),
-    ).rejects.toThrow('elegí un concepto de ingreso');
+    ).rejects.toThrow('elija un concepto de ingreso');
   });
 
   it('rechaza una línea con producto y concepto a la vez', async () => {
@@ -448,7 +448,7 @@ describe('FacturaService.crear — servicios y otros ingresos (Fase 8)', () => {
         formaPago: 'CREDITO',
         lineas: [{ productoId: 'p-1', conceptoId: 'con-flete', cantidad: 1 }],
       }),
-    ).rejects.toThrow('elegí uno de los dos');
+    ).rejects.toThrow('elija uno de los dos');
   });
 });
 
@@ -797,7 +797,7 @@ describe('FacturaService.crear', () => {
           { productoId: 'p-1', cantidad: 2 },
         ],
       }),
-    ).rejects.toThrow(/No repitas el mismo producto/);
+    ).rejects.toThrow(/No repita el mismo producto/);
   });
 
   it('rechaza si el tercero no existe', async () => {
@@ -1175,7 +1175,7 @@ describe('FacturaService.crear — forma de pago', () => {
     ).rejects.toThrow(/al menos un medio de pago/);
   });
 
-  it('a crédito con medios de pago se rechaza: la plata no entraría a ninguna parte', async () => {
+  it('a crédito con medios de pago se rechaza: el dinero no entraría a ninguna parte', async () => {
     const { fake, cobrarEnTx } = ventasConCobro();
     const { servicio } = servicioCon(fake);
 
@@ -1521,7 +1521,7 @@ describe('FacturaService — precio de la línea, conversión y existencia', () 
 });
 
 describe('FacturaService.previo — de contado repartido', () => {
-  it('devuelve por dónde entra la plata, con el resto en el renglón en blanco', async () => {
+  it('devuelve por dónde entra el dinero, con el resto en el renglón en blanco', async () => {
     const base = txFalso();
     const { query: delegado } = base.tx as unknown as { query: jest.Mock };
     const tx = {

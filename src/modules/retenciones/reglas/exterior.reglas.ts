@@ -10,8 +10,8 @@
  */
 export function avisoPagoExterior(hayConvenio: boolean): string {
   return hayConvenio
-    ? 'Pago al exterior: retengo la tarifa del Estatuto (art. 408). El proveedor tiene certificado de residencia de un país con convenio: si el pago es intereses o regalías, aplicá el convenio en el renglón y la tarifa baja.'
-    : 'Pago al exterior: retengo la tarifa del Estatuto (art. 408). Si el proveedor es de un país con convenio, cargá su certificado de residencia fiscal en sus datos tributarios: la tarifa puede ser menor.';
+    ? 'Pago al exterior: retengo la tarifa del Estatuto (art. 408). El proveedor tiene certificado de residencia de un país con convenio: si el pago es intereses o regalías, aplique el convenio en el renglón y la tarifa baja.'
+    : 'Pago al exterior: retengo la tarifa del Estatuto (art. 408). Si el proveedor es de un país con convenio, cargue su certificado de residencia fiscal en sus datos tributarios: la tarifa puede ser menor.';
 }
 
 /**

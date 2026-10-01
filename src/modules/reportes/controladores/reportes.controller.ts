@@ -467,7 +467,7 @@ export class ReportesController {
   private exigir(clave: ClaveReporte, ctx: CtxEmpresa): void {
     if (!puedeCorrer(clave, ctx.roles)) {
       throw new ForbiddenException(
-        'Tu rol no puede ver este reporte. Pedile acceso a quien administra la cuenta.',
+        'Su rol no puede ver este reporte. Solicite acceso a quien administra la cuenta.',
       );
     }
   }

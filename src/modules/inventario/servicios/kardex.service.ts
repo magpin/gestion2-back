@@ -199,7 +199,7 @@ export class KardexService {
           : null;
       if (dto.tratamientoFaltante === 'RESPONSABLE' && responsableId === null) {
         throw new BadRequestException(
-          'Para cobrar el faltante, elige a quién se le cobra.',
+          'Para cobrar el faltante, elija a quién se le cobra.',
         );
       }
 
@@ -307,7 +307,7 @@ export class KardexService {
   private exigirCostoConocido(actual: SaldoKardex, productoId: string): void {
     if (actual.costoPromedio > 0) return;
     throw new BadRequestException(
-      `Este producto nunca ha tenido una entrada, así que no hay costo con el que valorar la venta (${productoId}). Registrá la compra o la carga inicial antes de facturarlo.`,
+      `Este producto nunca ha tenido una entrada, así que no hay costo con el que valorar la venta (${productoId}). Registre la compra o la carga inicial antes de facturarlo.`,
     );
   }
 
@@ -717,7 +717,7 @@ export class KardexService {
     const cuentaAjusteId = await this.configuracion.cuentaDe(ctx, concepto, t);
     if (cuentaAjusteId === null) {
       throw new BadRequestException(
-        `La cuenta de «${CONCEPTOS_INVENTARIO[concepto].etiqueta}» tiene varios auxiliares: elige uno en Plan de cuentas → Cuentas automáticas.`,
+        `La cuenta de «${CONCEPTOS_INVENTARIO[concepto].etiqueta}» tiene varios auxiliares: elija uno en Plan de cuentas → Cuentas automáticas.`,
       );
     }
 

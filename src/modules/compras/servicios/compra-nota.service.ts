@@ -101,7 +101,7 @@ export class CompraNotaService {
           const original = porId.get(p.lineaOrigenId);
           if (original === undefined) {
             throw new BadRequestException(
-              'Una de las líneas que querés devolver no es de esta compra.',
+              'Una de las líneas que quiere devolver no es de esta compra.',
             );
           }
           const pendiente =
@@ -281,7 +281,7 @@ export class CompraNotaService {
       );
       if (new Set(productoIds).size !== productoIds.length) {
         throw new BadRequestException(
-          'No repitas el mismo producto en dos líneas — sumá la cantidad en una sola.',
+          'No repita el mismo producto en dos líneas — sume la cantidad en una sola.',
         );
       }
 

@@ -298,7 +298,7 @@ export class LoteService {
       // Si ya tenía su lectura, esa quedó en FALLO; si no, se dice acá.
       await marcar(
         `UPDATE lote_archivo SET estado = 'NO_SE_LEE',
-                motivo = 'No pude abrir este archivo. Probá subirlo de nuevo.'
+                motivo = 'No pude abrir este archivo. Intente subirlo de nuevo.'
           WHERE id = $1 AND estado <> 'DERIVADO'`,
         [archivo.id],
       ).catch(() => undefined);

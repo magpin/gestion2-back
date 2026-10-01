@@ -37,8 +37,8 @@ export interface Pregunta {
 export const PREGUNTAS: Pregunta[] = [
   {
     clave: 'IVA',
-    pregunta: '¿Tu empresa cobra IVA en lo que vende?',
-    ayuda: 'Si tus facturas llevan IVA, es sí.',
+    pregunta: '¿La empresa cobra IVA en lo que vende?',
+    ayuda: 'Si sus facturas llevan IVA, es sí.',
     codigoSi: 48,
     codigoNo: 49,
     condicion: 'RESPONSABLE_IVA',
@@ -46,14 +46,14 @@ export const PREGUNTAS: Pregunta[] = [
   {
     clave: 'SIMPLE',
     pregunta: '¿Está en el Régimen Simple de Tributación?',
-    ayuda: 'Si pagás impuestos con el formulario del SIMPLE, es sí.',
+    ayuda: 'Si paga impuestos con el formulario del SIMPLE, es sí.',
     codigoSi: 47,
     condicion: 'REGIMEN_SIMPLE',
   },
   {
     clave: 'GRAN_CONTRIBUYENTE',
     pregunta: '¿La DIAN la calificó como gran contribuyente?',
-    ayuda: 'Te llega una resolución de la DIAN que lo dice.',
+    ayuda: 'Le llega una resolución de la DIAN que lo dice.',
     codigoSi: 13,
     condicion: 'GRAN_CONTRIBUYENTE',
   },
@@ -61,14 +61,14 @@ export const PREGUNTAS: Pregunta[] = [
     clave: 'AGENTE_RETENCION',
     pregunta: '¿Es agente de retención en la fuente?',
     ayuda:
-      'Si le descontás retención a tus proveedores cuando les pagás, es sí.',
+      'Si les descuenta retención a sus proveedores cuando les paga, es sí.',
     codigoSi: 7,
     condicion: 'AGENTE_RETENEDOR_RENTA',
   },
   {
     clave: 'AUTORRETENEDOR',
     pregunta: '¿Es autorretenedora?',
-    ayuda: 'Si vos misma te practicás la retención en tus ventas.',
+    ayuda: 'Si la empresa misma se practica la retención en sus ventas.',
     codigoSi: 15,
     condicion: 'AUTORRETENEDOR_RENTA',
   },
@@ -118,7 +118,7 @@ export function agenteIva(vigentes: string[]): {
     };
   }
   if (vigentes.includes('AGENTE_RETENEDOR_IVA')) {
-    return { es: true, porque: 'Tu RUT lo dice (código 09 o 23).' };
+    return { es: true, porque: 'El RUT lo dice (código 09 o 23).' };
   }
   return { es: false, porque: null };
 }
@@ -144,38 +144,38 @@ export function resumir(
 
   if (tiene('AGENTE_RETENEDOR_RENTA') || tiene('GRAN_CONTRIBUYENTE')) {
     vasARetener.push(
-      'Retención en la fuente a tus proveedores (compras, servicios, honorarios…).',
+      'Retención en la fuente a sus proveedores (compras, servicios, honorarios…).',
     );
   }
   if (agenteIva(vigentes).es) {
-    vasARetener.push('ReteIVA a los proveedores que te cobran IVA.');
+    vasARetener.push('ReteIVA a los proveedores que le cobran IVA.');
   }
   if (agenteIcaEn.length > 0) {
     vasARetener.push(`ReteICA en ${unir(agenteIcaEn)}.`);
   }
   if (tiene('AUTORRETENEDOR_RENTA')) {
-    vasARetener.push('Te autorretenés renta en tus propias ventas.');
+    vasARetener.push('Se autorretiene renta en sus propias ventas.');
   }
 
   // Quien está en el SIMPLE no es sujeto de retención de renta (art. 911 E.T.);
   // al autorretenedor tampoco le retienen: se retiene él.
   if (tiene('REGIMEN_SIMPLE')) {
     teVanARetener.push(
-      'Renta no: en el SIMPLE no te practican retención en la fuente.',
+      'Renta no: en el SIMPLE no le practican retención en la fuente.',
     );
   } else if (tiene('AUTORRETENEDOR_RENTA')) {
     teVanARetener.push(
-      'Renta no: como sos autorretenedor, tus clientes no te retienen.',
+      'Renta no: como es autorretenedor, sus clientes no le retienen.',
     );
   } else {
     teVanARetener.push(
-      'Retención en la fuente, tus clientes que sean agentes.',
+      'Retención en la fuente, sus clientes que sean agentes.',
     );
   }
   if (tiene('RESPONSABLE_IVA')) {
-    teVanARetener.push('ReteIVA, tus clientes que sean agentes de IVA.');
+    teVanARetener.push('ReteIVA, sus clientes que sean agentes de IVA.');
   }
-  teVanARetener.push('ReteICA, tus clientes que sean agentes en su municipio.');
+  teVanARetener.push('ReteICA, sus clientes que sean agentes en su municipio.');
 
   return { vasARetener, teVanARetener };
 }

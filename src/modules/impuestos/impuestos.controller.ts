@@ -88,7 +88,7 @@ export class ConfiguracionDto {
 
 class PresentacionBase {
   @IsString()
-  @MinLength(1, { message: 'Escribí el número del formulario.' })
+  @MinLength(1, { message: 'Escriba el número del formulario.' })
   @MaxLength(40)
   numeroFormulario!: string;
 
@@ -180,7 +180,7 @@ export class PagarDto {
   fecha!: string;
 
   @IsString()
-  @MinLength(1, { message: 'Escribí el número del recibo 490.' })
+  @MinLength(1, { message: 'Escriba el número del recibo 490.' })
   @MaxLength(40)
   recibo490!: string;
 

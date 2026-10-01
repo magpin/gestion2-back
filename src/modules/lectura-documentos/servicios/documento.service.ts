@@ -309,7 +309,7 @@ export class DocumentoService {
       }
       if (actual.registrada) {
         throw new BadRequestException(
-          'Ya está registrado: para dejarlo sin efecto, anulá el documento que se registró.',
+          'Ya está registrado: para dejarlo sin efecto, anule el documento que se registró.',
         );
       }
       if (actual.estado !== 'LEIDO') {

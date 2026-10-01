@@ -116,7 +116,7 @@ function describirOrigen(o: Origen): string {
         c.filtro === 'LISTA'
           ? c.valores
             ? `filtra por lista: ${c.valores.join(', ')}`
-            : 'filtra por lista (valores exactos: usá buscar_valores)'
+            : 'filtra por lista (valores exactos: use buscar_valores)'
           : c.filtro === 'RANGO'
             ? 'filtra por mínimo/máximo'
             : c.filtro === 'SI_NO'
@@ -130,7 +130,7 @@ function describirOrigen(o: Origen): string {
   return `${o.pregunta}. Consulta el reporte de ${o.etiqueta.toLowerCase()} de la empresa, con los permisos de quien pregunta.
 
 Las fechas filtran por ${o.fecha.split('.').pop()}. Sin fechas, va desde siempre hasta hoy.
-Devuelve hasta ${FILAS_PARA_MODELO} filas y el total de todas: para sumar, agrupá o usá el total, no sumes filas a mano.
+Devuelve hasta ${FILAS_PARA_MODELO} filas y el total de todas: para sumar, agrupe o use el total, no sume filas a mano.
 
 Columnas:
 ${columnas}`;
@@ -148,7 +148,7 @@ export function herramientasPara(roles: readonly RolCodigo[]): Herramienta[] {
           {
             name: SALDOS,
             description:
-              'Cuánta plata hay hoy en cada cuenta bancaria y cada caja activa, con la fecha de su último movimiento. Es el saldo del día, no un rango de fechas.',
+              'Cuánto dinero hay hoy en cada cuenta bancaria y cada caja activa, con la fecha de su último movimiento. Es el saldo del día, no un rango de fechas.',
             input_schema: { type: 'object', properties: {} },
           },
         ]
@@ -177,7 +177,7 @@ export function herramientasPara(roles: readonly RolCodigo[]): Herramienta[] {
           {
             name: RETENCIONES,
             description:
-              'Las retenciones que el sistema calculó en las compras —en la fuente (renta) y de IVA (ReteIVA)—, con su explicación completa: concepto y de dónde salió (confirmado por una persona, producto, CIIU o palabras), base, cuantía mínima en UVT, tarifa, norma que la sostiene, y por qué el proveedor es sujeto (guardas). Sirve para «¿por qué le retuviste esto a X?» y para «¿cuánto retuve este mes?» (sumá los valores por concepto). Una fila en negativo es la reversa de una nota crédito. Devuelve hasta 30, las más recientes.',
+              'Las retenciones que el sistema calculó en las compras —en la fuente (renta) y de IVA (ReteIVA)—, con su explicación completa: concepto y de dónde salió (confirmado por una persona, producto, CIIU o palabras), base, cuantía mínima en UVT, tarifa, norma que la sostiene, y por qué el proveedor es sujeto (guardas). Sirve para «¿por qué le retuvo esto a X?» y para «¿cuánto retuve este mes?» (sume los valores por concepto). Una fila en negativo es la reversa de una nota crédito. Devuelve hasta 30, las más recientes.',
             input_schema: {
               type: 'object',
               properties: {

@@ -479,7 +479,7 @@ export class FacturaService {
         !(await this.nucleo.tieneHechoOperativo(ctx, 'VENDE_SIN_EXISTENCIA', t))
       ) {
         throw new BadRequestException(
-          `${codigo}: ${motivo} Esta empresa no vende sin existencia: registrá la compra o un ajuste de entrada.`,
+          `${codigo}: ${motivo} Esta empresa no vende sin existencia: registre la compra o un ajuste de entrada.`,
         );
       }
       throw new BadRequestException(`${codigo}: ${motivo}`);
@@ -513,7 +513,7 @@ export class FacturaService {
     for (const l of dto.lineas) {
       if ((l.productoId === undefined) === (l.conceptoId === undefined)) {
         throw new BadRequestException(
-          'Cada línea es un producto o un servicio: elegí uno de los dos.',
+          'Cada línea es un producto o un servicio: elija uno de los dos.',
         );
       }
     }
@@ -522,7 +522,7 @@ export class FacturaService {
       .filter((id): id is string => id !== undefined);
     if (new Set(productoIds).size !== productoIds.length) {
       throw new BadRequestException(
-        'No repitas el mismo producto en dos líneas — sumá la cantidad en una sola.',
+        'No repita el mismo producto en dos líneas — sume la cantidad en una sola.',
       );
     }
 

@@ -141,7 +141,7 @@ export function verificarConciliacion(datos: {
       motivo:
         `El saldo del libro (${redondear(datos.saldoLibro)}) ajustado por ` +
         `las partidas pendientes${datos.porReclamar?.length ? ' y lo que se le reclama al banco' : ''} da ${saldoBancoEsperado}, no los ` +
-        `${saldoFinalBanco} que dice el extracto. Revisa los movimientos sin conciliar.`,
+        `${saldoFinalBanco} que dice el extracto. Revise los movimientos sin conciliar.`,
     };
   }
 
@@ -519,9 +519,9 @@ export function problemaCuentaDeBanco(cuenta: {
   esAuxiliar: boolean;
 }): string | null {
   if (!cuenta.activa)
-    return `La cuenta ${cuenta.codigo} está inactiva. Actívala en Plan de cuentas.`;
+    return `La cuenta ${cuenta.codigo} está inactiva. Actívela en Plan de cuentas.`;
   if (!cuenta.esAuxiliar)
-    return `La cuenta ${cuenta.codigo} agrupa otras y no recibe asientos: elegí uno de sus auxiliares o creá uno.`;
+    return `La cuenta ${cuenta.codigo} agrupa otras y no recibe asientos: elija uno de sus auxiliares o cree uno.`;
   if (!cuenta.codigo.startsWith('1110') && !cuenta.codigo.startsWith('1120'))
     return `Una cuenta bancaria va en una cuenta de 1110 (bancos) o 1120 (cuentas de ahorro); la ${cuenta.codigo} no lo es.`;
   return null;

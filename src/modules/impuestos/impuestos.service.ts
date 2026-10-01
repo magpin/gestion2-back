@@ -1557,7 +1557,7 @@ export class ImpuestosService {
     ) {
       throw new BadRequestException(
         municipio === null
-          ? 'Esta declaración es del municipio: elegí cuál.'
+          ? 'Esta declaración es del municipio: elija cuál.'
           : 'Esta declaración es de la DIAN: no lleva municipio.',
       );
     }
@@ -1629,7 +1629,7 @@ export class ImpuestosService {
         } catch (e) {
           if ((e as { code?: string }).code === '23505') {
             throw new ConflictException(
-              'Esa declaración ya está registrada: corregila en vez de registrarla otra vez.',
+              'Esa declaración ya está registrada: corríjala en vez de registrarla otra vez.',
             );
           }
           throw e;
@@ -1661,7 +1661,7 @@ export class ImpuestosService {
         // Con una cuota pagada, el valor ya no se mueve: las cuotas salieron de él.
         if (actual.pagado > 0 && datos.valorAPagar !== actual.valorAPagar) {
           throw new ConflictException(
-            'Ya hay cuotas pagadas: el valor a pagar no se corrige. Si la corregiste en MUISCA, hablalo con el contador.',
+            'Ya hay cuotas pagadas: el valor a pagar no se corrige. Si la corrigió en MUISCA, háblelo con el contador.',
           );
         }
         const renta = actual.obligacion === 'RENTA';
@@ -1763,7 +1763,7 @@ export class ImpuestosService {
       throw new BadRequestException('La fecha del pago no puede ser futura.');
     }
     if (datos.recibo490.trim() === '') {
-      throw new BadRequestException('Escribí el número del recibo 490.');
+      throw new BadRequestException('Escriba el número del recibo 490.');
     }
     return this.tx.enContexto(
       ctx,
@@ -2056,7 +2056,7 @@ export class ImpuestosService {
         armado: {
           ok: false,
           motivo:
-            'La empresa tiene sedes en varios municipios y el libro no separa el ICA de cada uno. Registrá este pago con un comprobante de egreso en Pagos.',
+            'La empresa tiene sedes en varios municipios y el libro no separa el ICA de cada uno. Registre este pago con un comprobante de egreso en Pagos.',
         },
         cuota: null,
       };
@@ -2094,7 +2094,7 @@ export class ImpuestosService {
         causado,
         armado: {
           ok: false,
-          motivo: `El ICA de ${declaracion.periodo} no está causado en el libro (2412). Causalo primero con un comprobante de diario (gasto 511505 contra 2412) y después registrá el pago.`,
+          motivo: `El ICA de ${declaracion.periodo} no está causado en el libro (2412). Cáuselo primero con un comprobante de diario (gasto 511505 contra 2412) y después registre el pago.`,
         },
         cuota: null,
       };

@@ -189,7 +189,7 @@ describe('paso · Situacion legal', () => {
     expect(p.estado).toBe('LISTO');
   });
 
-  it('la tarifa de ICA ya no se pide acá (sale del municipio, paso Impuestos)', () => {
+  it('la tarifa de ICA ya no se pide aquí (sale del municipio, paso Impuestos)', () => {
     const p = paso(
       con({
         actividadPrincipal: { codigoCiiu: '4530', tarifaIcaPorMil: null },
@@ -238,7 +238,7 @@ describe('paso · Impuestos', () => {
       'IMPUESTOS',
     );
     expect(p.estado).toBe('FALTA');
-    expect(p.faltantes[0].etiqueta).toBe('Te falta contarme el ICA de Pereira');
+    expect(p.faltantes[0].etiqueta).toBe('Falta contarme el ICA de Pereira');
   });
 
   it('contestado pero sin confirmar el resumen, falta confirmarlo', () => {
@@ -433,7 +433,7 @@ describe('calcularEstado · sector sin respaldo en el RUT', () => {
       }),
     );
     expect(p.opcionales.find((o) => o.campo === 'sectores')!.detalle).toContain(
-      'Todavía no registraste',
+      'Todavía no ha registrado',
     );
   });
 

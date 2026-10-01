@@ -355,7 +355,7 @@ export function calcularRenta(
   if (!ctx.empresaEsAgente) {
     return cortar(
       'NO_SUJETO',
-      'No retengo: tu empresa no es agente de retención en la fuente (art. 368 ET).',
+      'No retengo: la empresa no es agente de retención en la fuente (art. 368 ET).',
     );
   }
 
@@ -675,7 +675,7 @@ export function calcularRenta(
   if (faltaTarifa.length > 0) {
     return cortar(
       'REVISION',
-      `No tengo tarifa de ley para ${faltaTarifa.join(', ')} al ${ctx.fecha}. Pedile al administrador que la cargue.`,
+      `No tengo tarifa de ley para ${faltaTarifa.join(', ')} al ${ctx.fecha}. Solicite al administrador que la cargue.`,
     );
   }
 

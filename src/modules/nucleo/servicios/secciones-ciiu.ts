@@ -188,7 +188,7 @@ export function evaluarPertinencia(
     return {
       pertinente: false,
       motivo:
-        'Es para acumular costo de producción, y ninguna de tus actividades lo hace.',
+        'Es para acumular costo de producción, y ninguna de las actividades de la empresa lo hace.',
     };
   }
 

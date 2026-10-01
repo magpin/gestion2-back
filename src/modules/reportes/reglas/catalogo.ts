@@ -561,7 +561,7 @@ export const ORIGENES: Readonly<Record<ClaveOrigen, Origen>> = {
   TESORERIA: {
     clave: 'TESORERIA',
     etiqueta: 'Tesorería',
-    pregunta: 'Qué entró y salió de plata, por dónde',
+    pregunta: 'Qué dinero entró y salió, por dónde',
     roles: ['DIRECTOR', 'CONTADOR', 'CAJA', 'CONSULTA'],
     desde: `(
               SELECT cm.empresa_id, cm.fecha, cm.tipo, cm.valor, cm.concepto,

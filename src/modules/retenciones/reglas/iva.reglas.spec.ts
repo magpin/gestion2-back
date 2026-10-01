@@ -92,7 +92,7 @@ describe('ReteIVA — especificación §14', () => {
     ).toEqual([['RETEIVA_COMPRAS', 190_000, 28_500]]);
   });
 
-  it('T06 — proveedor del SIMPLE que factura IVA: CON ReteIVA (renta no lo mira acá)', () => {
+  it('T06 — proveedor del SIMPLE que factura IVA: CON ReteIVA (renta no lo mira aquí)', () => {
     // El SIMPLE no es una guarda de IVA: los tres impuestos son independientes.
     const r = calcularIva([bien(1_000_000)], ctx());
     expect(r.retenciones).toHaveLength(1);

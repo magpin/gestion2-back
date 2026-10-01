@@ -609,7 +609,7 @@ export class RecalculoService {
   async descartar(ctx: CtxEmpresa, id: string, motivo: string, tx?: Tx) {
     const limpio = motivo.trim();
     if (limpio.length === 0) {
-      throw new BadRequestException('Decí por qué no se ajusta.');
+      throw new BadRequestException('Indique por qué no se ajusta.');
     }
     return this.tx.enContexto(
       ctx,
@@ -719,7 +719,7 @@ export class RecalculoService {
     );
     if (cuenta?.cuenta_id == null) {
       throw new BadRequestException(
-        `No tenés la cuenta donde va la ${d.concepto.toLowerCase()}. Se crea sola en el plan de cuentas cuando sos agente de ese impuesto.`,
+        `No tiene la cuenta donde va la ${d.concepto.toLowerCase()}. Se crea sola en el plan de cuentas cuando es agente de ese impuesto.`,
       );
     }
     const proveedores = await this.nucleo.cuenta(

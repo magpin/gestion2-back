@@ -275,7 +275,7 @@ export function sinCasilla(
   if (casilla !== null && casilla !== undefined) return null;
   const persona =
     f.tipoPersona === 'NATURAL' ? 'persona natural' : 'persona jurídica';
-  return `El formulario no trae casilla de «${r.nombre}» para ${persona}: no la sumo. Revisala con tu contador.`;
+  return `El formulario no trae casilla de «${r.nombre}» para ${persona}: no la sumo. Revísela con su contador.`;
 }
 
 export function armar350(
@@ -497,7 +497,7 @@ export function cuadrar(
             ? 'Está en el libro y no en el motor: registrado antes del motor de retenciones.'
             : l === undefined
               ? 'Está en el motor y no en el libro del mes: su asiento está anulado o en otro mes.'
-              : 'El libro y el motor no coinciden en este documento: revisalo.';
+              : 'El libro y el motor no coinciden en este documento: revíselo.';
     documentos.push({
       documento: m?.documento ?? l?.documento ?? id,
       motor: pesos(vm),

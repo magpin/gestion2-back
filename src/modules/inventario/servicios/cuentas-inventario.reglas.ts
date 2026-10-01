@@ -93,7 +93,7 @@ export function conceptoDelFaltante(
     return {
       ok: false,
       motivo:
-        'Indica si el faltante lo asume la empresa o lo paga el responsable.',
+        'Indique si el faltante lo asume la empresa o lo paga el responsable.',
     };
   }
   return {

@@ -171,7 +171,7 @@ export class PlanCuentasService {
       );
       if (Number(hijas[0]?.n ?? '0') > 0) {
         throw new BadRequestException(
-          'La cuenta tiene auxiliares activos. Desactivalos primero: si no, quedarian colgando de una cuenta inactiva.',
+          'La cuenta tiene auxiliares activos. Desactívelos primero: si no, quedarian colgando de una cuenta inactiva.',
         );
       }
       const desactivadas = filas<{ id: string }>(
@@ -448,7 +448,7 @@ export class PlanCuentasService {
       );
       if (desconocidos.length > 0) {
         throw new BadRequestException(
-          `Estos codigos no estan en la sugerencia vigente: ${desconocidos.join(', ')}. Volve a pedirla: los hechos de la empresa pudieron cambiar.`,
+          `Estos codigos no estan en la sugerencia vigente: ${desconocidos.join(', ')}. Vuelva a pedirla: los hechos de la empresa pudieron cambiar.`,
         );
       }
 
@@ -553,7 +553,7 @@ export class PlanCuentasService {
   ): Promise<Record<string, unknown>> {
     if (!sistema && !madrePermitida(ctx.roles, datos.madre)) {
       throw new ForbiddenException(
-        `Tu rol no puede crear cuentas bajo la ${datos.madre}. Pedíselo al contador o al director.`,
+        `Su rol no puede crear cuentas bajo la ${datos.madre}. Solicítelo al contador o al director.`,
       );
     }
     return this.tx.enContexto(
@@ -632,7 +632,7 @@ export class PlanCuentasService {
         );
         if (madre !== undefined && !madre.activa) {
           throw new BadRequestException(
-            `Activa primero la ${cuenta.codigo_padre}: la ${cuenta.codigo} cuelga de ella.`,
+            `Active primero la ${cuenta.codigo_padre}: la ${cuenta.codigo} cuelga de ella.`,
           );
         }
       }
@@ -680,7 +680,7 @@ export class PlanCuentasService {
     }
     if (!madre.activa) {
       throw new BadRequestException(
-        `La cuenta ${codigo} está inactiva. Actívala en Plan de cuentas antes de crearle auxiliares.`,
+        `La cuenta ${codigo} está inactiva. Actívela en Plan de cuentas antes de crearle auxiliares.`,
       );
     }
     return madre;
@@ -727,7 +727,7 @@ export class PlanCuentasService {
     );
     if (movimiento !== undefined) {
       throw new BadRequestException(
-        `La cuenta ${madre.codigo} ${madre.nombre} ya tiene movimientos: no se le pueden abrir auxiliares sin descuadrar el libro. Creá la cuenta bajo otra madre o pedíselo al contador.`,
+        `La cuenta ${madre.codigo} ${madre.nombre} ya tiene movimientos: no se le pueden abrir auxiliares sin descuadrar el libro. Cree la cuenta bajo otra madre o solicítelo al contador.`,
       );
     }
 
@@ -910,7 +910,7 @@ export class PlanCuentasService {
     const codigoPuc = dto.codigoPuc ?? (await this.anclaPuc(t, dto.codigo));
     if (codigoPuc === null) {
       throw new BadRequestException(
-        `El codigo ${dto.codigo} no cae bajo ninguna cuenta del Decreto 2650. Revisa los primeros digitos.`,
+        `El codigo ${dto.codigo} no cae bajo ninguna cuenta del Decreto 2650. Revise los primeros dígitos.`,
       );
     }
 

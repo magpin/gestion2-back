@@ -18,10 +18,10 @@ export function problemaDeDireccion(
   direccion: Direccion,
 ): string | null {
   if (direccion === 'ENTRADA' && (tipo === 'GASTO' || tipo === 'COSTO')) {
-    return 'Un gasto no entra plata: elegí un concepto de ingreso o de «no gasto».';
+    return 'En un gasto no entra dinero: elija un concepto de ingreso o de «no gasto».';
   }
   if (direccion === 'SALIDA' && tipo === 'INGRESO') {
-    return 'Un ingreso no saca plata: elegí un concepto de gasto o de «no gasto».';
+    return 'En un ingreso no sale dinero: elija un concepto de gasto o de «no gasto».';
   }
   return null;
 }

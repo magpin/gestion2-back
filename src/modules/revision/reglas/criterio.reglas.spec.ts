@@ -260,7 +260,7 @@ describe('comprasParecidas', () => {
     ).toEqual([]);
   });
 
-  it('el mismo número escrito distinto lo dice la fase 7, no acá', () => {
+  it('el mismo número escrito distinto lo dice la fase 7, no aquí', () => {
     expect(
       comprasParecidas(
         [compra('a', 'FE-01', '2026-08-31'), compra('b', 'FE1', '2026-08-31')],
@@ -298,7 +298,7 @@ describe('comprasRetencionDistinta (Fase 8, §8.6)', () => {
     expect(h.tipo).toBe('COMPRA_RETENCION_DISTINTA');
     expect(h.detalle).toContain('$ 40.000');
     expect(h.detalle).toContain('$ 24.000');
-    expect(h.detalle).toContain('menos plata');
+    expect(h.detalle).toContain('menos dinero');
   });
 
   it('no cuenta el redondeo: menos de $1.000 o del 1 %', () => {

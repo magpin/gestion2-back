@@ -103,13 +103,13 @@ export function validarRecibo(
     };
   }
   const vistas = new Set<string>();
-  let plata = centavos(anticipo);
+  let plata = centavos(anticipo); // voseo-ok: nombre de código
   for (const a of aplicaciones) {
     if (vistas.has(a.facturaId)) {
       return {
         ok: false,
         motivo:
-          'Una factura aparece dos veces en el recibo: juntá los dos abonos en uno.',
+          'Una factura aparece dos veces en el recibo: junte los dos abonos en uno.',
       };
     }
     vistas.add(a.facturaId);
@@ -122,16 +122,18 @@ export function validarRecibo(
         motivo: 'Cada factura del recibo necesita un abono o un descuento.',
       };
     }
-    plata += centavos(a.valor);
+    plata += centavos(a.valor); // voseo-ok: nombre de código
   }
   if (plata <= 0) {
+    // voseo-ok: nombre de código
     return {
       ok: false,
       motivo:
-        'El recibo no registra plata: un descuento solo se concede cuando el cliente paga.',
+        'El recibo no registra dinero: un descuento solo se concede cuando el cliente paga.',
     };
   }
   if (centavos(comision) < 0 || centavos(comision) >= plata) {
+    // voseo-ok: nombre de código
     return {
       ok: false,
       motivo: 'La comisión tiene que ser menor que lo que entró.',
@@ -139,7 +141,7 @@ export function validarRecibo(
   }
   return {
     ok: true,
-    total: plata / 100,
-    neto: (plata - centavos(comision)) / 100,
+    total: plata / 100, // voseo-ok: nombre de código
+    neto: (plata - centavos(comision)) / 100, // voseo-ok: nombre de código
   };
 }

@@ -459,7 +459,7 @@ export class RetencionesReporteService {
 export class MesIncompleto extends BadRequestException {
   constructor() {
     super(
-      'El formulario 350 es mensual: elegí un mes, desde el primero y sin pasarte al siguiente.',
+      'El formulario 350 es mensual: elija un mes, desde el primero y sin pasarse al siguiente.',
     );
   }
 }

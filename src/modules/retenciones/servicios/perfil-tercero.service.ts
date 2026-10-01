@@ -113,7 +113,7 @@ export class PerfilTerceroService {
     const fuente = opciones.fuente ?? 'MANUAL';
     if (dto.esZomac && dto.zomacTamano === undefined) {
       throw new BadRequestException(
-        'Si es ZOMAC, decí de qué tamaño: sin eso no hay factor.',
+        'Si es ZOMAC, indique de qué tamaño: sin eso no hay factor.',
       );
     }
     if (dto.vigenciaDesde > hoy()) {
@@ -685,7 +685,7 @@ export class PerfilTerceroService {
     );
     if (versiones.some((x) => x.desde === fecha)) {
       throw new ConflictException(
-        `Ya hay una versión del perfil que empieza el ${fecha}. La propuesta no la reemplaza: si hay que cambiarla, hacelo en Datos tributarios, o rechazá la propuesta.`,
+        `Ya hay una versión del perfil que empieza el ${fecha}. La propuesta no la reemplaza: si hay que cambiarla, hágalo en Datos tributarios, o rechace la propuesta.`,
       );
     }
     const anterior = [...versiones].reverse().find((x) => x.desde < fecha);
@@ -750,7 +750,7 @@ export class PerfilTerceroService {
   ): Promise<void> {
     const limpio = motivo.trim();
     if (limpio.length === 0) {
-      throw new BadRequestException('Decí por qué no se cambia.');
+      throw new BadRequestException('Indique por qué no se cambia.');
     }
     await this.tx.enContexto(
       ctx,

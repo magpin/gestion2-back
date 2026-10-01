@@ -74,7 +74,7 @@ export class NotaDebitoService {
       for (const l of dto.lineas) {
         if ((l.productoId === undefined) === (l.conceptoId === undefined)) {
           throw new BadRequestException(
-            'Cada línea es un producto o un servicio: elegí uno de los dos.',
+            'Cada línea es un producto o un servicio: elija uno de los dos.',
           );
         }
       }
@@ -83,7 +83,7 @@ export class NotaDebitoService {
         .filter((id): id is string => id !== undefined);
       if (new Set(productoIds).size !== productoIds.length) {
         throw new BadRequestException(
-          'No repitas el mismo producto en dos líneas — sumá la cantidad en una sola.',
+          'No repita el mismo producto en dos líneas — sume la cantidad en una sola.',
         );
       }
 

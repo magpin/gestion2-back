@@ -130,7 +130,7 @@ export function comprasRetencionDistinta(
         tipo: 'COMPRA_RETENCION_DISTINTA',
         certeza: 'VISTA',
         titulo: `${c.proveedor} retuvo distinto en la compra ${c.numero}`,
-        detalle: `La factura del ${fecha(c.fecha)} dice ${pesos(c.impresa)} de retención; por norma corresponden ${pesos(c.registrada)} y registré eso. Me parece que conviene avisarle al proveedor: va a esperar ${c.impresa > c.registrada ? 'menos' : 'más'} plata de la que le vas a pagar. El porqué está en «¿Por qué?» de la compra.`,
+        detalle: `La factura del ${fecha(c.fecha)} dice ${pesos(c.impresa)} de retención; por norma corresponden ${pesos(c.registrada)} y registré eso. Me parece que conviene avisarle al proveedor: va a esperar ${c.impresa > c.registrada ? 'menos' : 'más'} dinero del que usted le va a pagar. El porqué está en «¿Por qué?» de la compra.`,
         referencias: [{ tipo: 'COMPRA', id: c.compraId, etiqueta: c.numero }],
       }),
     );

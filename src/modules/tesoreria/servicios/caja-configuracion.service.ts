@@ -140,7 +140,7 @@ export class CajaConfiguracionService {
         for (const otra of activas.slice(1)) {
           if (otra.movimientos > 0) {
             resultado.avisos.push(
-              `La caja «${otra.nombre}» tiene movimientos: llevá su saldo a «${activas[0].nombre}» y desactivala; se maneja una sola caja.`,
+              `La caja «${otra.nombre}» tiene movimientos: lleve su saldo a «${activas[0].nombre}» y desactívela; se maneja una sola caja.`,
             );
             continue;
           }

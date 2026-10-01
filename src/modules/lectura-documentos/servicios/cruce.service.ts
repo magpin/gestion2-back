@@ -461,7 +461,7 @@ export class CruceService {
       if (factura.impreso.total > 0 && factura.impreso.total < MINIMO_CREIBLE) {
         preguntas.push({
           sobre: 'montos',
-          texto: `Leí un total de $ ${factura.impreso.total}. Si la factura dice más —por ejemplo $ ${factura.impreso.total}.000—, se leyó mal: subila de nuevo.`,
+          texto: `Leí un total de $ ${factura.impreso.total}. Si la factura dice más —por ejemplo $ ${factura.impreso.total}.000—, se leyó mal: súbala de nuevo.`,
         });
       }
 

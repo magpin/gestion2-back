@@ -476,14 +476,14 @@ export class AsientoService {
     const negativas = lineasConValorNegativo(dto.lineas);
     if (negativas.length > 0) {
       throw new BadRequestException(
-        `El valor nunca es negativo; el sentido lo da la columna. Revisa ${renglones(negativas)}.`,
+        `El valor nunca es negativo; el sentido lo da la columna. Revise ${renglones(negativas)}.`,
       );
     }
 
     const sinPata = lineasSinUnaPata(dto.lineas);
     if (sinPata.length > 0) {
       throw new BadRequestException(
-        `Cada linea lleva debito o credito, nunca los dos ni ninguno. Revisa ${renglones(sinPata)}.`,
+        `Cada linea lleva debito o credito, nunca los dos ni ninguno. Revise ${renglones(sinPata)}.`,
       );
     }
 

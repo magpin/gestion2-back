@@ -268,14 +268,14 @@ export function armarPago(input: {
     return {
       ok: false,
       motivo:
-        'En el libro no hay nada causado para este período: no hay qué pagar. Revisá el período o los asientos.',
+        'En el libro no hay nada causado para este período: no hay qué pagar. Revise el período o los asientos.',
     };
   }
   const redondeo = r2(input.valorAPagar - exacto);
   if (Math.abs(redondeo) > TOLERANCIA_REDONDEO) {
     return {
       ok: false,
-      motivo: `La declaración dice ${pesos(input.valorAPagar)} y en el libro se causaron ${pesos(exacto)}: la diferencia (${pesos(redondeo)}) es más que el redondeo al mil. Corregí el valor de la presentación o revisá el libro antes de pagar.`,
+      motivo: `La declaración dice ${pesos(input.valorAPagar)} y en el libro se causaron ${pesos(exacto)}: la diferencia (${pesos(redondeo)}) es más que el redondeo al mil. Corrija el valor de la presentación o revise el libro antes de pagar.`,
     };
   }
   if (input.intereses > 0 && input.cuentaIntereses === null) {

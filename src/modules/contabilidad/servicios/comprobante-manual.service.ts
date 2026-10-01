@@ -89,7 +89,7 @@ export class ComprobanteManualService {
       return {
         plantilla: null,
         mensaje:
-          'No reconozco qué es. Elegí una plantilla, o armalo a mano en las líneas.',
+          'No reconozco qué es. Elija una plantilla, o ármelo a mano en las líneas.',
       };
     }
     const d = dto.datos ?? {};
@@ -178,9 +178,9 @@ export class ComprobanteManualService {
             : null,
         problema:
           c === undefined
-            ? `La cuenta ${r.codigo} no está en tu plan de cuentas. Agregala en Plan de cuentas.`
+            ? `La cuenta ${r.codigo} no está en el plan de cuentas. Agréguela en Plan de cuentas.`
             : !c.activa
-              ? `La cuenta ${r.codigo} está inactiva. Activala en Plan de cuentas.`
+              ? `La cuenta ${r.codigo} está inactiva. Actívela en Plan de cuentas.`
               : null,
       };
     });

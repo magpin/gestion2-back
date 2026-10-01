@@ -124,7 +124,7 @@ export function calcularVenta(
   // bug 6). No se calcula: se avisa.
   if (empresa.autorretenedorEspecial && empresa.tipoPersona === 'NATURAL') {
     avisos.push(
-      'Tenés marcada la autorretención especial, pero sos persona natural: esa autorretención es de sociedades (art. 1.2.6.6 DUR) y el 350 no tiene casilla para ella. No la calculo; revisá tu RUT con tu contador.',
+      'Tiene marcada la autorretención especial, pero es persona natural: esa autorretención es de sociedades (art. 1.2.6.6 DUR) y el 350 no tiene casilla para ella. No la calculo; revise el RUT con su contador.',
     );
   } else if (empresa.autorretenedorEspecial) {
     const t =
@@ -134,8 +134,8 @@ export function calcularVenta(
     if (t === null) {
       avisos.push(
         empresa.ciiuPrincipal === null
-          ? 'Sos autorretenedor especial pero no tengo tu actividad principal (CIIU): no calculo la autorretención.'
-          : `No tengo la tarifa de autorretención especial del CIIU ${empresa.ciiuPrincipal}: no la calculo. Pedile al administrador que la cargue.`,
+          ? 'Es autorretenedor especial pero no tengo la actividad principal de la empresa (CIIU): no calculo la autorretención.'
+          : `No tengo la tarifa de autorretención especial del CIIU ${empresa.ciiuPrincipal}: no la calculo. Solicite al administrador que la cargue.`,
       );
     } else {
       const valor = redondear(v.subtotal * t.tarifa);
@@ -192,7 +192,7 @@ export function calcularVenta(
     const r = rentaQueCorresponde();
     if (r === null) {
       avisos.push(
-        'Le vendés a un cliente del SIMPLE y te toca autorretenerte, pero no tengo la tarifa a la fecha.',
+        'Le vende a un cliente del SIMPLE y le toca autorretenerse, pero no tengo la tarifa a la fecha.',
       );
     } else if (r.valor > 0) {
       autorretenciones.push({
@@ -202,7 +202,7 @@ export function calcularVenta(
         valor: r.valor,
         norma: r.norma,
         explicacion: base(
-          `Autorretención por venta al SIMPLE · ${pct(r.tarifa)} sobre ${pesos(v.subtotal)} = ${pesos(r.valor)}: el cliente del SIMPLE no retiene (art. 911 ET) y te la practicás vos.`,
+          `Autorretención por venta al SIMPLE · ${pct(r.tarifa)} sobre ${pesos(v.subtotal)} = ${pesos(r.valor)}: el cliente del SIMPLE no retiene (art. 911 ET) y usted se la practica.`,
           [
             {
               regla: 'cliente_simple',
@@ -265,28 +265,28 @@ export function compararConCliente(
   const partes: string[] = [];
   if (Math.abs(esperadas.renta - registradas.renta) >= 1) {
     partes.push(
-      `de renta registraste ${pesos(registradas.renta)} y por norma corresponden ${pesos(esperadas.renta)}`,
+      `de renta registró ${pesos(registradas.renta)} y por norma corresponden ${pesos(esperadas.renta)}`,
     );
   }
   if (Math.abs(esperadas.iva - registradas.iva) >= 1) {
     partes.push(
-      `de IVA registraste ${pesos(registradas.iva)} y por norma corresponden ${pesos(esperadas.iva)}`,
+      `de IVA registró ${pesos(registradas.iva)} y por norma corresponden ${pesos(esperadas.iva)}`,
     );
   }
   return partes.length === 0
     ? null
-    : `Lo que te retiene el cliente no cuadra con la norma: ${partes.join('; ')}. Revisalo con su certificado.`;
+    : `Lo que le retiene el cliente no cuadra con la norma: ${partes.join('; ')}. Revíselo con su certificado.`;
 }
 
 /** Las dos cuentas de una autorretención: lo que se debe y su anticipo. */
 const CUENTAS_AUTORRETENCION = {
   RENTA: {
     pasivo: '236575 (autorretenciones)',
-    activo: '135515 (retención que te practican)',
+    activo: '135515 (retención que le practican)',
   },
   ICA: {
     pasivo: '2368 (ICA retenido)',
-    activo: '135518 (ICA que te retienen)',
+    activo: '135518 (ICA que le retienen)',
   },
 } as const;
 
@@ -305,6 +305,6 @@ export function faltaCuentaAutorretencion(
   ];
   if (faltan.length === 0) return null;
   return faltan.length === 2
-    ? `te faltan las cuentas ${faltan[0]} y ${faltan[1]}. Crealas en el plan de cuentas y se enlazan solas.`
-    : `te falta la cuenta ${faltan[0]}. Creala en el plan de cuentas y se enlaza sola.`;
+    ? `le faltan las cuentas ${faltan[0]} y ${faltan[1]}. Créelas en el plan de cuentas y se enlazan solas.`
+    : `le falta la cuenta ${faltan[0]}. Créela en el plan de cuentas y se enlaza sola.`;
 }

@@ -101,12 +101,12 @@ export function validarComprobante(
     };
   }
   const vistas = new Set<string>();
-  let plata = centavos(anticipo);
+  let plata = centavos(anticipo); // voseo-ok: nombre de código
   for (const a of aplicaciones) {
     if (vistas.has(a.compraId)) {
       return {
         ok: false,
-        motivo: 'Una compra aparece dos veces: juntá los dos pagos en uno.',
+        motivo: 'Una compra aparece dos veces: junte los dos pagos en uno.',
       };
     }
     vistas.add(a.compraId);
@@ -119,13 +119,14 @@ export function validarComprobante(
         motivo: 'Cada compra del comprobante necesita un pago o un descuento.',
       };
     }
-    plata += centavos(a.valor);
+    plata += centavos(a.valor); // voseo-ok: nombre de código
   }
   if (plata <= 0) {
+    // voseo-ok: nombre de código
     return {
       ok: false,
       motivo:
-        'El comprobante no saca plata: el descuento se aplica cuando se paga.',
+        'El comprobante no saca dinero: el descuento se aplica cuando se paga.',
     };
   }
   return { ok: true };

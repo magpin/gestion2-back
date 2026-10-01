@@ -388,7 +388,7 @@ describe('CajaArqueoService.cerrar', () => {
           tratamientoFaltante: 'RESPONSABLE',
         },
       ),
-    ).rejects.toThrow(/elige a quién/);
+    ).rejects.toThrow(/elija a quién/);
     expect(asentar).not.toHaveBeenCalled();
     expect(updates).toHaveLength(0);
   });

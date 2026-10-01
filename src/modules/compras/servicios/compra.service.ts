@@ -410,7 +410,7 @@ export class CompraService {
     );
     if (new Set(productoIds).size !== productoIds.length) {
       throw new BadRequestException(
-        'No repitas el mismo producto en dos líneas — sumá la cantidad en una sola.',
+        'No repita el mismo producto en dos líneas — sume la cantidad en una sola.',
       );
     }
 
@@ -423,7 +423,7 @@ export class CompraService {
       !ctx.roles.some((r) => r === 'CAJA' || r === 'DIRECTOR')
     ) {
       throw new ForbiddenException(
-        'Pagar una compra de contado lo hace alguien con rol CAJA o DIRECTOR. Regístrala a crédito y que caja la pague.',
+        'Pagar una compra de contado lo hace alguien con rol CAJA o DIRECTOR. Regístrela a crédito y que caja la pague.',
       );
     }
 
@@ -1238,7 +1238,7 @@ export class CompraService {
       // banco no desaparece anulando el documento que lo motivó.
       if (Number(documento.monto_pagado) > 0) {
         throw new BadRequestException(
-          'Esta compra tiene pagos registrados y no se puede anular. Registrá la devolución del proveedor como un ingreso aparte.',
+          'Esta compra tiene pagos registrados y no se puede anular. Registre la devolución del proveedor como un ingreso aparte.',
         );
       }
 
@@ -1725,12 +1725,12 @@ export class CompraService {
       concepto.tipo === 'INGRESO'
     ) {
       throw new BadRequestException(
-        `«${concepto.nombre}» no sirve para una línea de compra: elegí un concepto de gasto, costo o compra.`,
+        `«${concepto.nombre}» no sirve para una línea de compra: elija un concepto de gasto, costo o compra.`,
       );
     }
     if (concepto.cuenta === null) {
       throw new BadRequestException(
-        `«${concepto.nombre}» todavía no tiene cuenta. Elegila en Contabilidad → Conceptos.`,
+        `«${concepto.nombre}» todavía no tiene cuenta. Elíjala en Contabilidad → Conceptos.`,
       );
     }
     return {
@@ -1760,7 +1760,7 @@ export class CompraService {
     }
     if (!cuenta.es_auxiliar) {
       throw new BadRequestException(
-        `La cuenta ${cuenta.codigo} agrupa y no recibe movimientos. Elegí una auxiliar.`,
+        `La cuenta ${cuenta.codigo} agrupa y no recibe movimientos. Elija una auxiliar.`,
       );
     }
     if (!CUENTAS_DE_COMPRA.some((p) => cuenta.codigo.startsWith(p))) {
@@ -1808,4 +1808,4 @@ interface RetencionResuelta {
 }
 
 const RENTA_NO_SE_MANDA =
-  'Las retenciones —en la fuente, de IVA y de ICA— las calcula el sistema con la ley a la fecha de la compra: no se mandan. Contestá el concepto de cada renglón, o registrala sin retención con el motivo.';
+  'Las retenciones —en la fuente, de IVA y de ICA— las calcula el sistema con la ley a la fecha de la compra: no se mandan. Indique el concepto de cada renglón, o regístrela sin retención con el motivo.';

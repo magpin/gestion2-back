@@ -194,7 +194,7 @@ describe('ConsultasService — con los permisos de quien pregunta', () => {
       columnas: ['saldo'],
     });
     expect(texto).toBe(
-      'No se pudo: La consulta falló. Probá de nuevo en un rato.',
+      'No se pudo: La consulta falló. Intente de nuevo en un momento.',
     );
     expect(texto).not.toMatch(/connection/);
   });

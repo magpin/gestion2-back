@@ -109,7 +109,7 @@ export class EstadosReporteService {
           ...notasPeriodo(b.periodo.estado),
           ...(b.actual.diferencia !== 0
             ? [
-                `El libro no cuadra: el activo difiere del pasivo más el patrimonio en ${b.actual.diferencia.toLocaleString('es-CO')}. Revisá el balance de prueba.`,
+                `El libro no cuadra: el activo difiere del pasivo más el patrimonio en ${b.actual.diferencia.toLocaleString('es-CO')}. Revise el balance de prueba.`,
               ]
             : []),
           'Mientras no haya asiento de cierre, lo ganado o perdido figura en el patrimonio como resultado sin cerrar.',
@@ -129,7 +129,7 @@ export class EstadosReporteService {
         'Cada movimiento de caja y bancos va a la actividad de su concepto; sin concepto, a la de su cuenta contraria. Los traslados entre caja y bancos no cambian el disponible y no aparecen.',
         ...(f.directo.diferencia !== 0
           ? [
-              `Hay ${f.directo.diferencia.toLocaleString('es-CO')} que el flujo no explica: revisá los asientos de las cuentas 11.`,
+              `Hay ${f.directo.diferencia.toLocaleString('es-CO')} que el flujo no explica: revise los asientos de las cuentas 11.`,
             ]
           : []),
       ],

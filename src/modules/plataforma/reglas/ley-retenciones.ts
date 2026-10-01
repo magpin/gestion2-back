@@ -43,7 +43,7 @@ export function planearVigencia(
   if (posterior !== undefined) {
     return {
       ok: false,
-      motivo: `Ya hay una vigencia que empieza el ${posterior.desde}. Una vigencia no se reescribe: si cambió, cargá la que sigue desde después.`,
+      motivo: `Ya hay una vigencia que empieza el ${posterior.desde}. Una vigencia no se reescribe: si cambió, cargue la que sigue desde después.`,
     };
   }
 

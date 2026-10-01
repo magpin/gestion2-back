@@ -33,8 +33,8 @@ const base = (e: Partial<EntradaTablero> = {}): EntradaTablero => ({
   ...e,
 });
 
-describe('tablero de la plata', () => {
-  it('la plata de hoy es la suma de cajas y bancos', () => {
+describe('tablero del dinero', () => {
+  it('el dinero de hoy es la suma de cajas y bancos', () => {
     const t = armarTablero(base());
     expect(t.plataHoy.total).toBe(1200);
     expect(t.alertas).toEqual([]);
@@ -89,7 +89,7 @@ describe('tablero de la plata', () => {
     expect(t.semana[3].sale).toBe(130);
   });
 
-  it('te deben: lo vencido y los clientes más atrasados, con alerta que abre a María', () => {
+  it('le deben: lo vencido y los clientes más atrasados, con alerta que abre a María', () => {
     const t = armarTablero(
       base({
         cartera: {
@@ -130,7 +130,7 @@ describe('tablero de la plata', () => {
     ]);
   });
 
-  it('avisa si la plata no alcanza, del descuento que se vence y de lo que no está programado', () => {
+  it('avisa si el dinero no alcanza, del descuento que se vence y de lo que no está programado', () => {
     const t = armarTablero(
       base({
         porPagar: {
@@ -175,12 +175,12 @@ describe('tablero de la plata', () => {
       'vence:e',
     ]);
     expect(t.alertas[0].partes).toEqual([
-      'Con lo que vence, el jueves 1 oct la plata no alcanza: faltarían ',
+      'Con lo que vence, el jueves 1 oct el dinero no alcanza: faltarían ',
       300,
       '.',
     ]);
     expect(t.alertas[1].partes[0]).toBe(
-      'Si le pagás a Mayorista hasta el miércoles 30 sep, te ahorrás ',
+      'Si le paga a Mayorista hasta el miércoles 30 sep, se ahorra ',
     );
     expect(t.alertas[2].partes[0]).toBe(
       'El jueves 1 oct vence la factura A-10 de Arrendamientos, ',

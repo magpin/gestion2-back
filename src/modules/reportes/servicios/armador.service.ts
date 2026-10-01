@@ -124,7 +124,7 @@ export class ArmadorService {
   exigirOrigen(ctx: CtxEmpresa, origen: ClaveOrigen): void {
     if (!ORIGENES[origen].roles.some((r) => ctx.roles.includes(r))) {
       throw new ForbiddenException(
-        `Este reporte es de ${ORIGENES[origen].etiqueta.toLowerCase()} y tu rol no la incluye. Pedile acceso a quien administra la empresa.`,
+        `Este reporte es de ${ORIGENES[origen].etiqueta.toLowerCase()} y su rol no la incluye. Solicite acceso a quien administra la empresa.`,
       );
     }
   }
@@ -259,7 +259,7 @@ export class ArmadorService {
       resumen: [{ rotulo: 'Filas', valor: r.totalFilas, tipo: 'ENTERO' }],
       notas: r.truncado
         ? [
-            `Son ${r.totalFilas} filas y el archivo trae las primeras ${LIMITE_EXCEL}. Acota las fechas o agrega un filtro.`,
+            `Son ${r.totalFilas} filas y el archivo trae las primeras ${LIMITE_EXCEL}. Acote las fechas o agregue un filtro.`,
           ]
         : [],
       tablas: [
@@ -351,7 +351,7 @@ export class ArmadorService {
     this.exigirOrigen(ctx, actual.origen);
     if (cambios.definicion && cambios.definicion.origen !== actual.origen) {
       throw new BadRequestException(
-        'Un reporte guardado no cambia de origen. Guárdalo como uno nuevo.',
+        'Un reporte guardado no cambia de origen. Guárdelo como uno nuevo.',
       );
     }
     await this.conNombreUnico(() =>
@@ -402,7 +402,7 @@ export class ArmadorService {
       const pg = e as { code?: string; driverError?: { code?: string } };
       if ((pg.code ?? pg.driverError?.code) === '57014') {
         throw new BadRequestException(
-          `La consulta tardó más de ${TIEMPO_MAXIMO.replace('s', ' segundos')} y se cortó. Acota las fechas o agrega un filtro.`,
+          `La consulta tardó más de ${TIEMPO_MAXIMO.replace('s', ' segundos')} y se cortó. Acote las fechas o agregue un filtro.`,
         );
       }
       throw e;
@@ -416,7 +416,7 @@ export class ArmadorService {
       const pg = e as { code?: string; driverError?: { code?: string } };
       if ((pg.code ?? pg.driverError?.code) === '23505') {
         throw new ConflictException(
-          'Ya hay un reporte guardado con ese nombre. Elige otro.',
+          'Ya hay un reporte guardado con ese nombre. Elija otro.',
         );
       }
       throw e;

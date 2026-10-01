@@ -295,6 +295,6 @@ describe('NotaDebitoService.crear', () => {
           { productoId: 'p-flete', cantidad: 1, precioUnitario: 50000 },
         ],
       }),
-    ).rejects.toThrow(/No repitas el mismo producto/);
+    ).rejects.toThrow(/No repita el mismo producto/);
   });
 });

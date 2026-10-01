@@ -630,7 +630,7 @@ describe('CompraService.crear', () => {
         formaPago: 'CREDITO',
         lineas: [lineaBase, lineaBase],
       }),
-    ).rejects.toThrow(/No repitas el mismo producto/);
+    ).rejects.toThrow(/No repita el mismo producto/);
   });
 
   it('rechaza si el período está cerrado', async () => {
@@ -1300,7 +1300,7 @@ describe('CompraService.anular', () => {
     const intento = servicio.anular(ctx, 'c-1', 'Factura duplicada');
     await expect(intento).rejects.toThrow(ConflictException);
     await expect(intento).rejects.toThrow(
-      'Esta compra tiene la nota crédito NC-77 viva: anulala primero.',
+      'Esta compra tiene la nota crédito NC-77 viva: anúlela primero.',
     );
     // Nada se tocó: ni el asiento, ni el kardex, ni la retención.
     expect(anularAsiento).not.toHaveBeenCalled();
@@ -1327,7 +1327,7 @@ describe('CompraService.anular', () => {
     );
 
     await expect(servicio.anular(ctx, 'c-1', 'Motivo')).rejects.toThrow(
-      'Esta compra tiene vivas la nota débito ND-3 y la nota crédito NC-77: anulalas primero.',
+      'Esta compra tiene vivas la nota débito ND-3 y la nota crédito NC-77: anúlelas primero.',
     );
   });
 

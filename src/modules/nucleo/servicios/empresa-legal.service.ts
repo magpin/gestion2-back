@@ -141,7 +141,7 @@ export class EmpresaLegalService {
         Number(actual.tarifa_ica_por_mil) <= 30
       ) {
         throw new BadRequestException(
-          'Esa actividad ya tiene tarifa de ICA. Para cambiarla, cerrala y abrila con la tarifa nueva.',
+          'Esa actividad ya tiene tarifa de ICA. Para cambiarla, ciérrela y ábrala con la tarifa nueva.',
         );
       }
       await t.query(

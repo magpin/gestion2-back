@@ -29,9 +29,9 @@ export function mensajeNotasVivas(
   notas: readonly NotaViva[],
 ): string {
   if (notas.length === 1) {
-    return `Esta ${documento} tiene ${nombre(notas[0])} viva: anulala primero.`;
+    return `Esta ${documento} tiene ${nombre(notas[0])} viva: anúlela primero.`;
   }
   const nombres = notas.map(nombre);
   const lista = `${nombres.slice(0, -1).join(', ')} y ${nombres[nombres.length - 1]}`;
-  return `Esta ${documento} tiene vivas ${lista}: anulalas primero.`;
+  return `Esta ${documento} tiene vivas ${lista}: anúlelas primero.`;
 }

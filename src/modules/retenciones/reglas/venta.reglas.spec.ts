@@ -162,7 +162,7 @@ describe('faltaCuentaAutorretencion (bug #13)', () => {
       { cuenta_id: null, cuenta_activo_id: 'a' },
       'RENTA',
     );
-    expect(texto).toContain('te falta la cuenta 236575');
+    expect(texto).toContain('le falta la cuenta 236575');
     expect(texto).not.toContain('135515');
     expect(texto).not.toContain(' o la ');
   });
@@ -172,13 +172,13 @@ describe('faltaCuentaAutorretencion (bug #13)', () => {
       { cuenta_id: 'p', cuenta_activo_id: null },
       'RENTA',
     );
-    expect(texto).toContain('te falta la cuenta 135515');
+    expect(texto).toContain('le falta la cuenta 135515');
     expect(texto).not.toContain('236575');
   });
 
   it('sin enlace faltan las dos', () => {
     expect(faltaCuentaAutorretencion(null, 'RENTA')).toContain(
-      'te faltan las cuentas 236575 (autorretenciones) y 135515',
+      'le faltan las cuentas 236575 (autorretenciones) y 135515',
     );
   });
 

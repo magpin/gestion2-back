@@ -90,7 +90,7 @@ class NoSePudo extends Error {}
 class PropuestaVencida extends ConflictException {
   constructor() {
     super(
-      'Esa propuesta venció: pasaron más de 24 horas. Pedile al asistente que la arme de nuevo.',
+      'Esa propuesta venció: pasaron más de 24 horas. Pídale al asistente que la arme de nuevo.',
     );
   }
 }
@@ -213,7 +213,7 @@ export class PropuestasService {
         const p = await this.bloquear(ctx, id, t);
         if (!puedeHacer(ctx.roles, p.accion)) {
           throw new ForbiddenException(
-            'Tu rol no puede registrar esto. Pídeselo a quien tenga caja.',
+            'Su rol no puede registrar esto. Solicítelo a quien tenga caja.',
           );
         }
         const cuerpo = correccion ?? p.cuerpo;
@@ -392,7 +392,7 @@ export class PropuestasService {
     }
     if (compras.length > 1) {
       throw new NoSePudo(
-        `Hay ${compras.length} compras con el número «${numero}» (${compras.map((c) => c.proveedor).join(', ')}). Decí de qué proveedor.`,
+        `Hay ${compras.length} compras con el número «${numero}» (${compras.map((c) => c.proveedor).join(', ')}). Indique de qué proveedor.`,
       );
     }
     const [compra] = compras;
@@ -455,7 +455,7 @@ export class PropuestasService {
       'Falló una propuesta',
       e instanceof Error ? e.stack : String(e),
     );
-    return 'La verificación falló. Probá de nuevo en un rato.';
+    return 'La verificación falló. Intente de nuevo en un momento.';
   }
 }
 

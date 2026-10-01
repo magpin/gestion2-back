@@ -612,7 +612,7 @@ export const CONCEPTOS_INICIALES: ConceptoInicial[] = [
     grupo: 'Créditos',
     nombre: 'Abono a capital de créditos',
     cuenta: '210510',
-    nombreCuenta: 'Pagarés',
+    nombreCuenta: 'Pagarés', // voseo-ok: sustantivo
     exigeTercero: true,
     tipoFlujo: 'FINANCIACION',
     pistas: ['cuota', 'crédito', 'abono a capital', 'préstamo'],
@@ -623,7 +623,7 @@ export const CONCEPTOS_INICIALES: ConceptoInicial[] = [
     grupo: 'Créditos',
     nombre: 'Préstamo recibido',
     cuenta: '210510',
-    nombreCuenta: 'Pagarés',
+    nombreCuenta: 'Pagarés', // voseo-ok: sustantivo
     exigeTercero: true,
     tipoFlujo: 'FINANCIACION',
     pistas: ['desembolso', 'préstamo'],

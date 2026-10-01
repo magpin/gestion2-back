@@ -32,7 +32,7 @@ describe('cartera.reglas', () => {
   });
 
   describe('validarRecibo', () => {
-    it('suma la plata al centavo: abonos más anticipo, menos la comisión', () => {
+    it('suma el dinero al centavo: abonos más anticipo, menos la comisión', () => {
       expect(
         validarRecibo(
           [

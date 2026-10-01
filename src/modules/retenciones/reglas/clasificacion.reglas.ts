@@ -376,8 +376,8 @@ export function clasificar(
       origen: 'CONFIRMADO',
       certeza: 'CLARA',
       razon: aprendido.deEsteProveedor
-        ? `A ${contexto.nombreProveedor}, por esto, ya me dijiste ${nombre}.`
-        : `Por esto ya me dijiste ${nombre}.`,
+        ? `A ${contexto.nombreProveedor}, por esto, ya me dijo ${nombre}.`
+        : `Por esto ya me dijo ${nombre}.`,
     };
   }
 
@@ -457,6 +457,6 @@ export function clasificar(
     concepto: null,
     origen: null,
     certeza: 'PREGUNTA',
-    razon: 'No sé qué concepto de retención es. ¿Me decís cuál?',
+    razon: 'No sé qué concepto de retención es. ¿Me indica cuál?',
   };
 }

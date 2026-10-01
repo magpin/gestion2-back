@@ -251,6 +251,6 @@ export class ConsultasService {
       `Falló la consulta ${nombre}`,
       e instanceof Error ? e.stack : String(e),
     );
-    return 'La consulta falló. Probá de nuevo en un rato.';
+    return 'La consulta falló. Intente de nuevo en un momento.';
   }
 }

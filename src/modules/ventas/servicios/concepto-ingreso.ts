@@ -18,12 +18,12 @@ export async function cuentaDeIngreso(
   const concepto = await nucleo.concepto(ctx, conceptoId, t);
   if (!concepto.activo || concepto.automatico || concepto.tipo !== 'INGRESO') {
     throw new BadRequestException(
-      `«${concepto.nombre}» no sirve para una línea de venta: elegí un concepto de ingreso.`,
+      `«${concepto.nombre}» no sirve para una línea de venta: elija un concepto de ingreso.`,
     );
   }
   if (concepto.cuenta === null || !concepto.cuenta.codigo.startsWith('4')) {
     throw new BadRequestException(
-      `«${concepto.nombre}» no tiene una cuenta de ingreso. Elegila en Contabilidad → Conceptos.`,
+      `«${concepto.nombre}» no tiene una cuenta de ingreso. Elíjala en Contabilidad → Conceptos.`,
     );
   }
   return { conceptoId: concepto.id, cuentaId: concepto.cuenta.id };

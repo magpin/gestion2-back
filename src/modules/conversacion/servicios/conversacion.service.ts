@@ -210,7 +210,7 @@ export class ConversacionService {
     const id = await this.tx.enContexto(ctx, (t) => this.idVigente(ctx, t));
     if (id !== null && this.enCurso.has(id)) {
       throw new ConflictException(
-        'Esperá a que termine la respuesta para empezar otra conversación.',
+        'Espere a que termine la respuesta para empezar otra conversación.',
       );
     }
     await this.tx.enContexto(ctx, (t) =>
@@ -225,7 +225,7 @@ export class ConversacionService {
   async preparar(ctx: CtxEmpresa, texto: string): Promise<TurnoPreparado> {
     const pregunta = texto.trim();
     if (pregunta === '') {
-      throw new BadRequestException('Escribí una pregunta.');
+      throw new BadRequestException('Escriba una pregunta.');
     }
     if (!this.conversador.disponible) {
       throw new HttpException(
@@ -240,7 +240,7 @@ export class ConversacionService {
       !this.ventana.permitir(`${ctx.empresaId}:${ctx.usuarioId}`, Date.now())
     ) {
       throw new HttpException(
-        'Estás preguntando muy seguido. Esperá un minuto y seguí.',
+        'Está preguntando muy seguido. Espere un minuto y siga.',
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
@@ -254,7 +254,7 @@ export class ConversacionService {
         const conversacionId = await this.vigenteBloqueada(ctx, t);
         if (this.enCurso.has(conversacionId)) {
           throw new ConflictException(
-            'Todavía estoy contestando lo anterior. Esperá a que termine.',
+            'Todavía estoy contestando lo anterior. Espere a que termine.',
           );
         }
         this.enCurso.add(conversacionId);
@@ -263,7 +263,7 @@ export class ConversacionService {
         const turnos = await this.turnos(conversacionId, t);
         if (superaTope(ultimoUso(turnos))) {
           throw new ConflictException(
-            'Esta conversación ya es muy larga para seguirla. Empezá una nueva: lo conversado queda guardado.',
+            'Esta conversación ya es muy larga para seguirla. Empiece una nueva: lo conversado queda guardado.',
           );
         }
 
@@ -383,7 +383,7 @@ export class ConversacionService {
     );
     if (c === undefined) {
       throw new ConflictException(
-        'No pude abrir la conversación. Probá de nuevo.',
+        'No pude abrir la conversación. Intente de nuevo.',
       );
     }
     return c.id;

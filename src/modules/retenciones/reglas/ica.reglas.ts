@@ -170,7 +170,7 @@ export function calcularIca(
   if (ctx.agenteEn.size === 0) {
     return vacio(
       'NO_SUJETO',
-      'No retengo ICA: tu empresa no es agente de retención de ICA en ningún municipio.',
+      'No retengo ICA: la empresa no es agente de retención de ICA en ningún municipio.',
     );
   }
   if (ctx.beneficiarioSimple) {
@@ -209,7 +209,7 @@ export function calcularIca(
     const param = ctx.parametro(municipio);
     if (param === null) {
       avisos.push(
-        `No tengo los parámetros de ReteICA de ${nombre} para ${ctx.fecha.slice(0, 4)}: no la calculo. Pedile al administrador que los cargue con su acuerdo.`,
+        `No tengo los parámetros de ReteICA de ${nombre} para ${ctx.fecha.slice(0, 4)}: no la calculo. Solicite al administrador que los cargue con su acuerdo.`,
       );
       continue;
     }
@@ -344,7 +344,7 @@ export function calcularIca(
 
     if (tarifaPorMil === null) {
       avisos.push(
-        `No tengo la tarifa de ReteICA de ${nombre} para la actividad del proveedor: no la calculo. Cargá su actividad en su ficha, o pedí la tarifa al administrador.`,
+        `No tengo la tarifa de ReteICA de ${nombre} para la actividad del proveedor: no la calculo. Cargue la actividad del proveedor en su ficha, o solicite la tarifa al administrador.`,
       );
       continue;
     }

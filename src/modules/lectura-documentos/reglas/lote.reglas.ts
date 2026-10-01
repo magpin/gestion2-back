@@ -403,12 +403,12 @@ export function motivoNoSeLee(
   }
   if (!permitido) {
     return analisis.tipo === 'FACTURA_COMPRA'
-      ? 'Es una factura de compra, y registrar compras no te toca: se la pasás a quien las registra.'
+      ? 'Es una factura de compra, y registrar compras no le corresponde: entréguela a quien las registra.'
       : analisis.tipo === 'PEDIDO_VENTA'
-        ? 'Es un pedido de cliente, y facturar no te toca: se lo pasás a quien factura.'
+        ? 'Es un pedido de cliente, y facturar no le corresponde: entrégueselo a quien factura.'
         : analisis.tipo === 'VENTA_HISTORICA'
-          ? 'Son ventas del sistema anterior, y cargarlas no te toca: se las pasás al contador.'
-          : 'Es un documento de la configuración de la empresa, y configurarla no te toca.';
+          ? 'Son ventas del sistema anterior, y cargarlas no le corresponde: entrégueselas al contador.'
+          : 'Es un documento de la configuración de la empresa, y configurarla no le corresponde.';
   }
   return null;
 }

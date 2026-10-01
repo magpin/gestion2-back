@@ -217,7 +217,7 @@ export class TarifaIcaDto {
   // escribió «8.000» queriendo decir 8.
   @Max(30, {
     message:
-      'La tarifa de ICA va por mil y ninguna pasa de 30. Si es 8 por mil, escribí 8.',
+      'La tarifa de ICA va por mil y ninguna pasa de 30. Si es 8 por mil, escriba 8.',
   })
   tarifaIcaPorMil!: number;
 }

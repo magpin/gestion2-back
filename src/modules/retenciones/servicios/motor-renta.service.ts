@@ -306,7 +306,7 @@ export class MotorRentaService {
 
     if (propuesta.decision === 'REVISION') {
       throw new BadRequestException(
-        `${propuesta.motivo} Completalo, o registrá la compra «sin retención» con el motivo.`,
+        `${propuesta.motivo} Complételo, o registre la compra «sin retención» con el motivo.`,
       );
     }
     if (propuesta.pendientes > 0) {
@@ -349,7 +349,7 @@ export class MotorRentaService {
     for (const r of propuesta.retenciones) {
       if (r.cuentaId === null) {
         throw new BadRequestException(
-          `No tenés la cuenta donde va la ${r.nombre.toLowerCase()}. Se crea sola en el plan de cuentas cuando sos agente de ese impuesto.`,
+          `No tiene la cuenta donde va la ${r.nombre.toLowerCase()}. Se crea sola en el plan de cuentas cuando es agente de ese impuesto.`,
         );
       }
       const [fila] = filas<{ id: string }>(
@@ -1160,7 +1160,7 @@ export class MotorRentaService {
               origen: null,
               certeza: 'PREGUNTA' as const,
               razon:
-                'Es un pago al exterior: decime qué concepto del exterior es.',
+                'Es un pago al exterior: indíqueme qué concepto del exterior es.',
               opciones: undefined,
               alternativas: undefined,
             }
@@ -1360,7 +1360,7 @@ export class MotorRentaService {
         doc.aportesSeguridadSocial > 0
       )
         ? [
-            `A ${tercero} le calculo por la tabla del art. 383 sin restarle aportes a salud y pensión. Si te dio su planilla, escribí el valor: baja la retención.`,
+            `A ${tercero} le calculo por la tabla del art. 383 sin restarle aportes a salud y pensión. Si le dio su planilla, escriba el valor: baja la retención.`,
           ]
         : []),
       ...(resultadoIca?.avisos ?? []),

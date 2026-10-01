@@ -145,11 +145,11 @@ export class ErrorPostgresFilter implements ExceptionFilter {
       uq_resolucion_numero: 'Esa resolucion ya esta registrada.',
       uq_producto_codigo: 'Ya existe un producto con ese codigo.',
       uq_venta_documento_leido:
-        'Este pedido ya se facturo. Anula esa factura si hay que volver a hacerla.',
+        'Este pedido ya se facturo. Anule esa factura si hay que volver a hacerla.',
       ux_caja_principal_por_sede:
         'Ya hay una caja principal activa en esa sede.',
       ux_arqueo_abierto:
-        'Ya hay un arqueo abierto para esta caja. Cerralo antes de abrir uno nuevo.',
+        'Ya hay un arqueo abierto para esta caja. Ciérrelo antes de abrir uno nuevo.',
       uq_cuenta_bancaria_numero:
         'Ya existe una cuenta bancaria con ese banco y número.',
       uq_cuenta_bancaria_cuenta:

@@ -367,7 +367,7 @@ export class ReciboCajaService {
     const productosAnticipo = dto.productosAnticipo ?? [];
     if ((dto.anticipo ?? 0) > 0 && productosAnticipo.length === 0) {
       throw new BadRequestException(
-        'Un anticipo dice para qué productos es. Regístralo desde Anticipos.',
+        'Un anticipo dice para qué productos es. Regístrelo desde Anticipos.',
       );
     }
     if (productosAnticipo.length > 0 && !((dto.anticipo ?? 0) > 0)) {
@@ -583,7 +583,7 @@ export class ReciboCajaService {
     );
     if (concepto.cuenta === null) {
       throw new BadRequestException(
-        'El concepto de descuentos por pronto pago no tiene cuenta: elegila en Contabilidad → Conceptos.',
+        'El concepto de descuentos por pronto pago no tiene cuenta: elíjala en Contabilidad → Conceptos.',
       );
     }
     const cartera = await this.nucleo.cuenta(ctx, CODIGO_CARTERA, t);
@@ -688,7 +688,7 @@ export class ReciboCajaService {
           );
           if (Number(cruces?.n ?? 0) > 0) {
             throw new BadRequestException(
-              'El anticipo de este recibo ya se aplicó a una factura o se devolvió: anulá primero ese cruce o esa devolución.',
+              'El anticipo de este recibo ya se aplicó a una factura o se devolvió: anule primero ese cruce o esa devolución.',
             );
           }
           await this.tesoreria.anularPorConcepto(

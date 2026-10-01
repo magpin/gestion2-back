@@ -80,7 +80,7 @@ export function verificarPuedeAbrirArqueo(
     return {
       ok: false,
       motivo:
-        'Ya hay un arqueo abierto para esta caja. Cerralo antes de abrir uno nuevo.',
+        'Ya hay un arqueo abierto para esta caja. Ciérrelo antes de abrir uno nuevo.',
     };
   }
   return { ok: true };
@@ -198,7 +198,7 @@ export const CONCEPTOS_ARQUEO: Record<ConceptoArqueo, DefinicionConcepto> = {
     nombreCuenta: 'Sobrantes de caja',
     etiqueta: 'Sobrante de caja',
     explicacion:
-      'Plata de más al contar la caja: un ingreso que no se registró.',
+      'Dinero de más al contar la caja: un ingreso que no se registró.',
     columna: 'cuenta_sobrante_id',
   },
   FALTANTE_COBRABLE: {
@@ -207,7 +207,7 @@ export const CONCEPTOS_ARQUEO: Record<ConceptoArqueo, DefinicionConcepto> = {
     nombreCuenta: 'Faltantes de caja por cobrar',
     etiqueta: 'Faltante de caja cobrable al responsable',
     explicacion:
-      'Plata de menos que paga quien respondía por la caja: queda como cuenta por cobrar a esa persona.',
+      'Dinero de menos que paga quien respondía por la caja: queda como cuenta por cobrar a esa persona.',
     exigeTercero: true,
     columna: 'cuenta_faltante_cobrable_id',
   },
@@ -216,7 +216,7 @@ export const CONCEPTOS_ARQUEO: Record<ConceptoArqueo, DefinicionConcepto> = {
     codigoCrear: '531595',
     nombreCuenta: 'Faltantes de caja asumidos',
     etiqueta: 'Faltante de caja asumido por la empresa',
-    explicacion: 'Plata de menos que la empresa asume como gasto.',
+    explicacion: 'Dinero de menos que la empresa asume como gasto.',
     columna: 'cuenta_faltante_asumido_id',
   },
 };
@@ -250,7 +250,7 @@ export function conceptoDelAjuste(
     return {
       ok: false,
       motivo:
-        'Hay un faltante: indica si lo asume la empresa o lo paga el responsable de la caja.',
+        'Hay un faltante: indique si lo asume la empresa o lo paga el responsable de la caja.',
     };
   }
   return {
@@ -271,9 +271,9 @@ export function problemaCuentaDeCaja(
   cuenta: { codigo: string; activa: boolean; esAuxiliar: boolean },
 ): string | null {
   if (!cuenta.activa)
-    return `La cuenta ${cuenta.codigo} está inactiva. Actívala en Plan de cuentas.`;
+    return `La cuenta ${cuenta.codigo} está inactiva. Actívela en Plan de cuentas.`;
   if (!cuenta.esAuxiliar)
-    return `La cuenta ${cuenta.codigo} agrupa otras y no recibe asientos: elegí uno de sus auxiliares o creá uno.`;
+    return `La cuenta ${cuenta.codigo} agrupa otras y no recibe asientos: elija uno de sus auxiliares o cree uno.`;
   const prefijo = tipo === 'MENOR' ? '110510' : '1105';
   if (!cuenta.codigo.startsWith(prefijo))
     return tipo === 'MENOR'

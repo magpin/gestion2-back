@@ -167,7 +167,7 @@ export class MovimientoConceptoService {
           }
           if (concepto.cuenta === null) {
             throw new BadRequestException(
-              `El concepto «${concepto.nombre}» no tiene cuenta: elegila en Contabilidad → Conceptos.`,
+              `El concepto «${concepto.nombre}» no tiene cuenta: elíjala en Contabilidad → Conceptos.`,
             );
           }
           const direccion = problemaDeDireccion(concepto.tipo, datos.direccion);
@@ -183,7 +183,7 @@ export class MovimientoConceptoService {
               !admiteSinFactura(concepto.tipo, concepto.cuenta.codigo)
             ) {
               throw new BadRequestException(
-                `«${concepto.nombre}» se paga con factura o documento soporte, y lleva retención: registralo en Compras.`,
+                `«${concepto.nombre}» se paga con factura o documento soporte, y lleva retención: regístrelo en Compras.`,
               );
             }
           }
@@ -226,7 +226,7 @@ export class MovimientoConceptoService {
         let movimiento: { id: string; asiento_id: string | null };
         if (datos.medio === 'CAJA') {
           if (datos.cajaId === undefined)
-            throw new BadRequestException('Elegí la caja.');
+            throw new BadRequestException('Elija la caja.');
           movimiento = await this.cajas.registrarConContrapartidas(
             ctx,
             datos.cajaId,
@@ -242,7 +242,7 @@ export class MovimientoConceptoService {
           );
         } else {
           if (datos.cuentaBancariaId === undefined) {
-            throw new BadRequestException('Elegí la cuenta bancaria.');
+            throw new BadRequestException('Elija la cuenta bancaria.');
           }
           movimiento = await this.bancos.registrarConContrapartidas(
             ctx,
@@ -330,12 +330,12 @@ export class MovimientoConceptoService {
         if (datos.retencion != null) {
           if (datos.direccion === 'SALIDA') {
             throw new BadRequestException(
-              'La retención que te practican va en una entrada. En un pago, la practicás vos: eso va por Compras.',
+              'La retención que le practican va en una entrada. En un pago, la practica usted: eso va por Compras.',
             );
           }
           if (!datos.terceroId) {
             throw new BadRequestException(
-              'Decí quién te retuvo: la retención va a su nombre para el certificado.',
+              'Indique quién le retuvo: la retención va a su nombre para el certificado.',
             );
           }
           const c = CUENTA_SUFRIDA[datos.retencion.tipo];

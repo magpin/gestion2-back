@@ -414,7 +414,7 @@ describe('VentaDocumentoService.crearCotizacion', () => {
         fecha: '2026-09-07',
         lineas: [{ productoId: 'p-1', cantidad: 1 }],
       }),
-    ).rejects.toThrow(/digitá el precio en la línea/);
+    ).rejects.toThrow(/digite el precio en la línea/);
   });
 
   it('usa el precio digitado en la línea cuando el producto no tiene precio de lista', async () => {
@@ -847,7 +847,7 @@ describe('VentaDocumentoService.anular', () => {
     const intento = servicio.anular(ctx, 'fv-1', 'Error de digitación');
     await expect(intento).rejects.toThrow(ConflictException);
     await expect(intento).rejects.toThrow(
-      'Esta factura tiene la nota crédito NC-5 viva: anulala primero.',
+      'Esta factura tiene la nota crédito NC-5 viva: anúlela primero.',
     );
     // Nada se tocó: ni el asiento, ni la autorretención, ni el documento.
     expect(anularAsiento).not.toHaveBeenCalled();
@@ -873,7 +873,7 @@ describe('VentaDocumentoService.anular', () => {
     );
 
     await expect(servicio.anular(ctx, 'fv-1', 'motivo')).rejects.toThrow(
-      'Esta factura tiene vivas la nota crédito NC-5 y la nota débito ND-2: anulalas primero.',
+      'Esta factura tiene vivas la nota crédito NC-5 y la nota débito ND-2: anúlelas primero.',
     );
   });
 
@@ -1384,7 +1384,9 @@ describe('VentaDocumentoService.devolverCobro', () => {
       ctx,
       expect.objectContaining({
         valor: 400,
-        concepto: expect.stringMatching(/4×1000, lo asume el cliente$/),
+        concepto: expect.stringMatching(
+          /4×1000, lo asume el cliente$/,
+        ) as unknown,
       }),
       expect.anything(),
     );

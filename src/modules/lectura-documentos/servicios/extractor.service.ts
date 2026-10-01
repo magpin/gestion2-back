@@ -153,7 +153,7 @@ export class ExtractorService {
   async detener(ctx: CtxEmpresa, documento: Documento): Promise<boolean> {
     if (this.progreso.detener(documento.id)) return true;
     const motivo =
-      'La lectura se interrumpió antes de terminar. Subí el archivo de nuevo.';
+      'La lectura se interrumpió antes de terminar. Suba el archivo de nuevo.';
     await this.documentos.marcarFallo(ctx, documento.id, {
       clase: 'DETENIDO',
       motivo,
@@ -338,7 +338,7 @@ export class ExtractorService {
           {
             sobre: 'cruce',
             texto:
-              'Leí la factura pero no pude buscar el proveedor ni los productos. Probá de nuevo.',
+              'Leí la factura pero no pude buscar el proveedor ni los productos. Intente de nuevo.',
           },
         ],
         completa: false,
@@ -440,7 +440,7 @@ export class ExtractorService {
           {
             sobre: 'cruce',
             texto:
-              'Leí el pedido pero no pude buscar el cliente ni los productos. Probá de nuevo.',
+              'Leí el pedido pero no pude buscar el cliente ni los productos. Intente de nuevo.',
           },
         ],
         completa: false,
@@ -521,7 +521,7 @@ export class ExtractorService {
           {
             sobre: 'cruce',
             texto:
-              'Leí las facturas pero no pude buscar los clientes ni los productos. Probá de nuevo.',
+              'Leí las facturas pero no pude buscar los clientes ni los productos. Intente de nuevo.',
           },
         ],
       },
@@ -549,13 +549,13 @@ export class ExtractorService {
     try {
       await this.documentos.marcarFallo(ctx, documento.id, {
         clase: 'FALLA',
-        motivo: 'No pude leer el documento. Probá de nuevo.',
+        motivo: 'No pude leer el documento. Intente de nuevo.',
       });
       this.progreso.emitir(ctx.empresaId, {
         etapa: 'ERROR',
         documento: documento.tipo,
         documentoId: documento.id,
-        mensaje: 'No pude leer el documento. Probá de nuevo.',
+        mensaje: 'No pude leer el documento. Intente de nuevo.',
         datos: [],
       });
     } catch (error: unknown) {
@@ -599,12 +599,12 @@ function exigirRolPara(ctx: CtxEmpresa, tipo: TipoDocumento): void {
   if (puedeMandarALeer(ctx, tipo)) return;
   throw new ForbiddenException(
     tipo === 'FACTURA_COMPRA'
-      ? 'No tenés permiso para registrar compras.'
+      ? 'No tiene permiso para registrar compras.'
       : tipo === 'PEDIDO_VENTA'
-        ? 'No tenés permiso para facturar.'
+        ? 'No tiene permiso para facturar.'
         : tipo === 'VENTA_HISTORICA'
-          ? 'No tenés permiso para cargar ventas anteriores.'
-          : 'No tenés permiso para configurar la empresa.',
+          ? 'No tiene permiso para cargar ventas anteriores.'
+          : 'No tiene permiso para configurar la empresa.',
   );
 }
 

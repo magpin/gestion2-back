@@ -122,7 +122,7 @@ export class NucleoApi {
 
     if (responsable && noResponsable) {
       throw new ConflictException(
-        'La empresa figura a la vez como responsable y como no responsable de IVA. Cerrá una de las dos condiciones antes de facturar.',
+        'La empresa figura a la vez como responsable y como no responsable de IVA. Cierre una de las dos condiciones antes de facturar.',
       );
     }
 

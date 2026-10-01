@@ -209,7 +209,7 @@ export function armarTablero(e: EntradaTablero): Tablero {
                 ) / 10,
         };
 
-  const plata = r2(e.lugares.reduce((t, l) => t + l.saldo, 0));
+  const plata = r2(e.lugares.reduce((t, l) => t + l.saldo, 0)); // voseo-ok: nombre de código
   const semana = dias.map((dia) => ({
     dia,
     entra: r2(entra.get(dia)!),
@@ -218,7 +218,7 @@ export function armarTablero(e: EntradaTablero): Tablero {
 
   return {
     hoy: e.hoy,
-    plataHoy: { total: plata, lugares: e.lugares },
+    plataHoy: { total: plata, lugares: e.lugares }, // voseo-ok: nombre de código
     teDeben: {
       total: e.cartera.total,
       facturas: e.cartera.facturas,
@@ -235,7 +235,7 @@ export function armarTablero(e: EntradaTablero): Tablero {
     },
     semana,
     resultadoMes,
-    alertas: alertas(e, compras, plata, semana),
+    alertas: alertas(e, compras, plata, semana), // voseo-ok: nombre de código
   };
 }
 
@@ -273,13 +273,13 @@ export function diaEnPalabras(fecha: string, hoy: string): string {
 function alertas(
   e: EntradaTablero,
   compras: Array<CompraPendiente & { proveedor: string }>,
-  plata: number,
+  plata: number, // voseo-ok: nombre de código
   semana: Tablero['semana'],
 ): Alerta[] {
   const salida: Alerta[] = [];
 
   // 1. La plata no alcanza para lo que vence en la semana.
-  let saldo = plata;
+  let saldo = plata; // voseo-ok: nombre de código
   let faltante: { dia: string; saldo: number } | null = null;
   for (const d of semana) {
     saldo = r2(saldo + d.entra - d.sale);
@@ -289,7 +289,7 @@ function alertas(
     salida.push({
       clave: 'faltante',
       partes: [
-        `Con lo que vence, ${diaEnPalabras(faltante.dia, e.hoy)} la plata no alcanza: faltarían `,
+        `Con lo que vence, ${diaEnPalabras(faltante.dia, e.hoy)} el dinero no alcanza: faltarían `,
         -faltante.saldo,
         '.',
       ],
@@ -331,7 +331,7 @@ function alertas(
     salida.push({
       clave: `descuento:${descuento.id}`,
       partes: [
-        `Si le pagás a ${descuento.proveedor} hasta ${diaEnPalabras(descuento.descuentoHasta!, e.hoy)}, te ahorrás `,
+        `Si le paga a ${descuento.proveedor} hasta ${diaEnPalabras(descuento.descuentoHasta!, e.hoy)}, se ahorra `,
         descuento.descuentoSugerido,
         '.',
       ],

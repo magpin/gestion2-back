@@ -192,7 +192,7 @@ export class PeriodoService {
         const abierto = await this.buscar(t, actual);
         if (abierto === null || abierto.estado !== 'ABIERTO') {
           throw new BadRequestException(
-            `El período ${etiquetaPeriodo(actual)} está cerrado y no hay dónde registrar. Reábrelo para seguir.`,
+            `El período ${etiquetaPeriodo(actual)} está cerrado y no hay dónde registrar. Reábralo para seguir.`,
           );
         }
         return {
@@ -550,7 +550,7 @@ export class PeriodoService {
 
     if (previo.estado !== 'CERRADO') {
       throw new BadRequestException(
-        `Cerra primero ${etiquetaPeriodo(anterior)}: el saldo inicial de ${etiquetaPeriodo(periodo)} sale de ahi y todavia puede cambiar.`,
+        `Cierre primero ${etiquetaPeriodo(anterior)}: el saldo inicial de ${etiquetaPeriodo(periodo)} sale de ahi y todavia puede cambiar.`,
       );
     }
   }

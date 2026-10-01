@@ -207,7 +207,7 @@ export class ProductoService {
         (await this.configuracion.cuentaDe(ctx, 'INVENTARIO', t));
       if (cuentaInventarioId === null) {
         throw new BadRequestException(
-          'La cuenta de inventario tiene varios auxiliares: elige uno en Plan de cuentas → Cuentas automáticas, o indícala en el producto.',
+          'La cuenta de inventario tiene varios auxiliares: elija uno en Plan de cuentas → Cuentas automáticas, o indíquela en el producto.',
         );
       }
       const cuentaCostoVentaId =

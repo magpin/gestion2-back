@@ -86,12 +86,12 @@ export class AnticipoRetencionService {
     const propuesta = await this.proponer(ctx, datos, t);
     if (propuesta.decision === 'REVISION') {
       throw new BadRequestException(
-        `${propuesta.motivo} Completalo antes de entregar el anticipo.`,
+        `${propuesta.motivo} Complételo antes de entregar el anticipo.`,
       );
     }
     if (propuesta.pendientes > 0) {
       throw new BadRequestException(
-        'Falta confirmar el concepto de retención del anticipo: elegilo antes de registrarlo.',
+        'Falta confirmar el concepto de retención del anticipo: elíjalo antes de registrarlo.',
       );
     }
 
@@ -100,7 +100,7 @@ export class AnticipoRetencionService {
       if (r.impuesto !== 'RENTA' || r.asumida || r.valor <= 0) continue;
       if (r.cuentaId === null) {
         throw new BadRequestException(
-          `No tenés la cuenta donde va la ${r.nombre.toLowerCase()}. Se crea sola cuando sos agente de ese impuesto.`,
+          `No tiene la cuenta donde va la ${r.nombre.toLowerCase()}. Se crea sola cuando es agente de ese impuesto.`,
         );
       }
       const creada = fila<{ id: string }>(

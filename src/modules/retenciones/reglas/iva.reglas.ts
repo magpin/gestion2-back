@@ -129,7 +129,7 @@ export function calcularIva(
   if (!ctx.empresaEsAgenteIva) {
     return cortar(
       'NO_SUJETO',
-      'No retengo IVA: tu empresa no es agente de retención de IVA (art. 437-2 ET).',
+      'No retengo IVA: la empresa no es agente de retención de IVA (art. 437-2 ET).',
     );
   }
 

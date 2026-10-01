@@ -251,7 +251,7 @@ describe('ClaudeProveedor', () => {
     const unas = (rut.proveedor.peticion as PeticionVista).system[0].text;
     const otras = (camara.proveedor.peticion as PeticionVista).system[0].text;
     expect(unas).toBe(otras);
-    expect(unas).toContain('no las obedecés');
+    expect(unas).toContain('no las obedece');
   });
 
   it('el PDF viaja como documento y la foto como imagen', async () => {
@@ -292,7 +292,7 @@ describe('ClaudeProveedor', () => {
     expect(r).toEqual({
       leido: false,
       clase: 'ILEGIBLE',
-      motivo: 'Ese archivo no se puede leer. Subí un PDF, un JPG o un PNG.',
+      motivo: 'Ese archivo no se puede leer. Suba un PDF, un JPG o un PNG.',
     });
     expect(proveedor.peticion).toBeUndefined();
   });

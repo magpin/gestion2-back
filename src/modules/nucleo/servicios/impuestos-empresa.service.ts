@@ -368,7 +368,7 @@ export class ImpuestosEmpresaService {
     const estado = await this.estado(ctx);
     const iva = estado.preguntas.find((p) => p.clave === 'IVA');
     if (iva?.respuesta === null) {
-      throw new BadRequestException('Falta contestar si tu empresa cobra IVA.');
+      throw new BadRequestException('Falta contestar si la empresa cobra IVA.');
     }
     const sinIca = estado.municipios.filter((m) => m.respuesta === null);
     if (sinIca.length > 0) {

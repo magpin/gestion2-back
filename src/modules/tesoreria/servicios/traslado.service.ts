@@ -438,7 +438,7 @@ export class TrasladoService {
     inactivaVale = false,
   ): Promise<ExtremoResuelto> {
     if (e.medio === 'CAJA') {
-      if (!e.cajaId) throw new BadRequestException('Elegí la caja.');
+      if (!e.cajaId) throw new BadRequestException('Elija la caja.');
       if (inactivaVale) {
         const k = fila<{ cuenta_id: string; nombre: string }>(
           await t.query('SELECT cuenta_id, nombre FROM caja WHERE id = $1', [
@@ -458,7 +458,7 @@ export class TrasladoService {
       return { medio: 'CAJA', id: e.cajaId, ...k, exentaGmf: false };
     }
     if (!e.cuentaBancariaId)
-      throw new BadRequestException('Elegí la cuenta bancaria.');
+      throw new BadRequestException('Elija la cuenta bancaria.');
     if (inactivaVale) {
       const b = fila<{
         cuenta_id: string;

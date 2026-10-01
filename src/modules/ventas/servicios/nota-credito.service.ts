@@ -358,7 +358,7 @@ export class NotaCreditoService {
       const original = porId.get(p.lineaOrigenId);
       if (original === undefined) {
         throw new BadRequestException(
-          'Una de las líneas que querés devolver no es de esta factura.',
+          'Una de las líneas que quiere devolver no es de esta factura.',
         );
       }
       const devolucion = calcularDevolucionPorLinea(

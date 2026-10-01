@@ -164,7 +164,7 @@ export class ExtractoReglaService {
           : null;
     if (exige !== null) {
       throw new BadRequestException(
-        `La cuenta de la regla exige ${exige}, y una regla registra sus líneas sin él. Elige otra auxiliar.`,
+        `La cuenta de la regla exige ${exige}, y una regla registra sus líneas sin él. Elija otra auxiliar.`,
       );
     }
   }

@@ -198,8 +198,8 @@ export function armarCuota(input: {
       ok: false,
       motivo:
         disponible <= 0
-          ? 'La renta no está causada en el libro (2404). Causala primero (5405 contra 2404) y cruzá las retenciones y el anticipo; después registrá el pago.'
-          : `En la 2404 quedan $ ${Math.round(disponible).toLocaleString('es-CO')} y la cuota es de $ ${Math.round(input.valor).toLocaleString('es-CO')}. Revisá que la renta esté causada completa antes de pagar.`,
+          ? 'La renta no está causada en el libro (2404). Cáusela primero (5405 contra 2404) y cruce las retenciones y el anticipo; después registre el pago.'
+          : `En la 2404 quedan $ ${Math.round(disponible).toLocaleString('es-CO')} y la cuota es de $ ${Math.round(input.valor).toLocaleString('es-CO')}. Revise que la renta esté causada completa antes de pagar.`,
     };
   }
   if (input.intereses > 0 && input.cuentaIntereses === null) {

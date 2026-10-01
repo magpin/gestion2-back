@@ -77,14 +77,14 @@ export function sugerirConcepto(input: {
     return {
       conceptoId: c.id,
       certeza: 'DEDUCIDA',
-      motivo: `Por «${pista}» en la descripción. Confirmalo vos.`,
+      motivo: `Por «${pista}» en la descripción. Confírmelo usted.`,
     };
   }
   if (masUsado) {
     return {
       conceptoId: masUsado[0],
       certeza: 'DEDUCIDA',
-      motivo: `La vez pasada este tercero fue a ${nombre(masUsado[0])}. Confirmalo vos.`,
+      motivo: `La vez pasada este tercero fue a ${nombre(masUsado[0])}. Confírmelo usted.`,
     };
   }
   if (candidatos.length > 1) {
@@ -94,13 +94,13 @@ export function sugerirConcepto(input: {
       motivo: `Puede ser ${candidatos
         .slice(0, 2)
         .map((x) => x.c.nombre)
-        .join(' o ')}. Elegí vos.`,
+        .join(' o ')}. Elija usted.`,
     };
   }
   return {
     conceptoId: null,
     certeza: 'NO_SE',
-    motivo: 'No sé a qué concepto va. Elegí vos.',
+    motivo: 'No sé a qué concepto va. Elija usted.',
   };
 }
 

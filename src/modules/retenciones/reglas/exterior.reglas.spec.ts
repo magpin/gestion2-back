@@ -63,7 +63,7 @@ describe('Pagos al exterior', () => {
   describe('avisoPagoExterior (bug #10)', () => {
     it('con convenio disponible manda al botón, no al contador', () => {
       const aviso = avisoPagoExterior(true);
-      expect(aviso).toContain('aplicá el convenio');
+      expect(aviso).toContain('aplique el convenio');
       expect(aviso).not.toContain('contador');
     });
 

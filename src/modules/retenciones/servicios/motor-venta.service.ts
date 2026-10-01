@@ -187,7 +187,7 @@ export class MotorVentaService {
             : null;
       if (porMil === null) {
         avisosIca.push(
-          `Sos autorretenedor de ICA en ${autoIca.nombre} y no tengo la tarifa de tu actividad para ${fecha.slice(0, 4)}: no la calculé. Pedile al administrador que cargue la ley de ICA de ese municipio.`,
+          `Es autorretenedor de ICA en ${autoIca.nombre} y no tengo la tarifa de la actividad de la empresa para ${fecha.slice(0, 4)}: no la calculé. Solicite al administrador que cargue la ley de ICA de ese municipio.`,
         );
       } else {
         const enlaceIca = await this.enlaceAutorretencion(t, ctx, 'RETEICA');
@@ -198,7 +198,7 @@ export class MotorVentaService {
           enlaceIca.cuenta_activo_id == null
         ) {
           throw new BadRequestException(
-            `Sos autorretenedor de ICA en ${autoIca.nombre} y ${faltaIca}`,
+            `Es autorretenedor de ICA en ${autoIca.nombre} y ${faltaIca}`,
           );
         }
         const cuentasIca = {

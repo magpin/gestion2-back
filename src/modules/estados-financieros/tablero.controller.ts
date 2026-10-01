@@ -18,8 +18,9 @@ export class TableroController {
    * resultado del mes solo va a quien ve los estados financieros.
    */
   @Roles('DIRECTOR', 'CONTADOR', 'CAJA', 'CONSULTA')
-  @Get('plata')
+  @Get('plata') // voseo-ok: nombre de código
   plata(@ActorEmpresa() ctx: CtxEmpresa) {
-    return this.tablero.plata(ctx);
+    // voseo-ok: nombre de código
+    return this.tablero.plata(ctx); // voseo-ok: nombre de código
   }
 }

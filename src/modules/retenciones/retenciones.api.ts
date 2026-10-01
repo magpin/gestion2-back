@@ -339,8 +339,8 @@ export class RetencionesApi {
     if (cuentaId === null) {
       throw new BadRequestException(
         datos.lado === 'NOS_RETIENEN'
-          ? `No tenés la cuenta donde va la retención «${concepto.nombre}» que te practican. Creala en el Plan de cuentas y se enlaza sola.`
-          : `No tenés la cuenta donde va la retención «${concepto.nombre}». Se crea sola cuando en Impuestos decís que sos agente de ese impuesto.`,
+          ? `No tiene la cuenta donde va la retención «${concepto.nombre}» que le practican. Créela en el Plan de cuentas y se enlaza sola.`
+          : `No tiene la cuenta donde va la retención «${concepto.nombre}». Se crea sola cuando en Impuestos indica que es agente de ese impuesto.`,
       );
     }
 
@@ -359,7 +359,7 @@ export class RetencionesApi {
           });
     if (foto === null || deLey === null) {
       throw new BadRequestException(
-        `No tengo la tarifa de ley de «${concepto.nombre}» para el ${datos.fecha}. Pedile al administrador del sistema que la cargue.`,
+        `No tengo la tarifa de ley de «${concepto.nombre}» para el ${datos.fecha}. Solicite al administrador del sistema que la cargue.`,
       );
     }
     const norma = deLey.norma;

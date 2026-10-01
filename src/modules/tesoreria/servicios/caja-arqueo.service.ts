@@ -181,7 +181,7 @@ export class CajaArqueoService {
               dto.responsableTerceroId ?? caja.responsable_tercero_id;
             if (responsableId === null) {
               throw new BadRequestException(
-                'Para cobrar el faltante, elige a quién: esta caja no tiene responsable.',
+                'Para cobrar el faltante, elija a quién: esta caja no tiene responsable.',
               );
             }
           }
@@ -190,7 +190,7 @@ export class CajaArqueoService {
         const cuentaAjusteId = await cuentaDeConcepto(t, ctx, ajuste.concepto);
         if (cuentaAjusteId === null) {
           throw new BadRequestException(
-            `Falta la cuenta de «${CONCEPTOS_ARQUEO[ajuste.concepto].etiqueta}»: elígela en Plan de cuentas → Cuentas automáticas.`,
+            `Falta la cuenta de «${CONCEPTOS_ARQUEO[ajuste.concepto].etiqueta}»: elíjala en Plan de cuentas → Cuentas automáticas.`,
           );
         }
         const movimientoId = randomUUID();

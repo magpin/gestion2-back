@@ -310,7 +310,7 @@ function bloqueBase(h: HechosPlan): CuentaSugerida[] {
       exigeCentroCosto: h.manejaCentroCosto,
       bloque: 'BASE',
       porque:
-        'La cuota de manejo y las comisiones del banco donde está la plata.',
+        'La cuota de manejo y las comisiones del banco donde está el dinero.',
     }),
   ];
 
@@ -348,7 +348,7 @@ function bloqueBase(h: HechosPlan): CuentaSugerida[] {
       nombre: 'Sobrantes de caja',
       codigoPuc: '429553',
       bloque: 'BASE',
-      porque: 'Plata de más en un arqueo: un ingreso que no se registró.',
+      porque: 'Dinero de más en un arqueo: un ingreso que no se registró.',
     }),
     cuenta({
       codigo: '136530',
@@ -357,14 +357,14 @@ function bloqueBase(h: HechosPlan): CuentaSugerida[] {
       exigeTercero: true,
       bloque: 'BASE',
       porque:
-        'Plata de menos que paga quien respondía por la caja: se le cobra a esa persona.',
+        'Dinero de menos que paga quien respondía por la caja: se le cobra a esa persona.',
     }),
     cuenta({
       codigo: '531595',
       nombre: 'Faltantes de caja asumidos',
       codigoPuc: '531595',
       bloque: 'BASE',
-      porque: 'Plata de menos que la empresa asume como gasto.',
+      porque: 'Dinero de menos que la empresa asume como gasto.',
     }),
   );
 
@@ -397,7 +397,7 @@ function bloquePatrimonio(h: HechosPlan): CuentaSugerida[] {
         nombre: 'Capital de personas naturales',
         bloque: 'PATRIMONIO',
         porque:
-          'Sos persona natural: tu capital va en una sola cuenta, sin acciones ni reservas.',
+          'Es persona natural: su capital va en una sola cuenta, sin acciones ni reservas.',
       }),
     );
   } else if (
@@ -426,7 +426,7 @@ function bloquePatrimonio(h: HechosPlan): CuentaSugerida[] {
         codigoPuc: '320505',
         bloque: 'PATRIMONIO',
         porque:
-          'Sociedad por acciones: lo pagado por encima del valor nominal va acá.',
+          'Sociedad por acciones: lo pagado por encima del valor nominal va aquí.',
       }),
       cuenta({
         codigo: '330505',
@@ -483,7 +483,7 @@ function bloquePatrimonio(h: HechosPlan): CuentaSugerida[] {
     libre('3705', '05', {
       nombre: 'Utilidades acumuladas de ejercicios anteriores',
       bloque: 'PATRIMONIO',
-      porque: 'Lo que no se distribuyó al cierre pasa acá y se arrastra.',
+      porque: 'Lo que no se distribuyó al cierre pasa aquí y se arrastra.',
     }),
     libre('3710', '05', {
       nombre: 'Pérdidas acumuladas de ejercicios anteriores',
@@ -525,7 +525,7 @@ function bloqueImpuestos(
       hecho: 'REGIMEN_TRIBUTARIO',
       etiqueta: 'Condición tributaria',
       impide:
-        'No se puede proponer ninguna cuenta de impuestos: IVA, retención en la fuente, reteIVA ni ICA. Contestá el paso Impuestos.',
+        'No se puede proponer ninguna cuenta de impuestos: IVA, retención en la fuente, reteIVA ni ICA. Conteste el paso Impuestos.',
       paso: 'IMPUESTOS',
     });
     return { cuentas, faltantes };
@@ -563,13 +563,13 @@ function bloqueImpuestos(
         exigeBaseGravable: true,
         bloque: 'IMPUESTOS',
         porque:
-          'Sos responsable de IVA: las ventas gravadas generan IVA por pagar.',
+          'Es responsable de IVA: las ventas gravadas generan IVA por pagar.',
       }),
       libre('2408', '10', {
         nombre: 'IVA descontable',
         exigeBaseGravable: true,
         bloque: 'IMPUESTOS',
-        porque: 'Sos responsable de IVA: el IVA de las compras se descuenta.',
+        porque: 'Es responsable de IVA: el IVA de las compras se descuenta.',
       }),
       // R-D12: lo que un cliente agente de IVA te retiene es un anticipo tuyo
       // (Decreto 2116 de 1996).
@@ -579,7 +579,7 @@ function bloqueImpuestos(
         codigoPuc: '135517',
         bloque: 'IMPUESTOS',
         porque:
-          'Sos responsable de IVA: los clientes agentes de retención te retienen parte del IVA que facturás.',
+          'Es responsable de IVA: los clientes agentes de retención le retienen parte del IVA que factura.',
       }),
     );
   }
@@ -594,7 +594,7 @@ function bloqueImpuestos(
         codigoPuc: '135518',
         bloque: 'IMPUESTOS',
         porque:
-          'Los clientes agentes de retención de ICA te retienen parte del impuesto de industria y comercio.',
+          'Los clientes agentes de retención de ICA le retienen parte del impuesto de industria y comercio.',
       }),
     );
   }
@@ -609,7 +609,7 @@ function bloqueImpuestos(
         exigeBaseGravable: true,
         bloque: 'IMPUESTOS',
         porque:
-          'Sos responsable de impuesto al consumo: se cobra en la venta y se declara aparte del IVA.',
+          'Es responsable de impuesto al consumo: se cobra en la venta y se declara aparte del IVA.',
       }),
     );
   }
@@ -624,8 +624,8 @@ function bloqueImpuestos(
     tiene('GRAN_CONTRIBUYENTE')
   ) {
     const porque = tiene('GRAN_CONTRIBUYENTE')
-      ? 'Sos gran contribuyente: retenés en la fuente sobre los pagos que hacés.'
-      : 'Sos agente de retención de renta: lo retenido se le debe a la DIAN.';
+      ? 'Es gran contribuyente: retiene en la fuente sobre los pagos que hace.'
+      : 'Es agente de retención de renta: lo retenido se le debe a la DIAN.';
 
     const conceptos: Array<[string, string]> = [
       ['15', 'Retención en la fuente - honorarios'],
@@ -671,8 +671,8 @@ function bloqueImpuestos(
         exigeBaseGravable: true,
         bloque: 'IMPUESTOS',
         porque: tiene('AUTORRETENEDOR_RENTA')
-          ? 'Sos autorretenedor: te retenés a vos mismo sobre tus propios ingresos.'
-          : 'Si le vendés a un cliente del SIMPLE, él no te retiene y te autorretenés vos.',
+          ? 'Es autorretenedor: se retiene a sí mismo sobre sus propios ingresos.'
+          : 'Si le vende a un cliente del SIMPLE, él no le retiene y usted se autorretiene.',
       }),
     );
   }
@@ -687,8 +687,8 @@ function bloqueImpuestos(
         exigeBaseGravable: true,
         bloque: 'IMPUESTOS',
         porque: tiene('AGENTE_RETENEDOR_IVA')
-          ? 'Sos agente de retención de IVA.'
-          : 'Sos gran contribuyente: por ley retenés IVA.',
+          ? 'Es agente de retención de IVA.'
+          : 'Es gran contribuyente: por ley retiene IVA.',
       }),
     );
   }
@@ -700,7 +700,7 @@ function bloqueImpuestos(
         exigeTercero: true,
         exigeBaseGravable: true,
         bloque: 'IMPUESTOS',
-        porque: 'Sos agente de retención de ICA.',
+        porque: 'Es agente de retención de ICA.',
       }),
     );
   }
@@ -715,7 +715,7 @@ function bloqueImpuestos(
         codigoPuc: '240405',
         bloque: 'IMPUESTOS',
         porque:
-          'Estás en régimen ordinario: la renta del ejercicio se provisiona.',
+          'Está en régimen ordinario: la renta del ejercicio se provisiona.',
       }),
     );
   }
@@ -734,7 +734,7 @@ function bloqueImpuestos(
         codigoPuc: '511505',
         exigeCentroCosto: centro,
         bloque: 'IMPUESTOS',
-        porque: `Tenés tarifa de ICA cargada (${tarifa} por mil).`,
+        porque: `Tiene tarifa de ICA cargada (${tarifa} por mil).`,
       }),
       cuenta({
         codigo: '241205',
@@ -875,7 +875,7 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
         nombre: 'Caja menor',
         codigoPuc: '110510',
         bloque: 'OPERACION',
-        porque: 'Declaraste que manejás fondo fijo de caja menor.',
+        porque: 'Declaró que maneja fondo fijo de caja menor.',
       }),
     );
   }
@@ -889,7 +889,7 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
         exigeTercero: true,
         bloque: 'OPERACION',
         porque:
-          'Declaraste que tenés empleados: la nómina causada y no pagada es un pasivo.',
+          'Declaró que tiene empleados: la nómina causada y no pagada es un pasivo.',
       }),
       cuenta({
         codigo: '251010',
@@ -898,21 +898,21 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
         exigeTercero: true,
         bloque: 'OPERACION',
         porque:
-          'Declaraste que tenés empleados: las cesantías se consolidan cada año.',
+          'Declaró que tiene empleados: las cesantías se consolidan cada año.',
       }),
       libre('2515', '05', {
         nombre: 'Intereses sobre cesantías',
         exigeTercero: true,
         bloque: 'OPERACION',
         porque:
-          'Declaraste que tenés empleados: los intereses a las cesantías se pagan en enero.',
+          'Declaró que tiene empleados: los intereses a las cesantías se pagan en enero.',
       }),
       libre('2520', '05', {
         nombre: 'Prima de servicios',
         exigeTercero: true,
         bloque: 'OPERACION',
         porque:
-          'Declaraste que tenés empleados: la prima se causa mes a mes y se paga semestral.',
+          'Declaró que tiene empleados: la prima se causa mes a mes y se paga semestral.',
       }),
       cuenta({
         codigo: '252501',
@@ -921,7 +921,7 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
         exigeTercero: true,
         bloque: 'OPERACION',
         porque:
-          'Declaraste que tenés empleados: las vacaciones se provisionan por empleado.',
+          'Declaró que tiene empleados: las vacaciones se provisionan por empleado.',
       }),
       cuenta({
         codigo: '261020',
@@ -929,7 +929,7 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
         codigoPuc: '261020',
         bloque: 'OPERACION',
         porque:
-          'Declaraste que tenés empleados: la plantilla de prima provisiona el doceavo del mes contra esta cuenta.',
+          'Declaró que tiene empleados: la plantilla de prima provisiona el doceavo del mes contra esta cuenta.',
       }),
       cuenta({
         codigo: '236505',
@@ -939,7 +939,7 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
         exigeBaseGravable: true,
         bloque: 'OPERACION',
         porque:
-          'Declaraste que tenés empleados: al salario por encima del tope se le retiene.',
+          'Declaró que tiene empleados: al salario por encima del tope se le retiene.',
       }),
       cuenta({
         codigo: '237005',
@@ -948,7 +948,7 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
         exigeTercero: true,
         bloque: 'OPERACION',
         porque:
-          'Declaraste que tenés empleados: lo descontado al trabajador se le gira a la EPS y al fondo.',
+          'Declaró que tiene empleados: lo descontado al trabajador se le gira a la EPS y al fondo.',
       }),
 
       // Gasto laboral. Todas de administración: dividir entre administración y
@@ -959,8 +959,7 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
         codigoPuc: '510506',
         exigeCentroCosto: centro,
         bloque: 'OPERACION',
-        porque:
-          'Declaraste que tenés empleados: el sueldo es gasto del período.',
+        porque: 'Declaró que tiene empleados: el sueldo es gasto del período.',
       }),
       cuenta({
         codigo: '510527',
@@ -968,8 +967,7 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
         codigoPuc: '510527',
         exigeCentroCosto: centro,
         bloque: 'OPERACION',
-        porque:
-          'Declaraste que tenés empleados: el auxilio va aparte del sueldo.',
+        porque: 'Declaró que tiene empleados: el auxilio va aparte del sueldo.',
       }),
       cuenta({
         codigo: '510530',
@@ -1010,7 +1008,7 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
         exigeCentroCosto: centro,
         bloque: 'OPERACION',
         porque:
-          'Declaraste que tenés empleados: la seguridad social a cargo del empleador.',
+          'Declaró que tiene empleados: la seguridad social a cargo del empleador.',
       }),
       cuenta({
         codigo: '510572',
@@ -1018,7 +1016,7 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
         codigoPuc: '510572',
         exigeCentroCosto: centro,
         bloque: 'OPERACION',
-        porque: 'Declaraste que tenés empleados: los parafiscales.',
+        porque: 'Declaró que tiene empleados: los parafiscales.',
       }),
     );
   }
@@ -1031,7 +1029,7 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
         codigoPuc: '151605',
         bloque: 'OPERACION',
         porque:
-          'Declaraste que tenés activos fijos: mostradores, estantería, escritorios.',
+          'Declaró que tiene activos fijos: mostradores, estantería, escritorios.',
       }),
       cuenta({
         codigo: '152805',
@@ -1039,7 +1037,7 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
         codigoPuc: '152805',
         bloque: 'OPERACION',
         porque:
-          'Declaraste que tenés activos fijos: computadores, impresoras, terminal POS.',
+          'Declaró que tiene activos fijos: computadores, impresoras, terminal POS.',
       }),
       cuenta({
         codigo: '159215',
@@ -1080,12 +1078,11 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
     lista.push(
       cuenta({
         codigo: '210510',
-        nombre: 'Bancos nacionales - pagarés',
+        nombre: 'Bancos nacionales - pagarés', // voseo-ok: sustantivo
         codigoPuc: '210510',
         exigeTercero: true,
         bloque: 'OPERACION',
-        porque:
-          'Declaraste que tenés crédito bancario: el capital que se debe.',
+        porque: 'Declaró que tiene crédito bancario: el capital que se debe.',
       }),
       cuenta({
         codigo: '530520',
@@ -1094,7 +1091,7 @@ function bloqueOperacion(h: HechosPlan): CuentaSugerida[] {
         exigeCentroCosto: centro,
         bloque: 'OPERACION',
         porque:
-          'Declaraste que tenés crédito bancario: los intereses son gasto del período.',
+          'Declaró que tiene crédito bancario: los intereses son gasto del período.',
       }),
     );
   }
@@ -1168,7 +1165,7 @@ function bloqueIngresos(h: HechosPlan): {
       esAuxiliar: false,
       requiereEleccion: true,
       bloque: 'GIRO',
-      porque: `Tu actividad ${codigoCiiu} cae en esta cuenta del decreto. Elegí la subcuenta que corresponde a lo que vendés.`,
+      porque: `Su actividad ${codigoCiiu} cae en esta cuenta del decreto. Elija la subcuenta que corresponde a lo que vende.`,
     }),
     cuenta({
       codigo: cuentaCosto,
@@ -1178,7 +1175,7 @@ function bloqueIngresos(h: HechosPlan): {
       requiereEleccion: true,
       exigeCentroCosto: h.manejaCentroCosto,
       bloque: 'GIRO',
-      porque: `Contrapartida de ${cuentaIngreso}. Elegí la subcuenta que corresponde a lo que vendés.`,
+      porque: `Contrapartida de ${cuentaIngreso}. Elija la subcuenta que corresponde a lo que vende.`,
     }),
     // Una subcuenta con nombre propio que reciba asientos desde el primer día:
     // sin ella, la empresa queda con una cuenta que agrupa y no puede facturar
@@ -1190,7 +1187,7 @@ function bloqueIngresos(h: HechosPlan): {
         ? cuentaIngreso
         : `${cuentaIngreso}95`,
       bloque: 'GIRO',
-      porque: `Donde entra lo que vendés mientras no elijas otra subcuenta de ${cuentaIngreso}.`,
+      porque: `Donde entra lo que vende mientras no elija otra subcuenta de ${cuentaIngreso}.`,
     }),
     cuenta({
       codigo: `${cuentaCosto}95`,

@@ -586,7 +586,7 @@ export class ComprobanteEgresoService {
           );
           if (Number(cruces?.n ?? 0) > 0) {
             throw new BadRequestException(
-              'El anticipo de este comprobante ya se cruzó con una compra o se devolvió: anulá primero ese cruce o esa devolución.',
+              'El anticipo de este comprobante ya se cruzó con una compra o se devolvió: anule primero ese cruce o esa devolución.',
             );
           }
           // La retención deja de existir para la 350; el movimiento contrario

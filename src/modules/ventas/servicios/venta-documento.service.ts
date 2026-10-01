@@ -311,7 +311,7 @@ export class VentaDocumentoService {
       const precio = resolverPrecio(l.precioUnitario, precioVigente);
       if (precio === null) {
         throw new BadRequestException(
-          `El producto ${producto.codigo} no tiene precio de venta configurado: fijale uno en su ficha, o digitá el precio en la línea.`,
+          `El producto ${producto.codigo} no tiene precio de venta configurado: asígnele uno en su ficha, o digite el precio en la línea.`,
         );
       }
 
@@ -731,7 +731,7 @@ export class VentaDocumentoService {
       if (cobrada) {
         throw new BadRequestException(
           documento.historica
-            ? 'Esta factura tiene cobros registrados en el sistema y no se puede anular. Devolvé esos cobros primero.'
+            ? 'Esta factura tiene cobros registrados en el sistema y no se puede anular. Devuelva esos cobros primero.'
             : 'Esta factura tiene cobros registrados y no se puede anular. Para corregirla, emití una nota crédito.',
         );
       }

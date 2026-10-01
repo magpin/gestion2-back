@@ -41,7 +41,7 @@ export function problemaDeSaldos(
   saldos: Array<{ medio: 'CAJA' | 'BANCO'; id: string; valor: number }>,
 ): string | null {
   if (saldos.length === 0) {
-    return 'Poné al menos un valor: la caja o alguna cuenta del banco.';
+    return 'Ingrese al menos un valor: la caja o alguna cuenta del banco.';
   }
   if (saldos.some((s) => !(s.valor > 0))) {
     return 'Los valores tienen que ser mayores que cero.';

@@ -12,7 +12,7 @@ export function cuentaInactiva(
   return new BadRequestException({
     statusCode: 400,
     error: 'Bad Request',
-    message: `No existe o está inactiva la cuenta de ${descripcion} (${codigo}). Actívala en Plan de cuentas.`,
+    message: `No existe o está inactiva la cuenta de ${descripcion} (${codigo}). Actívela en Plan de cuentas.`,
     cuentaCodigo: codigo,
   });
 }

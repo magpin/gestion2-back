@@ -149,8 +149,8 @@ export class SaldosInicialesService {
       if (contrapartida === null) {
         throw new BadRequestException(
           dto.origen === 'SOCIOS'
-            ? 'El plan de cuentas no tiene la cuenta del capital (310505, 311505 o 313005). Agregala en Configurar empresa → Plan de cuentas.'
-            : 'El plan de cuentas no tiene la 370505 (utilidades acumuladas). Agregala en Configurar empresa → Plan de cuentas.',
+            ? 'El plan de cuentas no tiene la cuenta del capital (310505, 311505 o 313005). Agréguela en Configurar empresa → Plan de cuentas.'
+            : 'El plan de cuentas no tiene la 370505 (utilidades acumuladas). Agréguela en Configurar empresa → Plan de cuentas.',
         );
       }
 

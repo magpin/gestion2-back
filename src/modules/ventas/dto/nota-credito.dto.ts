@@ -47,7 +47,7 @@ export class CrearNotaCreditoDto {
   @ValidateNested({ each: true })
   @Type(() => LineaNotaDto)
   @ArrayMinSize(1, {
-    message: 'Si mandás líneas, tiene que haber al menos una',
+    message: 'Si envía líneas, tiene que haber al menos una',
   })
   lineas?: LineaNotaDto[];
 }

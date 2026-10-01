@@ -18,7 +18,7 @@ const DESTINO = (caja: string, cuenta: string) =>
                FROM cuenta_bancaria b WHERE b.id = ${cuenta}))`;
 const seis = (n: unknown) => String(n).padStart(6, '0');
 /** Los montos entran en pesos y la hoja los escribe desde centavos. */
-const plata = (v: unknown) => pesos(Math.round(Number(v) * 100));
+const plata = (v: unknown) => pesos(Math.round(Number(v) * 100)); // voseo-ok: nombre de código
 
 interface Linea {
   concepto: string;
@@ -79,31 +79,31 @@ export class DocumentosPdfService {
       .map((a) => ({
         concepto: 'Abono a factura',
         detalle: a.factura,
-        valor: plata(a.valor),
+        valor: plata(a.valor), // voseo-ok: nombre de código
       }));
     if (Number(d.r.anticipo) > 0) {
       lineas.push({
         concepto: 'Anticipo',
         detalle: 'Para aplicar a una factura futura',
-        valor: plata(d.r.anticipo),
+        valor: plata(d.r.anticipo), // voseo-ok: nombre de código
       });
     }
     const notas: string[] = [];
     const descuentos = d.aplicaciones.filter((a) => Number(a.descuento) > 0);
     if (descuentos.length > 0) {
       notas.push(
-        `Descuento por pronto pago: ${descuentos.map((a) => `${a.factura} ${plata(a.descuento)}`).join(', ')}.`,
+        `Descuento por pronto pago: ${descuentos.map((a) => `${a.factura} ${plata(a.descuento)}`).join(', ')}.`, // voseo-ok: nombre de código
       );
     }
     if (Number(d.r.comision) > 0) {
       notas.push(
-        `El datáfono cobró ${plata(d.r.comision)}: entraron ${plata(Number(d.r.total) - Number(d.r.comision))}.`,
+        `El datáfono cobró ${plata(d.r.comision)}: entraron ${plata(Number(d.r.total) - Number(d.r.comision))}.`, // voseo-ok: nombre de código
       );
     }
     const pdf = await this.hoja(ctx, quien, {
       titulo: `Recibo de caja ${numero}`,
       rotuloTotal: 'Recibido',
-      total: plata(d.r.total),
+      total: plata(d.r.total), // voseo-ok: nombre de código
       fecha: d.r.fecha as string,
       medio: `Entró a ${d.r.destino as string}`,
       tercero: (d.r.tercero as string | null) ?? '',
@@ -157,20 +157,20 @@ export class DocumentosPdfService {
       .map((a) => ({
         concepto: 'Pago de factura',
         detalle: a.compra,
-        valor: plata(a.valor),
+        valor: plata(a.valor), // voseo-ok: nombre de código
       }));
     const retencion = Number(d.c.retencion);
     if (Number(d.c.anticipo) > 0) {
       lineas.push({
         concepto: 'Anticipo',
         detalle: 'Para legalizar con la factura',
-        valor: plata(d.c.anticipo),
+        valor: plata(d.c.anticipo), // voseo-ok: nombre de código
       });
       if (retencion > 0) {
         lineas.push({
           concepto: 'Retención practicada',
           detalle: 'Sobre el anticipo',
-          valor: `− ${plata(retencion)}`,
+          valor: `− ${plata(retencion)}`, // voseo-ok: nombre de código
         });
       }
     }
@@ -180,18 +180,18 @@ export class DocumentosPdfService {
     const descuentos = d.aplicaciones.filter((a) => Number(a.descuento) > 0);
     if (descuentos.length > 0) {
       notas.push(
-        `Descuento por pronto pago: ${descuentos.map((a) => `${a.compra} ${plata(a.descuento)}`).join(', ')}.`,
+        `Descuento por pronto pago: ${descuentos.map((a) => `${a.compra} ${plata(a.descuento)}`).join(', ')}.`, // voseo-ok: nombre de código
       );
     }
     if (Number(d.c.gmf) > 0) {
       notas.push(
-        `El banco cobró ${plata(d.c.gmf)} de 4×1000, en su propio movimiento.`,
+        `El banco cobró ${plata(d.c.gmf)} de 4×1000, en su propio movimiento.`, // voseo-ok: nombre de código
       );
     }
     const pdf = await this.hoja(ctx, quien, {
       titulo: `Comprobante de egreso ${numero}`,
       rotuloTotal: 'Pagado',
-      total: plata(salio),
+      total: plata(salio), // voseo-ok: nombre de código
       fecha: d.c.fecha as string,
       medio: `Salió de ${d.c.destino as string}`,
       tercero: (d.c.tercero as string | null) ?? '',

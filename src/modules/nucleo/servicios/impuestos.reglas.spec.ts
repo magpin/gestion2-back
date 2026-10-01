@@ -41,7 +41,7 @@ describe('paso Impuestos — lo deducido no se pregunta', () => {
   });
 });
 
-describe('paso Impuestos — «Lo que esto significa para vos»', () => {
+describe('paso Impuestos — «Lo que esto significa para usted»', () => {
   it('agente de renta, responsable de IVA y agente de ICA en Medellín', () => {
     const r = resumir(
       ['AGENTE_RETENEDOR_RENTA', 'RESPONSABLE_IVA'],

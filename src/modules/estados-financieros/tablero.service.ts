@@ -28,6 +28,7 @@ export class TableroService {
   ) {}
 
   async plata(ctx: CtxEmpresa): Promise<Tablero> {
+    // voseo-ok: nombre de código
     const hoy = hoyEnColombia();
     const mes = hoy.slice(0, 7);
     const anterior = mesDe(mes).anterior;

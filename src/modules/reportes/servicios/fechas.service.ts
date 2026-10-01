@@ -39,7 +39,7 @@ export class FechasReporteService {
 
     if (q.atajo !== undefined && conFechas) {
       throw new BadRequestException(
-        'Elegí un atajo o dos fechas, no las dos cosas.',
+        'Elija un atajo o dos fechas, no las dos cosas.',
       );
     }
 
@@ -89,7 +89,7 @@ export class FechasReporteService {
   ): Promise<Corte> {
     if (q.atajo !== undefined && q.corte !== undefined) {
       throw new BadRequestException(
-        'Elegí un atajo o una fecha, no las dos cosas.',
+        'Elija un atajo o una fecha, no las dos cosas.',
       );
     }
     if (q.corte !== undefined) return corteAMano(q.corte);

@@ -391,14 +391,23 @@ describe('ConversacionService — lo que se guarda de cada forma de terminar', (
         estado: 'RECHAZADO',
         modelo: 'claude-opus-5',
         uso: null,
-        motivo: 'No puedo ayudarte.',
+        motivo: 'No puedo ayudarle.',
       },
-      { estado: 'RECHAZADO', texto: '', motivo: 'No puedo ayudarte.' },
+      { estado: 'RECHAZADO', texto: '', motivo: 'No puedo ayudarle.' },
     ],
     [
       'una falla',
-      { estado: 'FALLO', clase: 'NO_DISPONIBLE', motivo: 'Probá en un rato.' },
-      { estado: 'FALLO', texto: '', modelo: null, motivo: 'Probá en un rato.' },
+      {
+        estado: 'FALLO',
+        clase: 'NO_DISPONIBLE',
+        motivo: 'Intente en un momento.',
+      },
+      {
+        estado: 'FALLO',
+        texto: '',
+        modelo: null,
+        motivo: 'Intente en un momento.',
+      },
     ],
   ])(
     '%s se guarda con los datos que exige la base',
@@ -415,7 +424,7 @@ describe('ConversacionService — lo que frena antes de llamar al modelo', () =>
   it('una pregunta vacía', async () => {
     const { servicio: s } = servicio();
     await expect(s.preparar(ana, '   ')).rejects.toThrow(
-      /Escribí una pregunta/,
+      /Escriba una pregunta/,
     );
   });
 
@@ -475,7 +484,7 @@ describe('ConversacionService — lo que frena antes de llamar al modelo', () =>
     await s.responder(ana, await s.preparar(ana, 'primera'));
     expect((await s.vigente(ana)).superaTope).toBe(true);
     await expect(s.preparar(ana, 'segunda')).rejects.toThrow(
-      /Empezá una nueva/,
+      /Empiece una nueva/,
     );
   });
 });

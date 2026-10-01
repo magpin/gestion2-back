@@ -239,8 +239,8 @@ function evaluarSituacionLegal(h: HechosConfiguracion): Paso {
         etiqueta: `${NOMBRE_SECTOR[sector] ?? sector} sin actividad que lo respalde`,
         detalle:
           h.empresa.seccionesActividades.length === 0
-            ? 'Todavía no registraste ninguna actividad económica en el RUT.'
-            : 'Ninguna de tus actividades del RUT es de ese tipo. Puede faltar registrarla, o sobrar el sector.',
+            ? 'Todavía no ha registrado ninguna actividad económica en el RUT.'
+            : 'Ninguna de las actividades del RUT es de ese tipo. Puede faltar registrarla, o sobrar el sector.',
       });
     }
   }
@@ -280,7 +280,7 @@ function evaluarImpuestos(h: HechosConfiguracion): Paso {
   if (!iva) {
     faltantes.push({
       campo: 'iva',
-      etiqueta: 'Si tu empresa cobra IVA',
+      etiqueta: 'Si la empresa cobra IVA',
       detalle:
         'De ahí sale si la venta lleva IVA y qué cuentas necesita el plan.',
     });
@@ -288,16 +288,16 @@ function evaluarImpuestos(h: HechosConfiguracion): Paso {
   for (const m of h.impuestos.municipiosSinIca) {
     faltantes.push({
       campo: 'ica',
-      etiqueta: `Te falta contarme el ICA de ${m}`,
+      etiqueta: `Falta contarme el ICA de ${m}`,
       detalle:
-        'El ICA es municipal: se contesta por cada municipio donde tenés sede.',
+        'El ICA es municipal: se contesta por cada municipio donde la empresa tiene sede.',
     });
   }
   if (faltantes.length === 0 && !h.impuestos.confirmado) {
     faltantes.push({
       campo: 'confirmar',
-      etiqueta: 'Revisar lo que esto significa para vos',
-      detalle: 'Mirá el resumen y confirmalo con «Todo correcto».',
+      etiqueta: 'Revisar lo que esto significa para usted',
+      detalle: 'Mire el resumen y confírmelo con «Todo correcto».',
     });
   }
 

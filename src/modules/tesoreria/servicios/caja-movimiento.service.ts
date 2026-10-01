@@ -439,7 +439,7 @@ export class CajaMovimientoService {
         }
         if (original.reversa_de !== null) {
           throw new BadRequestException(
-            'Este movimiento ya es una reversa. Si la reversa estuvo mal, registrá el movimiento de nuevo.',
+            'Este movimiento ya es una reversa. Si la reversa estuvo mal, registre el movimiento de nuevo.',
           );
         }
         if (original.reversado_por !== null) {

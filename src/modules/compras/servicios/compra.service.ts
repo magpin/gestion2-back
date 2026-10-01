@@ -1241,6 +1241,14 @@ export class CompraService {
           'Esta compra tiene pagos registrados y no se puede anular. Registre la devolución del proveedor como un ingreso aparte.',
         );
       }
+      // De contado, la plata salió en el mismo asiento de la compra. Aunque el
+      // pago ya se haya devuelto, anular ese asiento la devolvería a caja o
+      // banco por segunda vez.
+      if (await this.tesoreria.hayPlataEnAsiento(documento.asiento_id, t)) {
+        throw new BadRequestException(
+          'Esta compra se pagó de contado y no se puede anular. Para corregirla, registre una nota crédito del proveedor.',
+        );
+      }
 
       // La mercancía que entró con la compra sale del kardex en el mismo acto.
       // Anular solo el asiento dejaba el inventario del libro sin esas

@@ -1155,6 +1155,13 @@ describe('CompraService.anular', () => {
     return { fake, anular };
   }
 
+  /** `hay`: la compra es de contado y su asiento lleva la plata. */
+  function tesoreriaAnularFalso(hay = false) {
+    return {
+      hayPlataEnAsiento: jest.fn(() => Promise.resolve(hay)),
+    } as unknown as ConstructorParameters<typeof CompraService>[4];
+  }
+
   const LINEA = {
     producto_id: 'p-1',
     producto_codigo: 'TEC-1',
@@ -1229,7 +1236,7 @@ describe('CompraService.anular', () => {
       {} as never,
       inventario,
       contabilidad,
-      {} as never, // TesoreriaApi: no la usa este método.
+      tesoreriaAnularFalso(),
       retenciones.fake,
     );
 
@@ -1293,7 +1300,7 @@ describe('CompraService.anular', () => {
       {} as never,
       inventario,
       contabilidad,
-      {} as never,
+      tesoreriaAnularFalso(),
       retenciones.fake,
     );
 
@@ -1322,7 +1329,7 @@ describe('CompraService.anular', () => {
       {} as never,
       inventarioAnularFalso(5).fake,
       contabilidadAnularFalso().fake,
-      {} as never,
+      tesoreriaAnularFalso(),
       retencionesFalso().fake,
     );
 
@@ -1348,7 +1355,7 @@ describe('CompraService.anular', () => {
       {} as never,
       inventario,
       contabilidad,
-      {} as never,
+      tesoreriaAnularFalso(),
       retenciones.fake,
     );
 
@@ -1376,7 +1383,7 @@ describe('CompraService.anular', () => {
       {} as never,
       inventario,
       contabilidad,
-      {} as never,
+      tesoreriaAnularFalso(),
       // RetencionesApi: el motor de renta no retiene nada en estos casos.
       retencionesFalso().fake,
     );
@@ -1400,7 +1407,7 @@ describe('CompraService.anular', () => {
       {} as never,
       inventarioAnularFalso(5).fake,
       contabilidadAnularFalso().fake,
-      {} as never,
+      tesoreriaAnularFalso(),
       // RetencionesApi: el motor de renta no retiene nada en estos casos.
       retencionesFalso().fake,
     );
@@ -1408,6 +1415,31 @@ describe('CompraService.anular', () => {
     await expect(servicio.anular(ctx, 'c-1', 'Motivo')).rejects.toThrow(
       /pagos registrados/,
     );
+  });
+
+  it('rechaza anular una compra de contado aunque el pago ya se haya devuelto', async () => {
+    // `monto_pagado` en 0 tras la devolución, pero la plata salió en el
+    // asiento de la compra: anularlo la devolvería a caja por segunda vez.
+    const { tx, actualizaciones } = txAnularFalso({
+      estado: 'EMITIDA',
+      asiento_id: 'asiento-1',
+    });
+    const { fake: contabilidad, anular: anularAsiento } =
+      contabilidadAnularFalso();
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      {} as never,
+      inventarioAnularFalso(5).fake,
+      contabilidad,
+      tesoreriaAnularFalso(true),
+      retencionesFalso().fake,
+    );
+
+    await expect(servicio.anular(ctx, 'c-1', 'Motivo')).rejects.toThrow(
+      /se pagó de contado/,
+    );
+    expect(anularAsiento).not.toHaveBeenCalled();
+    expect(actualizaciones).toHaveLength(0);
   });
 
   it('rechaza anular una compra ya anulada', async () => {
@@ -1420,7 +1452,7 @@ describe('CompraService.anular', () => {
       {} as never,
       {} as never,
       contabilidadAnularFalso().fake,
-      {} as never, // TesoreriaApi: no la usa este método.
+      tesoreriaAnularFalso(),
       // RetencionesApi: el motor de renta no retiene nada en estos casos.
       retencionesFalso().fake,
     );
@@ -1437,7 +1469,7 @@ describe('CompraService.anular', () => {
       {} as never,
       {} as never,
       contabilidadAnularFalso().fake,
-      {} as never, // TesoreriaApi: no la usa este método.
+      tesoreriaAnularFalso(),
       // RetencionesApi: el motor de renta no retiene nada en estos casos.
       retencionesFalso().fake,
     );

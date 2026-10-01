@@ -732,7 +732,20 @@ export class VentaDocumentoService {
         throw new BadRequestException(
           documento.historica
             ? 'Esta factura tiene cobros registrados en el sistema y no se puede anular. Devuelva esos cobros primero.'
-            : 'Esta factura tiene cobros registrados y no se puede anular. Para corregirla, emití una nota crédito.',
+            : 'Esta factura tiene cobros registrados y no se puede anular. Para corregirla, emita una nota crédito.',
+        );
+      }
+      // De contado, la plata va en el mismo asiento de la factura. Aunque el
+      // cobro ya se haya devuelto (`monto_pagado` en 0), anular ese asiento
+      // sacaría la plata de caja o banco por segunda vez y dejaría al cliente
+      // debiendo lo que se le devolvió.
+      if (
+        !documento.historica &&
+        documento.asiento_id !== null &&
+        (await this.tesoreria.hayPlataEnAsiento(documento.asiento_id, t))
+      ) {
+        throw new BadRequestException(
+          'Esta factura se cobró de contado y no se puede anular. Para corregirla, emita una nota crédito.',
         );
       }
 

@@ -81,6 +81,19 @@ export class NucleoApi {
   }
 
   /**
+   * Los centros de costo, si están encendidos y los repartos: lo que María
+   * lee para contestar sobre centros. Solo lectura.
+   */
+  async centrosParaConsulta(ctx: CtxEmpresa) {
+    const [maneja, centros, repartos] = await Promise.all([
+      this.centrosCosto.maneja(ctx),
+      this.centrosCosto.listar(ctx),
+      this.centrosCosto.listarRepartos(ctx),
+    ]);
+    return { maneja, centros, repartos };
+  }
+
+  /**
    * Un centro elegido para un renglón: activo, de esta empresa y sin hijos.
    * Si la empresa no maneja centros, se descarta (`null`).
    */

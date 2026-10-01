@@ -81,11 +81,7 @@ export type ResultadoRespuesta =
  * bien y lo que falta es recargar la cuenta.
  */
 export type ClaseDeFalla =
-  | 'SIN_CLAVE'
-  | 'SIN_SALDO'
-  | 'NO_DISPONIBLE'
-  | 'PETICION'
-  | 'FALLA';
+  'SIN_CLAVE' | 'SIN_SALDO' | 'NO_DISPONIBLE' | 'PETICION' | 'FALLA';
 
 /**
  * Lo que el modelo puede consultar en este turno (paso 6 de

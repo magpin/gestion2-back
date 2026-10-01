@@ -353,4 +353,3 @@ describe('PropuestasService — confirmar y descartar', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 });
-

@@ -292,6 +292,8 @@ export function etiquetaDeConsulta(nombre: string): string {
   if (nombre === REVISAR) return 'Revisión de los libros';
   if (nombre === RETENCIONES) return 'Retenciones';
   if (nombre === BUSCAR) return 'Búsqueda';
+  if (nombre === CENTROS) return 'Centros de costo';
+  if (nombre === RESULTADOS_CENTRO) return 'Resultados por centro de costo';
   // Las de proponer (paso 7) no son consultas: la burbuja dice que verifica.
   if (nombre === 'proponer_cobro') return 'Verificando el cobro';
   if (nombre === 'proponer_pago') return 'Verificando el pago';
@@ -479,4 +481,177 @@ export function coincidencias(
   return valores
     .filter((v) => buscado === '' || normalizar(v).includes(buscado))
     .slice(0, COINCIDENCIAS);
+}
+
+// ─── Centros de costo ───────────────────────────────────────────────────────
+
+export const CENTROS = 'consultar_centros_costo';
+export const RESULTADOS_CENTRO = 'consultar_resultados_por_centro';
+
+/**
+ * Los de `GET /estados-financieros/*`: quien ve el estado de resultados lo ve
+ * también por centro.
+ */
+export const ROLES_RESULTADOS: readonly RolCodigo[] = [
+  'DIRECTOR',
+  'CONTADOR',
+  'CONSULTA',
+];
+
+/** Las dos de centros de costo. La lista la ve cualquiera; los resultados, quien ve los estados. */
+export function herramientasDeCentros(
+  roles: readonly RolCodigo[],
+): Herramienta[] {
+  return [
+    {
+      name: CENTROS,
+      description:
+        'Los centros de costo de la empresa (dónde se vende o se gasta: sede, área, proyecto): si están encendidos, cuál es el de por defecto, cuáles agrupan a otros, su tipo (productivo, de apoyo, administrativo), su sede, si están activos, y los repartos por porcentajes («Arriendo: 60 % Norte, 40 % Sur»). Sirve para «¿qué centros tengo?» y para saber el código de un centro antes de pedir sus resultados.',
+      input_schema: { type: 'object', properties: {} },
+    },
+    ...(puede(roles, ROLES_RESULTADOS)
+      ? [
+          {
+            name: RESULTADOS_CENTRO,
+            description:
+              'El estado de resultados de un mes por centro de costo: ingresos operacionales, costo de ventas, gastos de administración, de ventas y no operacionales, y las utilidades (bruta, operacional, antes de impuestos). Sin «centro», trae una columna por centro (o por tipo de centro con agrupar=TIPO), «Sin centro» para lo registrado sin él y el total; las columnas suman el total. Con «centro» (su código, o SIN), trae solo ese. Sirve para «¿cuánto vendió y gastó la sede Norte?», «¿qué centro deja más utilidad?».',
+            input_schema: {
+              type: 'object',
+              properties: {
+                mes: {
+                  type: 'string',
+                  description: 'AAAA-MM. Sin él, el mes de hoy.',
+                },
+                agrupar: {
+                  type: 'string',
+                  enum: ['CENTRO', 'TIPO'],
+                  description: 'Columnas por centro (por defecto) o por tipo.',
+                },
+                centro: {
+                  type: 'string',
+                  description:
+                    'El código de un centro (consultar_centros_costo), o SIN para lo que quedó sin centro.',
+                },
+              },
+            },
+          },
+        ]
+      : []),
+  ];
+}
+
+/** Un estado de resultados como lo lee el modelo: los renglones con valor y las utilidades. */
+interface EstadoParaModelo {
+  renglones: Array<{ etiqueta: string; valor: number }>;
+  ingresosOperacionales: number;
+  utilidadBruta: number;
+  utilidadOperacional: number;
+  utilidadAntesDeImpuestos: number;
+}
+
+function estadoParaModelo(e: {
+  renglones: Array<{ etiqueta: string; valor: number; tipo: string }>;
+  ingresosOperacionales: number;
+  utilidadBruta: number;
+  utilidadOperacional: number;
+  utilidadAntesDeImpuestos: number;
+}): EstadoParaModelo {
+  return {
+    renglones: e.renglones
+      .filter((r) => r.tipo === 'grupo' && r.valor !== 0)
+      .map((r) => ({ etiqueta: r.etiqueta, valor: r.valor })),
+    ingresosOperacionales: e.ingresosOperacionales,
+    utilidadBruta: e.utilidadBruta,
+    utilidadOperacional: e.utilidadOperacional,
+    utilidadAntesDeImpuestos: e.utilidadAntesDeImpuestos,
+  };
+}
+
+/** Los resultados por centro para el modelo: cada columna y el total, sin ids. */
+export function resultadosPorCentroParaModelo(r: {
+  periodo: { mes: string; estado: string };
+  columnas: Array<{
+    nombre: string;
+    estado: Parameters<typeof estadoParaModelo>[0];
+  }>;
+  total: Parameters<typeof estadoParaModelo>[0];
+}): string {
+  if (r.columnas.length === 0) {
+    return JSON.stringify({
+      mes: r.periodo.mes,
+      aviso: 'No hay ingresos, costos ni gastos registrados en ese mes.',
+    });
+  }
+  return JSON.stringify({
+    mes: r.periodo.mes,
+    periodo: r.periodo.estado,
+    columnas: r.columnas.map((c) => ({
+      centro: c.nombre,
+      ...estadoParaModelo(c.estado),
+    })),
+    total: estadoParaModelo(r.total),
+  });
+}
+
+/** El estado de un solo centro (o de lo que quedó sin centro). */
+export function resultadoDeCentroParaModelo(
+  centro: string,
+  r: {
+    periodo: { mes: string; estado: string };
+    actual: Parameters<typeof estadoParaModelo>[0];
+  },
+): string {
+  return JSON.stringify({
+    mes: r.periodo.mes,
+    periodo: r.periodo.estado,
+    centro,
+    ...estadoParaModelo(r.actual),
+  });
+}
+
+/** Los centros y los repartos para el modelo, sin ids. */
+export function centrosParaModelo(datos: {
+  maneja: boolean;
+  centros: Array<{
+    id: string;
+    codigo: string;
+    nombre: string;
+    activo: boolean;
+    padreId: string | null;
+    sedeNombre: string | null;
+    tipo: string;
+    esPorDefecto: boolean;
+    agrupa: boolean;
+  }>;
+  repartos: Array<{
+    nombre: string;
+    base: string | null;
+    activo: boolean;
+    partes: Array<{ centroNombre: string; porcentaje: number }>;
+  }>;
+}): string {
+  const codigoDe = new Map(datos.centros.map((c) => [c.id, c.codigo]));
+  return JSON.stringify({
+    encendidos: datos.maneja,
+    ...(datos.centros.length === 0 && {
+      aviso:
+        'La empresa no tiene centros de costo. Se crean en Plan de cuentas › Centros de costo.',
+    }),
+    centros: datos.centros.map((c) => ({
+      codigo: c.codigo,
+      nombre: c.nombre,
+      tipo: c.tipo,
+      ...(c.padreId && { dentroDe: codigoDe.get(c.padreId) ?? null }),
+      ...(c.agrupa && { agrupaOtros: true }),
+      ...(c.sedeNombre && { sede: c.sedeNombre }),
+      ...(c.esPorDefecto && { porDefecto: true }),
+      ...(!c.activo && { desactivado: true }),
+    })),
+    repartos: datos.repartos.map((r) => ({
+      nombre: r.nombre,
+      ...(r.base && { base: r.base }),
+      ...(!r.activo && { desactivado: true }),
+      partes: r.partes.map((p) => `${p.centroNombre}: ${p.porcentaje} %`),
+    })),
+  });
 }

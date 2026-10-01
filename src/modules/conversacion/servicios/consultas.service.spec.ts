@@ -96,6 +96,76 @@ function preparar() {
     correr,
     valores,
   } as unknown as ArmadorService;
+  const estadoVacio = {
+    renglones: [
+      {
+        clave: 'ingresos_op',
+        etiqueta: 'Ingresos operacionales',
+        valor: 1000,
+        tipo: 'grupo',
+      },
+      { clave: 'costo', etiqueta: 'Costo de ventas', valor: 0, tipo: 'grupo' },
+      {
+        clave: 'bruta',
+        etiqueta: 'Utilidad bruta',
+        valor: 1000,
+        tipo: 'subtotal',
+      },
+    ],
+    ingresosOperacionales: 1000,
+    utilidadBruta: 1000,
+    utilidadOperacional: 1000,
+    utilidadAntesDeImpuestos: 1000,
+    utilidadNeta: 1000,
+  };
+  const centrosParaConsulta = jest.fn(() =>
+    Promise.resolve({
+      maneja: true,
+      centros: [
+        {
+          id: 'c-secreto',
+          codigo: 'NORTE',
+          nombre: 'Sede Norte',
+          activo: true,
+          padreId: null,
+          sedeNombre: 'Norte',
+          tipo: 'PRODUCTIVO',
+          esPorDefecto: true,
+          agrupa: false,
+        },
+      ],
+      repartos: [
+        {
+          nombre: 'Arriendo',
+          base: null,
+          activo: true,
+          partes: [{ centroNombre: 'NORTE · Sede Norte', porcentaje: 100 }],
+        },
+      ],
+    }),
+  );
+  const nucleo = { centrosParaConsulta } as never;
+  const resultados = jest.fn(() =>
+    Promise.resolve({
+      periodo: { mes: '2026-10', estado: 'ABIERTO' },
+      actual: estadoVacio,
+    }),
+  );
+  const resultadosPorCentro = jest.fn(() =>
+    Promise.resolve({
+      periodo: { mes: '2026-10', estado: 'ABIERTO' },
+      agrupar: 'CENTRO',
+      columnas: [
+        {
+          clave: 'c-secreto',
+          nombre: 'NORTE · Sede Norte',
+          estado: estadoVacio,
+        },
+      ],
+      total: estadoVacio,
+    }),
+  );
+  const estados = { resultados, resultadosPorCentro } as never;
   const servicio = new ConsultasService(
     armador,
     { saldos } as unknown as TesoreriaApi,
@@ -103,8 +173,20 @@ function preparar() {
     { preparar } as unknown as PropuestasService,
     { revisar } as unknown as RevisionApi,
     { retencionesParaAsistente: jest.fn(() => Promise.resolve([])) } as never,
+    nucleo,
+    estados,
   );
-  return { servicio, correr, valores, saldos, existencias, preparar, revisar };
+  return {
+    servicio,
+    correr,
+    valores,
+    saldos,
+    existencias,
+    preparar,
+    revisar,
+    resultados,
+    resultadosPorCentro,
+  };
 }
 
 describe('ConsultasService — con los permisos de quien pregunta', () => {
@@ -243,5 +325,65 @@ describe('ConsultasService — la revisión de los libros', () => {
       /^No se pudo/,
     );
     expect(revisar).not.toHaveBeenCalled();
+  });
+});
+
+describe('ConsultasService — centros de costo', () => {
+  it('la lista la ve cualquiera, sin ids', async () => {
+    const { servicio } = preparar();
+    const { herramientas } = servicio.paraTurno(ctx(['VENTAS']));
+
+    const texto = await herramientas.ejecutar('consultar_centros_costo', {});
+
+    expect(texto).toContain('"encendidos":true');
+    expect(texto).toContain('NORTE');
+    expect(texto).toContain('Arriendo');
+    expect(texto).not.toContain('c-secreto');
+  });
+
+  it('los resultados por centro: solo quien ve los estados', async () => {
+    const { servicio, resultadosPorCentro } = preparar();
+    const ventas = servicio.paraTurno(ctx(['VENTAS'])).herramientas;
+    expect(ventas.definiciones.map((d) => d.name)).not.toContain(
+      'consultar_resultados_por_centro',
+    );
+
+    const contador = servicio.paraTurno(ctx(['CONTADOR'])).herramientas;
+    const texto = await contador.ejecutar('consultar_resultados_por_centro', {
+      mes: '2026-10',
+      agrupar: 'TIPO',
+    });
+    expect(resultadosPorCentro).toHaveBeenCalledWith(
+      expect.anything(),
+      '2026-10',
+      'TIPO',
+    );
+    expect(texto).toContain('NORTE · Sede Norte');
+    expect(texto).not.toContain('c-secreto');
+  });
+
+  it('un centro por su código o su nombre, sin importar mayúsculas', async () => {
+    const { servicio, resultados } = preparar();
+    const { herramientas } = servicio.paraTurno(ctx(['DIRECTOR']));
+
+    await herramientas.ejecutar('consultar_resultados_por_centro', {
+      mes: '2026-10',
+      centro: 'sede norte',
+    });
+    expect(resultados).toHaveBeenCalledWith(
+      expect.anything(),
+      '2026-10',
+      undefined,
+      undefined,
+      'c-secreto',
+    );
+
+    const otro = await herramientas.ejecutar(
+      'consultar_resultados_por_centro',
+      {
+        centro: 'SUR',
+      },
+    );
+    expect(otro).toContain('No hay un centro de costo «SUR»');
   });
 });

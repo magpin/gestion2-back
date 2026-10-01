@@ -45,9 +45,12 @@ function nucleoFalso(
     proveedor?: Record<string, unknown> | null;
     regimen?: string[];
     cuentas?: Record<string, { id: string } | null>;
+    /** El centro que propone el núcleo para la compra; `null` = no se manejan. */
+    centro?: string | null;
   } = {},
 ) {
   const {
+    centro = null,
     proveedor = proveedorActivo,
     regimen = ['RESPONSABLE_IVA'],
     cuentas = {
@@ -91,6 +94,11 @@ function nucleoFalso(
     },
   };
   const fake = {
+    centroPropuesto: jest.fn(() => Promise.resolve(centro)),
+    // El centro elegido en un renglón: válido tal cual.
+    centroDeRenglon: jest.fn((_ctx: unknown, id: string) =>
+      Promise.resolve(id),
+    ),
     buscarTercero: jest.fn(() => Promise.resolve(proveedor)),
     regimenVigente: jest.fn(() => Promise.resolve(regimen)),
     cuenta,
@@ -1851,6 +1859,51 @@ describe('CompraService.crear — líneas de gasto', () => {
     });
     // Y un arriendo no entra a la bodega.
     expect(inventario.incrementarPorCompra).not.toHaveBeenCalled();
+  });
+
+  it('el arriendo de dos sedes: cada renglón con su centro y el de la compra para el resto', async () => {
+    const { tx } = txFalso();
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+    const servicio = new CompraService(
+      txServiceFalso(tx),
+      nucleoFalso({ centro: 'cc-adm' }).fake,
+      inventarioFalso().fake,
+      contabilidad,
+      {} as never,
+      retencionesFalso().fake,
+    );
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: '2026-09-08',
+      numeroFacturaProveedor: 'FP-ARR-2',
+      formaPago: 'CREDITO',
+      lineas: [
+        { ...arriendo, costoUnitario: 1_200_000, centroCostoId: 'cc-norte' },
+        { ...arriendo, costoUnitario: 800_000, centroCostoId: 'cc-sur' },
+        { ...arriendo, costoUnitario: 100_000 },
+      ],
+    });
+
+    const [, dtoAsiento] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      { lineas: Array<Record<string, unknown>>; centroCostoId?: string },
+    ];
+    expect(dtoAsiento.lineas[0]).toMatchObject({ centroCostoId: 'cc-norte' });
+    expect(dtoAsiento.lineas[1]).toMatchObject({ centroCostoId: 'cc-sur' });
+    // El tercero no dice el suyo: le llega el de la compra en el asiento.
+    expect(dtoAsiento.lineas[2]).not.toHaveProperty('centroCostoId');
+    expect(dtoAsiento.centroCostoId).toBe('cc-adm');
+    // Cada renglón guarda el centro que eligió.
+    const lineas = (tx.query as jest.Mock).mock.calls.filter(
+      ([sql]: [string]) => sql.includes('INSERT INTO compra_documento_linea'),
+    ) as Array<[string, unknown[]]>;
+    // El centro va antes del reparto, que es el último parámetro.
+    expect(lineas.map(([, p]) => p.at(-2))).toEqual([
+      'cc-norte',
+      'cc-sur',
+      null,
+    ]);
   });
 
   it('mezcla productos y gastos en la misma factura', async () => {

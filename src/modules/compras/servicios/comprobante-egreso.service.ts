@@ -504,9 +504,10 @@ export class ComprobanteEgresoService {
         'La empresa no tiene el comprobante de diario sembrado.',
       );
     }
-    const compra = fila<{ numero: string }>(
+    const compra = fila<{ numero: string; centro_costo_id: string | null }>(
       await t.query(
-        'SELECT numero_factura_proveedor AS numero FROM compra_documento WHERE id = $1',
+        `SELECT numero_factura_proveedor AS numero, centro_costo_id
+           FROM compra_documento WHERE id = $1`,
         [datos.compraId],
       ),
     );
@@ -516,6 +517,8 @@ export class ComprobanteEgresoService {
         comprobanteTipoId: comprobante.id,
         fecha: datos.fecha,
         glosa: `${datos.referencia} · Descuento por pronto pago de la compra ${compra?.numero ?? ''}`,
+        // El descuento es un ingreso de donde se gastó (D5).
+        centroCostoId: compra?.centro_costo_id ?? undefined,
         lineas: [
           {
             cuentaId: proveedores.id,

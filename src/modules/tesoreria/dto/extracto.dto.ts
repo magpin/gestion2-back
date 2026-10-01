@@ -174,6 +174,11 @@ export class RegistrarDesdeExtractoDto {
   @IsOptional()
   @IsUUID()
   terceroId?: string;
+
+  /** Si la contra cuenta es de ingreso, costo o gasto: a qué centro va. */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
 }
 
 /**
@@ -228,6 +233,11 @@ export class CrearReglaExtractoDto {
   @IsString()
   @Length(3, 300)
   concepto!: string;
+
+  /** Si la contra cuenta es de ingreso, costo o gasto: a qué centro va. */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
 }
 
 export class ActualizarReglaExtractoDto {
@@ -256,4 +266,9 @@ export class ActualizarReglaExtractoDto {
   @IsOptional()
   @IsBoolean()
   activa?: boolean;
+
+  /** `null` le quita el centro: va al del usuario o al de por defecto. */
+  @ValidateIf((_o, v) => v !== null && v !== undefined)
+  @IsUUID()
+  centroCostoId?: string | null;
 }

@@ -1,4 +1,11 @@
-import { IsNumber, IsString, IsUUID, Length, Min } from 'class-validator';
+import {
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Length,
+  Min,
+} from 'class-validator';
 
 import { PaginacionDto } from '../../../common/dto/paginacion.dto';
 import { EsFechaCalendario } from '../../../common/dto/fecha.decorator';
@@ -47,6 +54,11 @@ export class IngresoCajaDto {
 
   @IsUUID()
   contraCuentaId!: string;
+
+  /** Si la contracuenta es de ingreso, costo o gasto: dónde. */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
 }
 
 /** Misma forma que el ingreso: fecha, valor, concepto, la cuenta contraria. */

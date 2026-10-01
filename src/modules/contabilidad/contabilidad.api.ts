@@ -27,6 +27,8 @@ export interface VistaAsiento {
     cuenta: string;
     nombre: string;
     tercero: string | null;
+    /** `ADM · Administración`, si la línea lleva centro de costo. */
+    centro: string | null;
     debito: string;
     credito: string;
   }[];
@@ -119,6 +121,7 @@ export class ContabilidadApi {
       cuenta: string;
       nombre: string;
       tercero: string | null;
+      centro: string | null;
       debito: string;
       credito: string;
     }>(
@@ -127,12 +130,14 @@ export class ContabilidadApi {
                 ec.codigo AS cuenta, ec.nombre,
                 COALESCE(NULLIF(BTRIM(tr.razon_social), ''),
                   NULLIF(BTRIM(CONCAT_WS(' ', tr.primer_nombre, tr.primer_apellido)), '')) AS tercero,
+                cc.codigo || ' · ' || cc.nombre AS centro,
                 al.debito, al.credito
            FROM asiento a
            JOIN asiento_linea al ON al.asiento_id = a.id
            JOIN empresa_cuenta ec
              ON ec.id = al.cuenta_id AND ec.empresa_id = al.empresa_id
            LEFT JOIN tercero tr ON tr.id = al.tercero_id
+           LEFT JOIN empresa_centro_costo cc ON cc.id = al.centro_costo_id
           WHERE a.xmin::text::bigint = txid_current() % 4294967296
           ORDER BY a.numero, al.orden`,
       ),
@@ -148,6 +153,7 @@ export class ContabilidadApi {
         cuenta: l.cuenta,
         nombre: l.nombre,
         tercero: l.tercero,
+        centro: l.centro ?? null,
         debito: l.debito,
         credito: l.credito,
       });

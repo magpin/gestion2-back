@@ -1,6 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
 
 import {
   ActorEmpresa,
@@ -23,6 +23,27 @@ export class PeriodoEstadosDto {
   @IsOptional()
   @Matches(MES, { message: 'El mes va como 2026-09.' })
   comparar?: string;
+
+  /** Solo un centro de costo (su id), o `SIN` para lo que quedó sin centro. */
+  @IsOptional()
+  @Matches(
+    /^(SIN|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/,
+    {
+      message: 'El centro va como su id, o SIN.',
+    },
+  )
+  centro?: string;
+}
+
+export class PorCentroDto {
+  @IsOptional()
+  @Matches(MES, { message: 'El mes va como 2026-09.' })
+  mes?: string;
+
+  /** Una columna por centro (por defecto) o por tipo de centro. */
+  @IsOptional()
+  @IsIn(['CENTRO', 'TIPO'])
+  agrupar?: 'CENTRO' | 'TIPO';
 }
 
 export class ProyectadoDto {
@@ -45,7 +66,27 @@ export class EstadosFinancierosController {
   @Roles(...LEEN)
   @Get('resultados')
   resultados(@ActorEmpresa() ctx: CtxEmpresa, @Query() q: PeriodoEstadosDto) {
-    return this.estados.resultados(ctx, q.mes ?? mesDeHoy(), q.comparar);
+    return this.estados.resultados(
+      ctx,
+      q.mes ?? mesDeHoy(),
+      q.comparar,
+      undefined,
+      q.centro,
+    );
+  }
+
+  /** El estado de resultados en columnas, una por centro de costo. */
+  @Roles(...LEEN)
+  @Get('resultados-por-centro')
+  resultadosPorCentro(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Query() q: PorCentroDto,
+  ) {
+    return this.estados.resultadosPorCentro(
+      ctx,
+      q.mes ?? mesDeHoy(),
+      q.agrupar ?? 'CENTRO',
+    );
   }
 
   @Roles(...LEEN)

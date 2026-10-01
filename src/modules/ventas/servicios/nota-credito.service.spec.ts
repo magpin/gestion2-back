@@ -42,6 +42,8 @@ const numeroFiscal = {
 const facturaVigente: VentaDocumentoDetalle = {
   id: 'fv-1',
   tipo: 'FACTURA',
+  centro_costo_id: null,
+  centro_costo_nombre: null,
   tercero_id: 'ter-1',
   tercero_nombre: 'Tercero uno',
   tercero_identificacion: 'NIT 900123456-7',

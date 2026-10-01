@@ -37,6 +37,14 @@ export class LineaAsientoDto {
   centroCostoId?: string;
 
   /**
+   * Repartir la línea entre varios centros por porcentajes (fase 8): al
+   * registrar se parte en una línea por centro. Excluye `centroCostoId`.
+   */
+  @IsOptional()
+  @IsUUID()
+  repartoId?: string;
+
+  /**
    * El concepto de ingreso o egreso del que salió la línea. Es lo que deja
    * armar el flujo de caja por actividad sin volver a clasificar nada.
    */
@@ -82,6 +90,15 @@ export class CrearAsientoDto {
   @Length(3, 500)
   glosa!: string;
 
+  /**
+   * El centro de costo del documento. Va a las líneas cuya cuenta lo exige y
+   * no traen uno propio (`AsientoService.prepararCentros`): así la factura
+   * dice su centro una vez y no en cada renglón.
+   */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
+
   @IsArray()
   @ArrayMinSize(2, {
     message:
@@ -125,6 +142,11 @@ export class FiltroAsientosDto extends PaginacionDto {
   @IsOptional()
   @IsUUID()
   comprobanteTipoId?: string;
+
+  /** Solo los asientos con alguna línea en este centro de costo. */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
 
   // `q` lo hereda de PaginacionDto. Acá busca por número de comprobante o por
   // texto de la glosa.

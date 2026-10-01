@@ -55,7 +55,17 @@ export interface DatosMovimientoConcepto {
    * Varios conceptos en un solo movimiento (PC14). Si vienen, mandan sobre
    * `conceptoId` y `valorConcepto`.
    */
-  lineas?: Array<{ conceptoId: string; valor: number }>;
+  lineas?: Array<{
+    conceptoId: string;
+    valor: number;
+    centroCostoId?: string | null;
+    repartoId?: string | null;
+  }>;
+  /**
+   * Dónde se gastó o se ganó. Sin él, el del usuario, el de la sede de la
+   * caja y el de por defecto (D3). Cada línea puede decir otro.
+   */
+  centroCostoId?: string | null;
 }
 
 export interface MovimientoConcepto {
@@ -73,6 +83,9 @@ export interface MovimientoConcepto {
   terceroNombre: string | null;
   valorConcepto: number;
   valorMovido: number;
+  /** Dónde se gastó o se ganó; con varias líneas, el del movimiento. */
+  centroCostoId: string | null;
+  centroCostoNombre: string | null;
   detalle: string;
   origen: OrigenMovimiento;
   origenId: string | null;
@@ -92,9 +105,15 @@ export interface DatosManual {
   fecha: string;
   terceroId?: string | null;
   detalle: string;
-  lineas: Array<{ conceptoId: string; valor: number }>;
+  lineas: Array<{
+    conceptoId: string;
+    valor: number;
+    centroCostoId?: string | null;
+    repartoId?: string | null;
+  }>;
   /** Lo que nos retuvo quien nos pagó (PC17): solo en una entrada. */
   retencion?: { tipo: 'RENTA' | 'IVA' | 'ICA'; valor: number } | null;
+  centroCostoId?: string | null;
 }
 
 /** Dónde queda la retención que nos practican: anticipo de impuestos. */
@@ -111,6 +130,9 @@ const CAMPOS = `
   m.id, m.direccion, m.medio, m.caja_id, m.cuenta_bancaria_id, m.fecha, m.concepto_id,
   m.tercero_id, m.valor_concepto, m.valor_movido, m.detalle, m.origen, m.origen_id,
   m.asiento_id, m.estado, m.motivo_anulacion, m.caja_movimiento_id, m.banco_movimiento_id,
+  m.centro_costo_id,
+  (SELECT x.codigo || ' · ' || x.nombre FROM empresa_centro_costo x
+    WHERE x.id = m.centro_costo_id) AS centro_costo_nombre,
   c.codigo AS concepto_codigo, c.nombre AS concepto_nombre,
   (SELECT coalesce(json_agg(json_build_object('conceptoId', l.concepto_id, 'concepto', k.nombre,
                                               'valor', l.valor) ORDER BY l.orden), '[]'::json)
@@ -152,11 +174,20 @@ export class MovimientoConceptoService {
         const pedidas =
           datos.lineas !== undefined && datos.lineas.length > 0
             ? datos.lineas
-            : [{ conceptoId: datos.conceptoId, valor: datos.valorConcepto }];
+            : [
+                {
+                  conceptoId: datos.conceptoId,
+                  valor: datos.valorConcepto,
+                  centroCostoId: null,
+                },
+              ];
         const lineas: Array<{
           concepto: Awaited<ReturnType<NucleoApi['concepto']>>;
           cuentaId: string;
           valor: number;
+          deResultado: boolean;
+          centroPedido: string | null;
+          repartoId: string | null;
         }> = [];
         for (const l of pedidas) {
           const concepto = await this.nucleo.concepto(ctx, l.conceptoId, t);
@@ -191,6 +222,14 @@ export class MovimientoConceptoService {
             concepto,
             cuentaId: concepto.cuenta.id,
             valor: l.valor,
+            // Solo las cuentas de resultado llevan centro (D2): un préstamo o
+            // un anticipo es balance.
+            deResultado: /^[4-7]/.test(concepto.cuenta.codigo),
+            centroPedido: l.centroCostoId ?? null,
+            repartoId:
+              'repartoId' in l && /^[4-7]/.test(concepto.cuenta.codigo)
+                ? (l.repartoId ?? null)
+                : null,
           });
         }
         const concepto = lineas[0].concepto;
@@ -201,15 +240,39 @@ export class MovimientoConceptoService {
         const movido = valorMovido(valorConcepto, retenciones);
         if (!movido.ok) throw new BadRequestException(movido.motivo);
 
+        // El centro del movimiento (D3) y el de cada línea que diga otro.
+        const centroMovimiento = lineas.some((l) => l.deResultado)
+          ? await this.nucleo.centroPropuesto(
+              ctx,
+              {
+                elegido: datos.centroCostoId,
+                cajaId: datos.medio === 'CAJA' ? datos.cajaId : null,
+              },
+              t,
+            )
+          : null;
+        const centroDe: Array<string | null> = [];
+        for (const l of lineas) {
+          centroDe.push(
+            !l.deResultado || l.repartoId !== null
+              ? null
+              : l.centroPedido
+                ? await this.nucleo.centroDeRenglon(ctx, l.centroPedido, t)
+                : centroMovimiento,
+          );
+        }
+
         const salida = datos.direccion === 'SALIDA';
         const tercero = datos.terceroId ?? undefined;
         const contrapartidas: Contrapartida[] = [
-          ...lineas.map((l) => ({
+          ...lineas.map((l, i) => ({
             cuentaId: l.cuentaId,
             debito: salida ? l.valor : 0,
             credito: salida ? 0 : l.valor,
             terceroId: tercero,
             conceptoId: l.concepto.id,
+            ...(centroDe[i] !== null && { centroCostoId: centroDe[i] }),
+            ...(l.repartoId !== null && { repartoId: l.repartoId }),
           })),
           // En una salida, la retención que se practica queda por pagar
           // (crédito); en una entrada, la que nos practicaron es un anticipo
@@ -271,8 +334,9 @@ export class MovimientoConceptoService {
             `INSERT INTO movimiento_concepto
                (empresa_id, direccion, medio, caja_id, cuenta_bancaria_id, caja_movimiento_id,
                 banco_movimiento_id, asiento_id, concepto_id, tercero_id, fecha, valor_concepto,
-                valor_movido, detalle, origen, origen_id, creado_por, devuelve_a)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+                valor_movido, detalle, origen, origen_id, creado_por, devuelve_a,
+                centro_costo_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
              RETURNING id`,
             [
               ctx.empresaId,
@@ -293,6 +357,8 @@ export class MovimientoConceptoService {
               datos.origenId ?? null,
               ctx.usuarioId,
               datos.devuelveA ?? null,
+              // Con una sola línea, su centro es el del movimiento.
+              lineas.length === 1 ? centroDe[0] : centroMovimiento,
             ],
           ),
         );
@@ -301,9 +367,17 @@ export class MovimientoConceptoService {
         if (lineas.length > 1) {
           for (const [i, l] of lineas.entries()) {
             await t.query(
-              `INSERT INTO movimiento_concepto_linea (movimiento_id, empresa_id, orden, concepto_id, valor)
-               VALUES ($1, $2, $3, $4, $5)`,
-              [creado.id, ctx.empresaId, i + 1, l.concepto.id, l.valor],
+              `INSERT INTO movimiento_concepto_linea
+                 (movimiento_id, empresa_id, orden, concepto_id, valor, centro_costo_id)
+               VALUES ($1, $2, $3, $4, $5, $6)`,
+              [
+                creado.id,
+                ctx.empresaId,
+                i + 1,
+                l.concepto.id,
+                l.valor,
+                centroDe[i],
+              ],
             );
           }
         }
@@ -365,6 +439,7 @@ export class MovimientoConceptoService {
             lineas: datos.lineas,
             retenciones,
             origen: 'MANUAL',
+            centroCostoId: datos.centroCostoId ?? null,
           },
           t,
         );
@@ -381,6 +456,8 @@ export class MovimientoConceptoService {
               fecha: datos.fecha,
               detalle: `4×1000 · ${datos.detalle.trim()}`,
               origenId: movimiento.id,
+              // El 4×1000 de un gasto va al mismo centro que el gasto.
+              centroCostoId: movimiento.centroCostoId,
             },
             t,
           );
@@ -403,6 +480,8 @@ export class MovimientoConceptoService {
       fecha: string;
       detalle: string;
       origenId?: string | null;
+      /** Sin él, el del usuario o el de por defecto. */
+      centroCostoId?: string | null;
     },
     t: Tx,
   ): Promise<MovimientoConcepto | null> {
@@ -428,6 +507,7 @@ export class MovimientoConceptoService {
         valorConcepto: valor,
         origen: 'GMF',
         origenId: datos.origenId ?? null,
+        centroCostoId: datos.centroCostoId ?? null,
       },
       t,
     );
@@ -642,6 +722,8 @@ function aMovimiento(f: Record<string, unknown>): MovimientoConcepto {
     terceroNombre: f.tercero_nombre as string | null,
     valorConcepto: Number(f.valor_concepto),
     valorMovido: Number(f.valor_movido),
+    centroCostoId: (f.centro_costo_id as string | null) ?? null,
+    centroCostoNombre: (f.centro_costo_nombre as string | null) ?? null,
     detalle: f.detalle as string,
     origen: f.origen as OrigenMovimiento,
     origenId: f.origen_id as string | null,

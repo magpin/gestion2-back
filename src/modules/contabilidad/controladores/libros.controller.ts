@@ -26,7 +26,13 @@ export class LibrosController {
 
   @Get('mayor')
   mayor(@ActorEmpresa() ctx: CtxEmpresa, @Query() q: MayorDto) {
-    return this.libros.mayor(ctx, q.cuentaId, q.desde, q.hasta);
+    return this.libros.mayor(
+      ctx,
+      q.cuentaId,
+      q.desde,
+      q.hasta,
+      q.centroCostoId,
+    );
   }
 
   @Get('auxiliar-tercero')
@@ -34,7 +40,13 @@ export class LibrosController {
     @ActorEmpresa() ctx: CtxEmpresa,
     @Query() q: AuxiliarTerceroDto,
   ) {
-    return this.libros.auxiliarTercero(ctx, q.terceroId, q.desde, q.hasta);
+    return this.libros.auxiliarTercero(
+      ctx,
+      q.terceroId,
+      q.desde,
+      q.hasta,
+      q.centroCostoId,
+    );
   }
 
   @Get('balance-prueba/:periodoId')

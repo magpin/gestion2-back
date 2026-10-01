@@ -47,6 +47,8 @@ export interface RespuestasDeFactura {
   sinRetencionMotivo?: string;
   /** Si la factura informa la categoría ZOMAC del proveedor. */
   zomacEnFactura?: boolean;
+  /** El centro de costo de la compra. */
+  centroCostoId?: string;
 }
 
 @Injectable()
@@ -92,6 +94,7 @@ export class ConfirmacionFacturaService {
           conceptosRenta: this.conceptosEnLineas(respuestas, aLinea),
           sinRetencionMotivo: respuestas.sinRetencionMotivo,
           zomacEnFactura: respuestas.zomacEnFactura,
+          centroCostoId: respuestas.centroCostoId,
         },
         // De qué documento salió y qué retención traía impresa. Va por acá y
         // no en el cuerpo de la petición: si viniera del navegador,

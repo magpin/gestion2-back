@@ -20,6 +20,8 @@ const ctx: CtxEmpresa = {
 const compraVigente: CompraDocumentoDetalle = {
   id: 'c-1',
   tipo: 'FACTURA',
+  centro_costo_id: null,
+  centro_costo_nombre: null,
   clase_documento: 'FACTURA_ELECTRONICA',
   transmision: null,
   cufe: null,
@@ -48,6 +50,9 @@ const compraVigente: CompraDocumentoDetalle = {
     {
       id: 'lc-1',
       compra_documento_id: 'c-1',
+      centro_costo_id: null,
+      centro_costo_nombre: null,
+      reparto_id: null,
       orden: 1,
       producto_id: 'p-1',
       producto_codigo: 'P-1',

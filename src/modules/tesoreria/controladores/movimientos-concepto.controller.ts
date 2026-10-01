@@ -58,6 +58,7 @@ export class MovimientosConceptoController {
         { conceptoId: dto.conceptoId!, valor: dto.valor! },
       ],
       retencion: dto.retencion ?? null,
+      centroCostoId: dto.centroCostoId ?? null,
     });
   }
 

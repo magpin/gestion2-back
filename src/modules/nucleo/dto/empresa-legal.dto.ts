@@ -163,9 +163,8 @@ export class EditarConfiguracionContableDto {
   @Max(6)
   decimalesCantidad?: number;
 
-  @IsOptional()
-  @IsBoolean()
-  manejaCentroDeCosto?: boolean;
+  // `maneja_centro_de_costo` no se cambia acá: encenderlo marca las cuentas
+  // 4–7 y exige un centro por defecto (`POST /plan-cuentas/centros-costo/manejo`).
 }
 
 /**

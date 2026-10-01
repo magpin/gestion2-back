@@ -68,27 +68,6 @@ describe('UPDATE … RETURNING se lee con filas()', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('PlanCuentasService.editarCentro y desactivarCentro', async () => {
-    await expect(
-      new PlanCuentasService(txService(txUpdate([]))).editarCentro(
-        ctx,
-        'cc-1',
-        {},
-      ),
-    ).rejects.toThrow(NotFoundException);
-    await expect(
-      new PlanCuentasService(
-        txService(txUpdate([{ id: 'cc-1' }])),
-      ).editarCentro(ctx, 'cc-1', {}),
-    ).resolves.toEqual({ id: 'cc-1' });
-    await expect(
-      new PlanCuentasService(txService(txUpdate([]))).desactivarCentro(
-        ctx,
-        'cc-1',
-      ),
-    ).rejects.toThrow(NotFoundException);
-  });
-
   it('EmpresaLegalService.editarConfiguracionContable', async () => {
     await expect(
       new EmpresaLegalService(

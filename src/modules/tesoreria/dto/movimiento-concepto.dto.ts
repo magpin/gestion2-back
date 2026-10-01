@@ -21,6 +21,16 @@ export class LineaConceptoDto {
   @IsUUID()
   conceptoId!: string;
 
+  /** El centro de costo de esta línea, si es distinto al del movimiento. */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
+
+  /** O repartirla entre varios centros por porcentajes (fase 8). */
+  @IsOptional()
+  @IsUUID()
+  repartoId?: string;
+
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
@@ -94,6 +104,11 @@ export class CrearMovimientoConceptoDto {
   @ValidateNested()
   @Type(() => RetencionSufridaDto)
   retencion?: RetencionSufridaDto;
+
+  /** Dónde se gastó o se ganó; sin él, el que proponga el sistema. */
+  @IsOptional()
+  @IsUUID()
+  centroCostoId?: string;
 }
 
 export class AnularMovimientoConceptoDto {

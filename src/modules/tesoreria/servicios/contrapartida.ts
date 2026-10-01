@@ -14,4 +14,8 @@ export interface Contrapartida {
   conceptoId?: string;
   baseGravable?: number;
   detalle?: string;
+  /** Dónde se gastó o se ganó: solo en las cuentas de resultado (4 a 7). */
+  centroCostoId?: string;
+  /** O repartido entre varios centros por porcentajes (fase 8). */
+  repartoId?: string;
 }

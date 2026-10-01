@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 
@@ -20,14 +21,19 @@ import type { CtxEmpresa } from '../../../common/ctx';
 import { BuscarPucDto } from '../dto/catalogo.dto';
 import {
   AplicarSugerenciaDto,
+  CentroDeUsuarioDto,
   CrearAuxiliarDto,
   CrearCentroCostoDto,
   CrearCuentaEmpresaDto,
   EditarCentroCostoDto,
   EditarCuentaEmpresaDto,
+  FijarManejoCentrosDto,
+  GuardarRepartoDto,
+  ListarCentrosCostoDto,
   ListarCuentasEmpresaDto,
   SiguienteAuxiliarDto,
 } from '../dto/plan-cuentas.dto';
+import { CentrosCostoService } from '../servicios/centros-costo.service';
 import { PlanCuentasService } from '../servicios/plan-cuentas.service';
 
 /**
@@ -40,7 +46,10 @@ import { PlanCuentasService } from '../servicios/plan-cuentas.service';
 @Controller('plan-cuentas')
 @ExigeEmpresa()
 export class PlanCuentasController {
-  constructor(private readonly plan: PlanCuentasService) {}
+  constructor(
+    private readonly plan: PlanCuentasService,
+    private readonly centrosCosto: CentrosCostoService,
+  ) {}
 
   @Get()
   listar(@ActorEmpresa() ctx: CtxEmpresa, @Query() q: ListarCuentasEmpresaDto) {
@@ -68,10 +77,132 @@ export class PlanCuentasController {
     return this.plan.catalogo(ctx, q);
   }
 
-  // Va antes de `:id` para que 'centros' no entre como si fuera un UUID.
+  // Van antes de `:id` para que 'centros' no entre como si fuera un UUID.
   @Get('centros-costo')
-  centros(@ActorEmpresa() ctx: CtxEmpresa) {
-    return this.plan.centros(ctx);
+  centros(@ActorEmpresa() ctx: CtxEmpresa, @Query() q: ListarCentrosCostoDto) {
+    return this.centrosCosto.listar(ctx, q.soloActivos === 'true');
+  }
+
+  /** Si la empresa maneja centros de costo. */
+  @Get('centros-costo/manejo')
+  async manejoCentros(@ActorEmpresa() ctx: CtxEmpresa) {
+    return { activo: await this.centrosCosto.maneja(ctx) };
+  }
+
+  /** Encender marca las cuentas 4–7 con «exige centro»; apagar las desmarca. */
+  @Roles('DIRECTOR', 'CONTADOR')
+  @Post('centros-costo/manejo')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async fijarManejoCentros(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Body() dto: FijarManejoCentrosDto,
+  ): Promise<void> {
+    await this.centrosCosto.fijarManejo(ctx, dto.activo);
+  }
+
+  @Roles('DIRECTOR', 'CONTADOR')
+  @Post('centros-costo/desde-sedes')
+  @HttpCode(HttpStatus.OK)
+  crearCentrosDesdeSedes(@ActorEmpresa() ctx: CtxEmpresa) {
+    return this.centrosCosto.crearDesdeSedes(ctx);
+  }
+
+  /** El centro del usuario en sesión: cada uno elige el suyo. */
+  @Get('centros-costo/mio')
+  async miCentro(@ActorEmpresa() ctx: CtxEmpresa) {
+    return {
+      centroCostoId: await this.centrosCosto.deUsuario(ctx, ctx.usuarioId),
+    };
+  }
+
+  @Put('centros-costo/mio')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async fijarMiCentro(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Body() dto: CentroDeUsuarioDto,
+  ): Promise<void> {
+    await this.centrosCosto.fijarDeUsuario(
+      ctx,
+      ctx.usuarioId,
+      dto.centroCostoId,
+    );
+  }
+
+  @Get('centros-costo/usuarios/:usuarioId')
+  async centroDeUsuario(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('usuarioId', ParseUUIDPipe) usuarioId: string,
+  ) {
+    return {
+      centroCostoId: await this.centrosCosto.deUsuario(ctx, usuarioId),
+    };
+  }
+
+  @Roles('DIRECTOR', 'CONTADOR')
+  @Put('centros-costo/usuarios/:usuarioId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async fijarCentroDeUsuario(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('usuarioId', ParseUUIDPipe) usuarioId: string,
+    @Body() dto: CentroDeUsuarioDto,
+  ): Promise<void> {
+    await this.centrosCosto.fijarDeUsuario(ctx, usuarioId, dto.centroCostoId);
+  }
+
+  // Repartos: un gasto común entre varios centros por porcentajes (fase 8).
+  @Get('centros-costo/repartos')
+  repartos(@ActorEmpresa() ctx: CtxEmpresa) {
+    return this.centrosCosto.listarRepartos(ctx);
+  }
+
+  @Roles('DIRECTOR', 'CONTADOR')
+  @Post('centros-costo/repartos')
+  crearReparto(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Body() dto: GuardarRepartoDto,
+  ) {
+    return this.centrosCosto.crearReparto(ctx, dto);
+  }
+
+  @Roles('DIRECTOR', 'CONTADOR')
+  @Put('centros-costo/repartos/:id')
+  editarReparto(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: GuardarRepartoDto,
+  ) {
+    return this.centrosCosto.editarReparto(ctx, id, dto);
+  }
+
+  @Roles('DIRECTOR', 'CONTADOR')
+  @Post('centros-costo/repartos/:id/desactivar')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async desactivarReparto(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.centrosCosto.fijarRepartoActivo(ctx, id, false);
+  }
+
+  @Roles('DIRECTOR', 'CONTADOR')
+  @Post('centros-costo/repartos/:id/activar')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async activarReparto(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.centrosCosto.fijarRepartoActivo(ctx, id, true);
+  }
+
+  /** El centro que el sistema propone para un documento nuevo (D3). */
+  @Get('centros-costo/propuesto')
+  async centroPropuesto(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Query('sedeId', new ParseUUIDPipe({ optional: true })) sedeId?: string,
+  ) {
+    return {
+      centroCostoId: await this.centrosCosto.propuesto(ctx, { sedeId }),
+    };
   }
 
   @Roles('DIRECTOR', 'CONTADOR')
@@ -80,7 +211,7 @@ export class PlanCuentasController {
     @ActorEmpresa() ctx: CtxEmpresa,
     @Body() dto: CrearCentroCostoDto,
   ) {
-    return this.plan.crearCentro(ctx, dto);
+    return this.centrosCosto.crear(ctx, dto);
   }
 
   @Roles('DIRECTOR', 'CONTADOR')
@@ -90,7 +221,7 @@ export class PlanCuentasController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: EditarCentroCostoDto,
   ) {
-    return this.plan.editarCentro(ctx, id, dto);
+    return this.centrosCosto.editar(ctx, id, dto);
   }
 
   @Roles('DIRECTOR', 'CONTADOR')
@@ -100,7 +231,17 @@ export class PlanCuentasController {
     @ActorEmpresa() ctx: CtxEmpresa,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
-    await this.plan.desactivarCentro(ctx, id);
+    await this.centrosCosto.desactivar(ctx, id);
+  }
+
+  @Roles('DIRECTOR', 'CONTADOR')
+  @Post('centros-costo/:id/activar')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async activarCentro(
+    @ActorEmpresa() ctx: CtxEmpresa,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.centrosCosto.activar(ctx, id);
   }
 
   /** Crea solo lo que el usuario confirmó de la sugerencia. */

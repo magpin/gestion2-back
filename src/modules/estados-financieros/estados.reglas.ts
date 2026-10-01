@@ -601,3 +601,101 @@ export function mesesHasta(mes: string, n: number): string[] {
   while (salida.length < n) salida.unshift(mesDe(salida[0]).anterior);
   return salida;
 }
+
+// ─── Por centro de costo ────────────────────────────────────────────────────
+
+/** Un movimiento de cuenta de resultado con el centro de costo de sus líneas. */
+export interface MovimientoConCentro extends MovimientoCuenta {
+  /** `null`: líneas sin centro (lo anterior a encenderlos, D7). */
+  centroId: string | null;
+}
+
+export type TipoCentro = 'PRODUCTIVO' | 'APOYO' | 'ADMINISTRATIVO';
+
+export interface CentroDeColumna {
+  id: string;
+  codigo: string;
+  nombre: string;
+  tipo: TipoCentro;
+}
+
+export interface ColumnaResultados {
+  /** El id del centro, el tipo (`PRODUCTIVO`…) o `SIN_CENTRO`. */
+  clave: string;
+  nombre: string;
+  estado: EstadoResultados;
+}
+
+const NOMBRE_TIPO: Record<TipoCentro, string> = {
+  PRODUCTIVO: 'Productivos',
+  APOYO: 'De apoyo',
+  ADMINISTRATIVO: 'Administrativos',
+};
+
+/**
+ * El estado de resultados en columnas: una por centro (o por tipo de centro),
+ * «Sin centro» si hay líneas sin él, y el total. La suma de las columnas es
+ * el total, renglón por renglón: cada movimiento cae en una sola columna.
+ *
+ * Las columnas van en el orden de `centros` (o productivos, de apoyo y
+ * administrativos), y solo las que tienen movimiento.
+ */
+export function resultadosPorCentro(
+  movs: MovimientoConCentro[],
+  centros: CentroDeColumna[],
+  agrupar: 'CENTRO' | 'TIPO',
+): { columnas: ColumnaResultados[]; total: EstadoResultados } {
+  const centroPorId = new Map(centros.map((c) => [c.id, c]));
+  const claveDe = (m: MovimientoConCentro): string => {
+    const centro =
+      m.centroId === null ? undefined : centroPorId.get(m.centroId);
+    // Un centro que no viene en la lista no tiene columna: va a «Sin centro»
+    // y la suma sigue dando el total. El servicio manda todos, activos o no.
+    if (centro === undefined) return 'SIN_CENTRO';
+    return agrupar === 'CENTRO' ? centro.id : centro.tipo;
+  };
+  const grupos = new Map<string, MovimientoCuenta[]>();
+  for (const m of movs) {
+    const clave = claveDe(m);
+    grupos.set(clave, [
+      ...(grupos.get(clave) ?? []),
+      {
+        codigo: m.codigo,
+        nombre: m.nombre,
+        debito: m.debito,
+        credito: m.credito,
+      },
+    ]);
+  }
+
+  const orden: Array<{ clave: string; nombre: string }> =
+    agrupar === 'CENTRO'
+      ? centros.map((c) => ({
+          clave: c.id,
+          nombre: `${c.codigo} · ${c.nombre}`,
+        }))
+      : (Object.keys(NOMBRE_TIPO) as TipoCentro[]).map((t) => ({
+          clave: t,
+          nombre: NOMBRE_TIPO[t],
+        }));
+  orden.push({ clave: 'SIN_CENTRO', nombre: 'Sin centro' });
+
+  const columnas = orden
+    .filter((o) => grupos.has(o.clave))
+    .map((o) => ({
+      clave: o.clave,
+      nombre: o.nombre,
+      estado: estadoDeResultados(grupos.get(o.clave)!),
+    }));
+  return {
+    columnas,
+    total: estadoDeResultados(
+      movs.map((m) => ({
+        codigo: m.codigo,
+        nombre: m.nombre,
+        debito: m.debito,
+        credito: m.credito,
+      })),
+    ),
+  };
+}

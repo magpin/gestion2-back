@@ -17,6 +17,7 @@
  * ¿ese IVA lo podemos descontar?—; esto solo hace la cuenta con lo que
  * llega, no vuelve a preguntar nada.
  */
+import { redondearDecimal } from '../../../common/decimal';
 
 /** Lo que pide una línea para calcularse. El servicio pasa más campos y no estorban. */
 export interface LineaCompraEntrada {
@@ -125,12 +126,14 @@ export function calcularLineaCompra(
   const costoUnitarioKardexCrudo = entrada.ivaDescontable
     ? entrada.costoUnitario
     : aPesos(totalCentavos) / entrada.cantidad;
-  const factorCosto = 10 ** DECIMALES_COSTO_KARDEX;
-  const costoUnitarioKardex =
-    Math.round(costoUnitarioKardexCrudo * factorCosto) / factorCosto;
+  // En decimal exacto, como `round()` de Postgres (ver `common/decimal.ts`).
+  const costoUnitarioKardex = redondearDecimal(
+    costoUnitarioKardexCrudo,
+    DECIMALES_COSTO_KARDEX,
+  );
 
   const valorKardexCentavos = Math.round(
-    entrada.cantidad * costoUnitarioKardex * CENTAVOS,
+    redondearDecimal(entrada.cantidad * costoUnitarioKardex, 2) * CENTAVOS,
   );
 
   return {

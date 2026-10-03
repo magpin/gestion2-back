@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 
 import type { CtxEmpresa } from '../../../common/ctx';
+import { redondearDecimal } from '../../../common/decimal';
 import { fila, filas } from '../../../common/db/filas';
 import { armarPagina, type Pagina } from '../../../common/dto/paginacion.dto';
 import { TxService, type Tx } from '../../../common/db/tx.service';
@@ -827,6 +828,5 @@ export class KardexService {
 
 /** El costo unitario con los decimales que la empresa usa para costos. */
 function redondearCosto(valor: number, decimales: number): number {
-  const factor = 10 ** decimales;
-  return Math.round(valor * factor) / factor;
+  return redondearDecimal(valor, decimales);
 }

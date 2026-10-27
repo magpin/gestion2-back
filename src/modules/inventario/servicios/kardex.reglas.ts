@@ -12,6 +12,7 @@
  * No reemplaza al `CHECK`: lo anticipa. Si esto y la base discrepan, la base
  * tiene razón.
  */
+import { redondearDecimal } from '../../../common/decimal';
 
 /** Lo que hay de un producto ahora mismo: la última fila de su kardex, o cero. */
 export interface SaldoKardex {
@@ -44,11 +45,11 @@ export type ResultadoSalida =
  * Redondea al número de decimales que la empresa configuró
  * (`decimales_cantidad`/`decimales_valor`). Nunca se compara ni se guarda el
  * valor flotante crudo: `0.1 + 0.2 !== 0.3`, y un kardex que arrastre ese
- * error se nota en la fila mil, no en la primera.
+ * error se nota en la fila mil, no en la primera. En decimal exacto, como
+ * Postgres: si no, `ck_movimiento_valor_total` rechaza por un centavo.
  */
 export function redondear(valor: number, decimales: number): number {
-  const factor = 10 ** decimales;
-  return Math.round(valor * factor) / factor;
+  return redondearDecimal(valor, decimales);
 }
 
 /**

@@ -182,6 +182,10 @@ export class ComprobanteService {
    * automático y necesitan uno ya sembrado. `null` si no existe — no lanza,
    * porque quien llama (`ContabilidadApi.tipoComprobantePorCodigo`) es quien
    * decide si la ausencia es un error o una condición a informar.
+   *
+   * Si falta uno de los tipos iniciales —una empresa vaciada, o de antes de
+   * que se sembraran—, se siembran los que faltan y se vuelve a buscar. El que
+   * existe desactivado no se toca: lo apagó alguien y sigue dando `null`.
    */
   async porCodigo(
     ctx: CtxEmpresa,
@@ -191,13 +195,22 @@ export class ComprobanteService {
     return this.tx.enContexto(
       ctx,
       async (t) => {
-        const encontrado = fila<{ id: string }>(
-          await t.query(
-            'SELECT id FROM empresa_comprobante_tipo WHERE codigo = $1 AND activo',
-            [codigo],
-          ),
-        );
-        return encontrado ?? null;
+        const buscar = async () =>
+          fila<{ id: string }>(
+            await t.query(
+              'SELECT id FROM empresa_comprobante_tipo WHERE codigo = $1 AND activo',
+              [codigo],
+            ),
+          ) ?? null;
+        const encontrado = await buscar();
+        if (
+          encontrado !== null ||
+          !TIPOS_INICIALES.some((tipo) => tipo.codigo === codigo)
+        ) {
+          return encontrado;
+        }
+        await this.sembrar(ctx.empresaId, t);
+        return buscar();
       },
       tx,
     );

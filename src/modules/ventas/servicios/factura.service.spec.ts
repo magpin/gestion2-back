@@ -520,6 +520,48 @@ describe('FacturaService.crear', () => {
     expect(totalDebito).toBe(totalCredito);
   });
 
+  it('con costo cero no agrega el par costo/inventario: serían dos líneas en cero', async () => {
+    const { tx } = txFalso();
+    const { fake: contabilidad, asentar } = contabilidadFalso();
+    const inventario = inventarioFalso({
+      costeo: { costoUnitario: 0, valorTotal: 0, faltante: 0 },
+    });
+    const servicio = new FacturaService(
+      txServiceFalso(tx),
+      nucleoFalso().fake,
+      inventario,
+      contabilidad,
+      {} as never,
+      {
+        confirmarVenta: jest.fn(() =>
+          Promise.resolve({ lineasAsiento: [], aviso: null }),
+        ),
+      } as never,
+    );
+
+    await servicio.crear(ctx, {
+      terceroId: 'ter-1',
+      fecha: HOY,
+      formaPago: 'CREDITO',
+      lineas: [{ productoId: 'p-1', cantidad: 2 }],
+    });
+
+    const [, dtoAsiento] = asentar.mock.calls[0] as unknown as [
+      unknown,
+      { lineas: Array<{ cuentaId: string; debito: number; credito: number }> },
+    ];
+    expect(dtoAsiento.lineas.map((l) => l.cuentaId)).toEqual([
+      'cta-cartera',
+      'cta-ingreso',
+      'cta-iva',
+    ]);
+    // El kárdex registra la salida igual.
+    expect(
+      (inventario as unknown as { descontarPorVenta: jest.Mock })
+        .descontarPorVenta,
+    ).toHaveBeenCalledTimes(1);
+  });
+
   it('sin IVA (empresa no responsable): no busca la cuenta de IVA ni agrega su línea', async () => {
     const { tx } = txFalso();
     const { fake: nucleo, cuenta } = nucleoFalso({ responsableIva: false });

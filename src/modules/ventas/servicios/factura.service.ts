@@ -903,9 +903,11 @@ export class FacturaService {
     }
     lineasAsiento.push(...motor.lineasAsiento);
     // El par costo/inventario solo en las de producto: un servicio no sale de
-    // ninguna bodega.
+    // ninguna bodega. Con costo cero tampoco: serían dos líneas en cero, y el
+    // asiento no admite una línea sin débito ni crédito. El kárdex registra la
+    // salida igual.
     costeos.forEach((costeo, i) => {
-      if (costeo === null) return;
+      if (costeo === null || costeo.valorTotal === 0) return;
       lineasAsiento.push({
         cuentaId: cuentaCostoDe[i],
         debito: costeo.valorTotal,
